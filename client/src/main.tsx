@@ -9,6 +9,7 @@ import {
 import App from "./App.tsx";
 import AdminDesk from "./news/AdminDesk.tsx";
 import { installNativeShell } from "./native/shell.ts";
+import PhoneNews from "./phone/PhoneNews.tsx";
 import { registerServiceWorker } from "./pwa/register.ts";
 
 try {
@@ -26,7 +27,14 @@ try {
 registerServiceWorker();
 installNativeShell();
 
-const routes = (
+const installedPhone =
+  import.meta.env.VITE_CAPACITOR === "true" ||
+  window.matchMedia("(display-mode: standalone)").matches ||
+  (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+const routes = installedPhone ? (
+  <PhoneNews />
+) : (
   <Routes>
     <Route path="/@admin" element={<AdminDesk />} />
     <Route path="/news/@admin" element={<Navigate to="/@admin" replace />} />
