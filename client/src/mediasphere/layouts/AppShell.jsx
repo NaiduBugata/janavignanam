@@ -65,7 +65,7 @@ export default function AppShell({ embed: embedProp = false }) {
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `rounded-lg px-3 py-1.5 text-sm font-medium ${isActive ? 'bg-primary text-white' : 'text-msmuted hover:bg-mssurface'}`
+                `inline-flex min-h-11 items-center rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-primary text-white' : 'text-msmuted hover:bg-mssurface'}`
               }
             >
               {item.label}

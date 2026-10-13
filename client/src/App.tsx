@@ -95,6 +95,16 @@ function App() {
   const [panel, setPanel] = useState<"notifications" | "settings" | null>(null);
   const [panelBody, setPanelBody] = useState("");
 
+  useEffect(() => {
+    const onBack = (event: Event) => {
+      if (event.defaultPrevented || !sidebarOpen) return;
+      event.preventDefault();
+      setSidebarOpen(false);
+    };
+    window.addEventListener("janavignanam-back", onBack);
+    return () => window.removeEventListener("janavignanam-back", onBack);
+  }, [sidebarOpen]);
+
   const expireOn401 = (err: unknown): boolean => {
     if (!(err instanceof ApiError) || err.status !== 401) return false;
     localStorage.removeItem(SESSION_KEY);
@@ -190,7 +200,7 @@ function App() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {sidebarOpen && <button className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu" />}
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r bg-sidebar transition-transform md:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] transition-transform md:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex h-20 items-center justify-between border-b px-6">
           <div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-primary font-display font-bold text-primary-foreground">JV</div><div><p className="font-display font-semibold">JanaVignanam</p><p className="text-xs text-muted-foreground">Constituency database</p></div></div>
           <button className="md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu"><X className="size-5" /></button>
@@ -199,7 +209,7 @@ function App() {
         <div className="border-t p-4"><div className="mb-3 flex items-center gap-3"><div className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{session.name.slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{session.name}</p><p className="truncate text-xs text-muted-foreground">{session.email}</p></div></div><button onClick={signOut} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"><LogOut className="size-4" />Sign out</button></div>
       </aside>
       <main className="md:pl-72">
-        <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b bg-background/90 px-5 backdrop-blur md:px-10">
+        <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between border-b bg-background/90 px-5 pt-[env(safe-area-inset-top)] backdrop-blur md:px-10">
           <button className="md:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu className="size-5" /></button>
           <div className="relative hidden w-80 md:block"><Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} className="h-9 w-full rounded-lg border bg-muted/30 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Search saved records" /></div>
           <div className="flex items-center gap-3">
@@ -245,7 +255,7 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-accent/30 via-background to-background p-6">
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-accent/30 via-background to-background p-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-sm">
         <div className="mb-8 flex items-center gap-3"><div className="flex size-12 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground">JV</div><div><h1 className="font-display text-xl font-semibold">JanaVignanam</h1><p className="text-sm text-muted-foreground">Constituency intelligence</p></div></div>
         <h2 className="font-display text-2xl font-semibold">{signup ? "Create your account" : "Welcome back"}</h2>

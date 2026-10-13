@@ -7,10 +7,17 @@ export default function Modal({ isOpen, onClose, title, children, wide = false }
     const handleKey = (e) => {
       if (e.key === 'Escape') onClose();
     };
+    const handleBack = (event) => {
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      onClose();
+    };
     document.addEventListener('keydown', handleKey);
+    window.addEventListener('janavignanam-back', handleBack);
     document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', handleKey);
+      window.removeEventListener('janavignanam-back', handleBack);
       document.body.style.overflow = '';
     };
   }, [isOpen, onClose]);

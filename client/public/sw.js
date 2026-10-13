@@ -1,4 +1,4 @@
-const CACHE_NAME = "app-assets-v2";
+const CACHE_NAME = "app-assets-v3";
 const OFFLINE_URL = "/offline.html";
 // Never precache "/" (the app shell). Its HTML embeds Vite-hashed asset URLs
 // that change on every publish, so a cached shell points at dead chunks.
@@ -16,9 +16,16 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => Promise.allSettled(urlsToCache.map((url) => cache.add(url))))
-      .then(() => self.skipWaiting()),
+      .then((cache) =>
+        Promise.allSettled(urlsToCache.map((url) => cache.add(url))),
+      ),
   );
+});
+
+// A new worker waits until the open page asks it to take over, or until the
+// next visit. Authenticated /api responses are never stored.
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 // Fetch event - network first, fall back to cache
@@ -63,7 +70,9 @@ self.addEventListener("fetch", (event) => {
           return response;
         }
         const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+        caches
+          .open(CACHE_NAME)
+          .then((cache) => cache.put(event.request, responseToCache));
         return response;
       })
       .catch(() => caches.match(event.request)),
@@ -93,13 +102,15 @@ self.addEventListener("push", (event) => {
   const data = event.data?.json() ?? {};
 
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-      const isAppInFocus = clientList.some((client) => client.focused);
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        const isAppInFocus = clientList.some((client) => client.focused);
 
-      if (!isAppInFocus) {
-        return self.registration.showNotification(data.title, data.options);
-      }
-    }),
+        if (!isAppInFocus) {
+          return self.registration.showNotification(data.title, data.options);
+        }
+      }),
   );
 });
 

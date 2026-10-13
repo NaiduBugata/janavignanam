@@ -1,5 +1,5 @@
 import { Menu, RefreshCw, Search, User, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useNewsContext } from '../../context/NewsContext';
 import { formatDateTime } from '../../utils/format';
@@ -36,6 +36,17 @@ export default function TopNav() {
   const [search, setSearch] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
 
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onBack = (event) => {
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      setMenuOpen(false);
+    };
+    window.addEventListener('janavignanam-back', onBack);
+    return () => window.removeEventListener('janavignanam-back', onBack);
+  }, [menuOpen]);
+
   const highCount = stats?.problemPriorityCounts?.High || 0;
   const deptsWithHigh = useMemo(
     () => (departments || []).filter((d) => d.high > 0).length,
@@ -55,7 +66,7 @@ export default function TopNav() {
   };
 
   return (
-    <header className="sticky top-0 z-40 border-b border-msline/80 bg-navbar/95 backdrop-blur supports-[backdrop-filter]:bg-navbar/90 shadow-soft">
+    <header className="sticky top-0 z-40 border-b border-msline/80 bg-navbar/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-navbar/90 shadow-soft">
       <div className="mx-auto w-full max-w-none px-6">
         <div className="flex h-[4.25rem] items-center justify-between gap-4">
           <Link to="/" className="flex items-center gap-3 min-w-0 shrink-0">
@@ -127,7 +138,7 @@ export default function TopNav() {
 
             <button
               type="button"
-              className="lg:hidden inline-flex h-9 w-9 items-center justify-center rounded-control border border-msline bg-surface text-app"
+              className="lg:hidden inline-flex h-11 w-11 items-center justify-center rounded-control border border-msline bg-surface text-app"
               onClick={() => setMenuOpen((o) => !o)}
               aria-label="Toggle navigation"
             >
