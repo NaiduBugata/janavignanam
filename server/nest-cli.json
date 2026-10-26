@@ -4,7 +4,7 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": ["pipeline/data/**/*.json", "chatbot/data/**/*.json"],
+    "assets": ["pipeline/data/**/*.json", "chatbot/data/**/*.json", "workspace/data/**/*.json"],
     "watchAssets": true
   }
 }

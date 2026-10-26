@@ -52,7 +52,7 @@ async function bootstrap() {
       'Cache-Control',
       'Pragma',
     ],
-    exposedHeaders: ['Content-Type'],
+    exposedHeaders: ['Content-Type', 'Content-Disposition'],
     maxAge: 86400,
   });
 

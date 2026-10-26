@@ -221,6 +221,8 @@ export async function sendTemplateMessage(
     bodyParameters?: string[];
     /** For templates created with NAMED parameters, such as {{name}}. */
     namedParameters?: Record<string, string>;
+    /** Suffix for the first website button, appended to the approved template URL. */
+    urlButton?: string;
     fetchImpl?: typeof fetch;
     env?: NodeJS.ProcessEnv;
   } = {},
@@ -229,7 +231,16 @@ export async function sendTemplateMessage(
   const parameters = options.namedParameters
     ? Object.entries(options.namedParameters).map(([name, value]) => ({ type: 'text', parameter_name: name, text: String(value).slice(0, 1024) }))
     : (options.bodyParameters || []).map((value) => ({ type: 'text', text: String(value).slice(0, 1024) }));
-  const components = parameters.length ? [{ type: 'body', parameters }] : [];
+  const components: Array<Record<string, unknown>> = parameters.length ? [{ type: 'body', parameters }] : [];
+  const urlButton = (options.urlButton || '').trim();
+  if (urlButton) {
+    components.push({
+      type: 'button',
+      sub_type: 'url',
+      index: '0',
+      parameters: [{ type: 'text', text: urlButton.slice(0, 1024) }],
+    });
+  }
   return postGraph({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',

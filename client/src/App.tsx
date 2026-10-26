@@ -25,17 +25,50 @@ import {
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiError } from "@/lib/api.ts";
 import NewsDesk from "@/news/NewsDesk.tsx";
+import { CaseRecordForm, type CaseSection } from "@/CaseRecordForm.tsx";
+import { ConstituencyDirectory } from "@/ConstituencyDirectory.tsx";
+import { emptyPlace, PlaceFilters } from "@/PlaceFilters.tsx";
+import { matchesPlace } from "@/places.ts";
+import { ReportActions, ReportDownloads } from "@/ReportPage.tsx";
+import { SimpleRecordForm } from "@/SimpleRecordForm.tsx";
 
 type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics";
-type StoredSection = "grievances" | "projects" | "people" | "campaigns";
-type RecordItem = { id: string; title: string; detail: string; status: string; date: string; followUpDepartment?: string };
+type ListSection = "grievances" | "projects" | "people" | "campaigns";
+type RecordItem = {
+  id: string;
+  title: string;
+  detail: string;
+  status: string;
+  date: string;
+  followUpDepartment?: string;
+  srNumber?: string;
+  fullName?: string;
+  contactNumber?: string;
+  address?: string;
+  email?: string;
+  village?: string;
+  mandal?: string;
+  division?: string;
+  assemblyConstituency?: string;
+  dateOfVisit?: string;
+  referenceName?: string;
+  referenceNumber?: string;
+  categories?: string[];
+  others?: string;
+  actionTaken?: string;
+  actionToBeTaken?: string;
+  assignedOfficer?: string;
+  deadline?: string;
+  place?: string;
+  progressStages?: { name: string; status: string; note: string }[];
+};
 type Session = { token: string; email: string; name: string };
-type Summary = { counts: Record<StoredSection, number>; open: number; news: number; mongo: boolean };
+type Summary = { counts: Record<CaseSection, number>; open: number; news: number; mongo: boolean };
 type NewsStats = { total?: number; positive_count?: number; negative_count?: number; problem_count?: number };
 type ChannelStatus = { status?: string; pending_articles?: number; last_error?: string | null };
 
 const SESSION_KEY = "janavignanam.session";
-const STORED: StoredSection[] = ["grievances", "projects", "people", "campaigns"];
+const LISTED: ListSection[] = ["grievances", "projects", "people", "campaigns"];
 
 const nav: { id: Section; path: string; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", path: "/", label: "Command center", icon: LayoutDashboard },
@@ -57,7 +90,7 @@ const labels: Record<Section, { title: string; description: string; icon: typeof
   grievances: { title: "Grievances", description: "Requests saved in the database.", icon: MessageSquareWarning },
   projects: { title: "Projects & reports", description: "Delivery updates saved in the database.", icon: ClipboardList },
   news: { title: "News", description: "Constituency articles from the news database.", icon: Newspaper },
-  people: { title: "Constituency", description: "Contacts and coordinators saved in the database.", icon: Users },
+  people: { title: "Constituency", description: "Palnadu contacts from the master sheet, by division, assembly, and role.", icon: Users },
   campaigns: { title: "Campaigns", description: "Campaign plans saved in the database. Messages are not sent from this screen.", icon: Send },
   analytics: { title: "Analytics", description: "Article totals from the news database.", icon: BarChart3 },
 };
@@ -72,13 +105,22 @@ function readSession(): Session | null {
 }
 
 function formatWhen(value: string): string {
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (day) return new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])).toLocaleDateString();
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value || "Just now";
   return date.toLocaleString();
 }
 
-function isStored(section: Section): section is StoredSection {
-  return STORED.includes(section as StoredSection);
+function stageSummary(stages: { status: string }[]): string {
+  const completed = stages.filter((stage) => stage.status === "Completed").length;
+  const active = stages.filter((stage) => stage.status === "In progress").length;
+  const pending = stages.filter((stage) => stage.status === "Pending").length;
+  return `${completed} completed, ${active} in progress, ${pending} pending`;
+}
+
+function isListSection(section: Section): section is ListSection {
+  return (LISTED as readonly string[]).includes(section);
 }
 
 function App() {
@@ -129,7 +171,7 @@ function App() {
   }, [session, records.length]);
 
   useEffect(() => {
-    if (!session || !isStored(section)) return;
+    if (!session || !isListSection(section)) return;
     let cancelled = false;
     api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
       .then((rows) => {
@@ -151,15 +193,23 @@ function App() {
     setSession(null);
   };
 
-  const addRecord = async (title: string, detail: string) => {
-    if (!isStored(section)) return;
+  const approveRecord = async (id: string) => {
+    const result = await api<{ record: RecordItem; notice: string }>(`/api/workspace/records/${encodeURIComponent(id)}/approve`, {
+      method: "POST",
+      token: session.token,
+    });
+    setRecords((current) => current.map((item) => (item.id === id ? { ...item, ...result.record } : item)));
+    return result.notice;
+  };
+
+  const addRecord = async (target: CaseSection, body: Record<string, string | string[]>) => {
     try {
       const row = await api<RecordItem>("/api/workspace/records", {
         method: "POST",
         token: session.token,
-        body: { section, title, detail, status: "Open" },
+        body: { section: target, ...body },
       });
-      setRecords((current) => [row, ...current]);
+      if (section === target) setRecords((current) => [row, ...current]);
     } catch (err) {
       if (!expireOn401(err)) throw err;
     }
@@ -180,11 +230,12 @@ function App() {
     }
   };
 
-  const loaded = session && isStored(section) ? records : [];
+  const loaded = session && isListSection(section) ? records : [];
   const visible = loaded.filter((item) => {
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
-    return `${item.title} ${item.detail} ${item.status}`.toLowerCase().includes(needle);
+    const haystack = [item.title, item.detail, item.status, item.fullName, item.village, item.mandal, item.division, item.contactNumber, item.srNumber, ...(item.categories || [])].join(" ");
+    return haystack.toLowerCase().includes(needle);
   });
 
   return (
@@ -211,7 +262,7 @@ function App() {
         {panel && <div className="border-b bg-card px-5 py-3 text-sm whitespace-pre-line text-muted-foreground md:px-10">{panelBody}</div>}
         {notice && <div className="border-b bg-destructive/10 px-5 py-3 text-sm text-destructive md:px-10">{notice}</div>}
         <div className={section === "news" ? "h-[calc(100vh-5rem)]" : "mx-auto max-w-7xl p-5 md:p-10"}>
-          <Workspace section={section} records={visible} summary={summary} stats={stats} onAdd={addRecord} />
+          <Workspace section={section} records={visible} summary={summary} stats={stats} token={session.token} onAdd={(body) => addRecord(section as CaseSection, body)} onApprove={approveRecord} />
         </div>
       </main>
     </div>
@@ -222,8 +273,6 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [name, setName] = useState("");
-  const [signup, setSignup] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -232,8 +281,7 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
     setError("");
     setLoading(true);
     try {
-      const path = signup ? "/api/workspace/register" : "/api/workspace/login";
-      const next = await api<{ token: string; user: { email: string; name: string } }>(path, { method: "POST", body: { email, password, name: name || undefined } });
+      const next = await api<{ token: string; user: { email: string; name: string } }>("/api/workspace/login", { method: "POST", body: { email, password } });
       const saved: Session = { token: next.token, email: next.user.email, name: next.user.name };
       localStorage.setItem(SESSION_KEY, JSON.stringify(saved));
       onLogin(saved);
@@ -248,11 +296,10 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
     <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-accent/30 via-background to-background p-6">
       <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-sm">
         <div className="mb-8 flex items-center gap-3"><div className="flex size-12 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground">JV</div><div><h1 className="font-display text-xl font-semibold">JanaVignanam</h1><p className="text-sm text-muted-foreground">Constituency intelligence</p></div></div>
-        <h2 className="font-display text-2xl font-semibold">{signup ? "Create your account" : "Welcome back"}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{signup ? "This account is stored in the database." : "Sign in with the account stored in the database."}</p>
+        <h2 className="font-display text-2xl font-semibold">Welcome back</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Sign in with the account stored in the database.</p>
         {notice && <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700">{notice}</p>}
         <form onSubmit={(event) => void submit(event)} className="mt-6 space-y-4">
-          {signup && <input value={name} onChange={(event) => setName(event.target.value)} required className="h-11 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Full name" />}
           <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required className="h-11 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Email address" />
           <div className="relative">
             <input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required className="h-11 w-full rounded-lg border bg-background px-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Password (8+ characters)" />
@@ -261,37 +308,26 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
             </button>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <button disabled={loading} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{loading ? (signup ? "Creating account...." : "Signing in....") : (signup ? "Create account" : "Sign in")}{loading ? null : <ChevronRight className="size-4" />}</button>
+          <button disabled={loading} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{loading ? "Signing in...." : "Sign in"}{loading ? null : <ChevronRight className="size-4" />}</button>
         </form>
-        <button onClick={() => { setSignup(!signup); setError(""); }} className="mt-5 w-full text-sm text-muted-foreground hover:text-foreground">{signup ? "Already have an account? Sign in" : "New here? Create an account"}</button>
       </div>
     </div>
   );
 }
 
-function Workspace({ section, records, summary, stats, onAdd }: { section: Section; records: RecordItem[]; summary: Summary | null; stats: NewsStats | null; onAdd: (title: string, detail: string) => Promise<void> }) {
+function Workspace({ section, records, summary, stats, token, onAdd, onApprove }: { section: Section; records: RecordItem[]; summary: Summary | null; stats: NewsStats | null; token: string; onAdd: (body: Record<string, string | string[]>) => Promise<void>; onApprove: (id: string) => Promise<string> }) {
   const navigate = useNavigate();
-  const [title, setTitle] = useState("");
-  const [detail, setDetail] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [error, setError] = useState("");
+  const [approving, setApproving] = useState("");
+  const [approveNote, setApproveNote] = useState("");
+  const [place, setPlace] = useState(emptyPlace);
   const meta = labels[section];
   const Icon = meta.icon;
-  const open = records.filter((item) => item.status === "Open" || item.status === "In progress").length;
+  const located = section === "grievances" || section === "projects";
+  const shown = located ? records.filter((item) => matchesPlace(item, place)) : records;
+  const open = shown.filter((item) => item.status === "Open" || item.status === "Pending" || item.status === "In progress").length;
+  useEffect(() => setPlace(emptyPlace), [section]);
   const tracked = useMemo(() => (summary ? Object.values(summary.counts).reduce((sum, value) => sum + value, 0) : 0), [summary]);
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError("");
-    try {
-      await onAdd(title, detail);
-      setTitle("");
-      setDetail("");
-      setShowForm(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
-    }
-  };
 
   if (section === "news") {
     return <NewsDesk />;
@@ -316,8 +352,19 @@ function Workspace({ section, records, summary, stats, onAdd }: { section: Secti
         </div>
         <div className="mt-8 rounded-xl border bg-card p-6">
           <h2 className="font-display text-lg font-semibold">Open a workflow</h2>
-          <div className="mt-5 grid gap-2 sm:grid-cols-2">{nav.slice(1, 5).map((item) => <button key={item.id} onClick={() => navigate(item.path)} className="flex items-center justify-between rounded-lg border p-3 text-left text-sm hover:bg-muted"><span className="flex items-center gap-2"><item.icon className="size-4 text-primary" />{item.label}</span><ChevronRight className="size-4 text-muted-foreground" /></button>)}</div>
+          <div className="mt-5 grid gap-2 sm:grid-cols-2">{nav.slice(1, 6).map((item) => <button key={item.id} onClick={() => navigate(item.path)} className="flex items-center justify-between rounded-lg border p-3 text-left text-sm hover:bg-muted"><span className="flex items-center gap-2"><item.icon className="size-4 text-primary" />{item.label}</span><ChevronRight className="size-4 text-muted-foreground" /></button>)}</div>
         </div>
+      </>
+    );
+  }
+
+  if (section === "people") {
+    return (
+      <>
+        <div className="mb-8">
+          <SectionHeading meta={meta} />
+        </div>
+        <ConstituencyDirectory token={token} />
       </>
     );
   }
@@ -341,30 +388,59 @@ function Workspace({ section, records, summary, stats, onAdd }: { section: Secti
     <>
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <SectionHeading meta={meta} />
-        <button onClick={() => setShowForm(!showForm)} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"><Plus className="size-4" />Add record</button>
+        <div className="flex flex-wrap gap-2">
+          {(section === "grievances" || section === "projects") && <ReportDownloads token={token} section={section} />}
+          <button onClick={() => setShowForm(!showForm)} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"><Plus className="size-4" />Add record</button>
+        </div>
       </div>
-      {showForm && (
-        <form onSubmit={(event) => void submit(event)} className="mb-6 grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[1fr_1fr_auto]">
-          <input value={title} onChange={(event) => setTitle(event.target.value)} required autoFocus className="h-10 rounded-lg border bg-background px-3 text-sm" placeholder="Title" />
-          <input value={detail} onChange={(event) => setDetail(event.target.value)} className="h-10 rounded-lg border bg-background px-3 text-sm" placeholder="Details" />
-          <button className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">Save</button>
-          {error && <p className="text-sm text-destructive sm:col-span-3">{error}</p>}
-        </form>
-      )}
-      <div className="mb-4 flex items-center gap-4 text-sm text-muted-foreground"><span>{records.length} records</span><span>{open} active</span></div>
-      {records.length ? (
+      {showForm && section === "campaigns" && <SimpleRecordForm key={section} section="campaigns" onSubmit={onAdd} />}
+      {showForm && isListSection(section) && section !== "campaigns" && <CaseRecordForm key={section} section={section} onSubmit={onAdd} />}
+      {located && <PlaceFilters value={place} onChange={setPlace} />}
+      <div className="mb-4 flex items-center gap-4 text-sm text-muted-foreground"><span>{shown.length} records</span><span>{open} active</span></div>
+      {approveNote && <p className="mb-4 rounded-lg bg-primary/10 px-3 py-2 text-sm">{approveNote}</p>}
+      {shown.length ? (
         <div className="overflow-hidden rounded-xl border bg-card">
-          {records.map((item) => (
-            <div key={item.id} className="flex flex-col gap-3 border-b p-5 last:border-0 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="font-medium">{item.title}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
-                {item.status === "Reviewed" && item.followUpDepartment ? <p className="mt-1 text-sm">Reviewed. Follow up sent to {item.followUpDepartment}.</p> : null}
+          {shown.map((item) => (
+            <div key={item.id} className="border-b px-5 py-4 last:border-0">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="truncate font-medium">{item.fullName || item.title}</h2>
+                  {item.srNumber ? <p className="mt-1 text-sm text-muted-foreground">Sr. {item.srNumber}</p> : null}
+                  <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{[item.division, item.mandal, item.village, item.assemblyConstituency].filter(Boolean).join(", ") || item.detail}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                  <span className="inline-flex h-6 items-center rounded-full bg-primary/10 px-2.5 text-xs font-medium text-primary">{item.status}</span>
+                  <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{formatWhen(item.date)}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-4 text-sm"><span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{item.status}</span><span className="text-muted-foreground">{formatWhen(item.date)}</span></div>
+              {item.categories?.length ? <p className="mt-2 truncate text-sm">{item.categories.map((category) => (category === "Others" && item.others ? item.others : category)).join(", ")}</p> : null}
+              {item.actionToBeTaken ? <p className="mt-1 truncate text-sm">Action to be taken: {item.actionToBeTaken}</p> : null}
+              {item.assignedOfficer ? <p className="mt-1 truncate text-sm">Assigned officer: {item.assignedOfficer}</p> : null}
+              {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
+              {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
+              {item.status === "Reviewed" && item.followUpDepartment ? <p className="mt-1 text-sm text-muted-foreground">Follow up sent to {item.followUpDepartment}.</p> : null}
+              {item.status === "Approved" && item.followUpDepartment ? <p className="mt-1 text-sm text-muted-foreground">The department, the leader, and the person who raised it were messaged.</p> : null}
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                {(section === "grievances" || section === "projects") && <ReportActions token={token} section={section} id={item.id} />}
+                {section === "grievances" && !item.id.startsWith("demo-") && item.status !== "Approved" && (
+                  <button
+                    type="button"
+                    disabled={approving === item.id}
+                    onClick={() => {
+                      setApproving(item.id);
+                      void onApprove(item.id).then((note) => setApproveNote(note)).catch((err: unknown) => setApproveNote(err instanceof Error ? err.message : "Approval was not sent")).finally(() => setApproving(""));
+                    }}
+                    className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {approving === item.id ? "Approving…" : "Approve"}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
+      ) : records.length ? (
+        <div className="rounded-xl border border-dashed p-12 text-center"><Icon className="mx-auto size-8 text-muted-foreground" /><h2 className="mt-3 font-medium">No records in this place</h2><p className="mt-1 text-sm text-muted-foreground">Choose another division, mandal, or village.</p></div>
       ) : (
         <div className="rounded-xl border border-dashed p-12 text-center"><Icon className="mx-auto size-8 text-muted-foreground" /><h2 className="mt-3 font-medium">Nothing saved yet</h2><p className="mt-1 text-sm text-muted-foreground">Add a record and it is stored in the database.</p></div>
       )}

@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { WorkspaceController } from './workspace.controller';
+import { ProgressController, WorkspaceController } from './workspace.controller';
 import { WorkspaceService } from './workspace.service';
 
 @Module({
-  controllers: [WorkspaceController],
+  controllers: [WorkspaceController, ProgressController],
   providers: [WorkspaceService],
 })
 export class WorkspaceModule {}

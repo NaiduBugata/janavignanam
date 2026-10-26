@@ -151,6 +151,43 @@ function docId(doc: Doc): string {
   return String(doc._id);
 }
 
+function sqlLiteral(value: unknown): string | null {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return null;
+}
+
+/** Count query for an empty filter, field equality, or `$in`. Returns null when the filter needs a full read. */
+function sqlCount(collection: string, filter: Filter): { text: string; params: unknown[] } | null {
+  const params: unknown[] = [collection];
+  const clauses = ['collection = $1'];
+  for (const [key, expected] of Object.entries(filter)) {
+    if (key.startsWith('$')) return null;
+    if (expected === null) {
+      params.push(key);
+      clauses.push(`doc->>$${params.length} IS NULL`);
+      continue;
+    }
+    const literal = sqlLiteral(expected);
+    if (literal !== null) {
+      params.push(key, literal);
+      clauses.push(`doc->>$${params.length - 1} = $${params.length}`);
+      continue;
+    }
+    if (isOperator(expected) && Array.isArray(expected.$in)) {
+      const values = expected.$in.map(sqlLiteral);
+      if (values.some((value) => value === null)) return null;
+      params.push(key, values);
+      clauses.push(`doc->>$${params.length - 1} = ANY($${params.length}::text[])`);
+      continue;
+    }
+    return null;
+  }
+  return {
+    text: `SELECT count(*)::int AS n FROM mediasphere.documents WHERE ${clauses.join(' AND ')}`,
+    params,
+  };
+}
+
 function project(doc: Doc, projection?: Record<string, number>): Doc {
   if (!projection) return doc;
   const include = Object.entries(projection).filter(([, flag]) => flag);
@@ -214,26 +251,31 @@ export class PgDocumentCollection {
   }
 
   find(filter: Filter = {}): QueryCursor {
-    return new QueryCursor(() => this.exclusive(() => this.load()), filter);
+    return new QueryCursor(() => this.load(), filter);
   }
 
   async findOne(filter: Filter = {}, options?: { sort?: Record<string, number>; projection?: Record<string, number> }): Promise<Doc | null> {
-    return this.exclusive(async () => {
-      let rows = (await this.load()).filter((doc) => matches(doc, filter));
-      if (options?.sort) {
-        const [field, direction] = Object.entries(options.sort)[0] || [];
-        if (field) {
-          const sign = direction < 0 ? -1 : 1;
-          rows.sort((a, b) => sign * compare(a[field], b[field]));
-        }
+    const fast = await this.tryFastFindOne(filter, options);
+    if (fast !== undefined) return fast;
+    let rows = (await this.load()).filter((doc) => matches(doc, filter));
+    if (options?.sort) {
+      const [field, direction] = Object.entries(options.sort)[0] || [];
+      if (field) {
+        const sign = direction < 0 ? -1 : 1;
+        rows.sort((a, b) => sign * compare(a[field], b[field]));
       }
-      const doc = rows[0];
-      return doc ? project(doc, options?.projection) : null;
-    });
+    }
+    const doc = rows[0];
+    return doc ? project(doc, options?.projection) : null;
   }
 
   async countDocuments(filter: Filter = {}): Promise<number> {
-    return this.exclusive(async () => (await this.load()).filter((doc) => matches(doc, filter)).length);
+    const counted = sqlCount(this.name, filter);
+    if (counted) {
+      const result = await this.pool.query(counted.text, counted.params);
+      return Number(result.rows[0]?.n || 0);
+    }
+    return (await this.load()).filter((doc) => matches(doc, filter)).length;
   }
 
   async insertOne(doc: Doc): Promise<{ insertedId: unknown }> {
@@ -328,6 +370,29 @@ export class PgDocumentCollection {
 
   async createIndex(_keys: Record<string, number>): Promise<string> {
     return 'ok';
+  }
+
+  /** Equality and `$in` filters can be counted in SQL. Anything else returns null. */
+  private async tryFastFindOne(
+    filter: Filter,
+    options?: { sort?: Record<string, number>; projection?: Record<string, number> },
+  ): Promise<Doc | null | undefined> {
+    const counted = sqlCount(this.name, filter);
+    if (!counted) return undefined;
+    const sort = Object.entries(options?.sort || {});
+    if (sort.length > 1) return undefined;
+    const params = [...counted.params];
+    let text = counted.text.replace(/^SELECT count\(\*\)::int AS n/, 'SELECT doc');
+    if (sort.length === 1) {
+      const [field, direction] = sort[0];
+      params.push(field);
+      text += ` ORDER BY doc->>$${params.length} ${direction < 0 ? 'DESC' : 'ASC'} NULLS LAST`;
+    }
+    text += ' LIMIT 1';
+    const result = await this.pool.query(text, params);
+    const row = result.rows[0] as { doc?: unknown } | undefined;
+    if (!row) return null;
+    return project(hydrate(row.doc), options?.projection);
   }
 
   private async write(doc: Doc): Promise<void> {

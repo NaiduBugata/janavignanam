@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { ArticleRepository } from '../database/repositories/article.repository';
@@ -21,6 +22,7 @@ import {
   type FollowupBucket,
 } from './followup-contacts';
 import { assignDesk, classifyGrievance, departmentOrder, grievanceReceipt, leaderNotice, leaderUpdate, messageLanguage, MOCK_GRIEVANCES, priorityLabel, type GrievanceLanguage, type GrievancePriority } from './grievance-priority';
+import { defaultStages } from '../workspace/progress-report';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
 const RECORDS = 'jv_records';
@@ -165,6 +167,7 @@ export interface MenuRecord {
   reporterPhone?: string;
   source?: string;
   followUpDepartment?: string;
+  progressToken?: string;
 }
 
 export interface ChatbotDeps {
@@ -509,14 +512,15 @@ export class ChatbotService {
     const leaderPhone = phoneForName(desk.leader) || departmentPhone;
     const raiser = raiserPhone(picked);
     const language = picked.language || messageLanguage(issue);
-    const departmentSent = await this.sendNotice(departmentPhone, departmentOrder(issue, desk), fetchImpl, env);
+    const progress = this.progressToken(picked, deps);
+    const departmentSent = await this.sendNotice(departmentPhone, departmentOrder(issue, desk, progressPageUrl(env, progress.token)), fetchImpl, env);
     const leaderSent = await this.sendNotice(leaderPhone, leaderNotice(issue, desk), fetchImpl, env);
     const raiserSent = raiser ? await this.sendNotice(raiser, leaderUpdate(language), fetchImpl, env) : false;
     if (!departmentSent && !leaderSent) {
       await sendTextMessage(sender, 'Follow up was not sent to the department or the leader.', fetchImpl, env);
       return;
     }
-    await this.markGrievanceReviewed(picked, desk.department, deps);
+    await this.markGrievanceReviewed(picked, desk.department, deps, progress);
     const lead = raiser && !raiserSent
       ? 'Follow up sent to the department and the leader. The person who raised it is not in the contact list.'
       : 'Follow up sent.';
@@ -546,8 +550,26 @@ export class ChatbotService {
   }
 
   /** After a follow-up, the grievance leaves the WhatsApp list and shows as reviewed on the website. */
-  private async markGrievanceReviewed(picked: MenuRecord, department: string, deps: ChatbotDeps): Promise<void> {
-    const patch = { status: 'Reviewed', followUpDepartment: department, followUpAt: new Date().toISOString() };
+  private progressToken(picked: MenuRecord, deps: ChatbotDeps): { token: string; fresh: boolean } {
+    const source = (deps.records?.grievances || []).find((row) => sameGrievance(row, picked));
+    const existing = source?.progressToken || picked.progressToken || '';
+    if (existing) return { token: existing, fresh: false };
+    return { token: randomBytes(9).toString('hex'), fresh: true };
+  }
+
+  private async markGrievanceReviewed(
+    picked: MenuRecord,
+    department: string,
+    deps: ChatbotDeps,
+    progress?: { token: string; fresh: boolean },
+  ): Promise<void> {
+    const patch = {
+      status: 'Reviewed',
+      followUpDepartment: department,
+      followUpAt: new Date().toISOString(),
+      ...(progress ? { progressToken: progress.token } : {}),
+      ...(progress?.fresh ? { progressStages: defaultStages(), progressUpdatedAt: new Date().toISOString() } : {}),
+    };
     for (const row of deps.records?.grievances || []) {
       if (sameGrievance(row, picked)) Object.assign(row, patch);
     }
@@ -769,6 +791,7 @@ export class ChatbotService {
         priority: source.priority === 'high' || source.priority === 'normal'
           ? source.priority
           : classifyGrievance(`${text(source.title)} ${text(source.detail)}`).priority,
+        progressToken: text(source.progressToken),
       };
     };
     if (deps.records) {
@@ -1015,7 +1038,13 @@ function issueOf(row: MenuRecord): string {
 }
 
 function isOpenGrievance(row: MenuRecord): boolean {
-  return row.status.trim().toLowerCase() !== 'reviewed';
+  const status = row.status.trim().toLowerCase();
+  return status !== 'reviewed' && status !== 'resolved' && status !== 'approved';
+}
+
+function progressPageUrl(env: NodeJS.ProcessEnv, token: string): string {
+  const base = (env.PUBLIC_APP_URL || 'https://janavignanam-three.vercel.app').trim().replace(/\/$/, '');
+  return `${base}/progress/${token}`;
 }
 
 function sameGrievance(row: MenuRecord, picked: MenuRecord): boolean {

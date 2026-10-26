@@ -64,6 +64,24 @@ export function grievanceReceipt(language: GrievanceLanguage): string {
     : 'Your problem is received. It will be reviewed and solved.';
 }
 
+/** Every department approval notice goes to this WhatsApp number. */
+export const DEPARTMENT_WHATSAPP = '+918919537879';
+
+export function raiserApproval(language: GrievanceLanguage): string {
+  return language === 'te'
+    ? 'మీ సమస్య ఆమోదించబడింది. త్వరలో పరిష్కరించబడుతుంది.'
+    : 'Your grievance has been approved. It will be resolved soon.';
+}
+
+/** Sent to the named leader when the grievance is approved. */
+export function leaderApproval(issue: string, desk: GrievanceDesk): string {
+  const text = issue.replace(/\+?\d[\d\s-]{7,}\d/g, ' ').replace(/\s+/g, ' ').trim();
+  if (messageLanguage(issue) === 'te') {
+    return `ఈ సమస్య ఆమోదించబడింది. దయచేసి త్వరలో పరిష్కరించండి.\n\nశాఖ: ${desk.department}\nప్రాంతం: ${desk.place}\nసమస్య: ${text}\nసంప్రదించాల్సిన నాయకుడు: ${desk.leader}`;
+  }
+  return `This grievance has been approved. Please see that it is resolved soon.\n\nDepartment: ${desk.department}\nLocation: ${desk.place}\nIssue: ${text}\nLeader to contact: ${desk.leader}`;
+}
+
 export function leaderUpdate(language: GrievanceLanguage): string {
   return language === 'te'
     ? 'మీ సమస్యను పరిష్కరిస్తున్నాము. కొన్ని రోజుల్లో లేదా వీలైనంత త్వరగా పరిష్కారం అవుతుంది. ధన్యవాదాలు.'
@@ -97,12 +115,17 @@ export function assignDesk(value: string): GrievanceDesk {
   };
 }
 
-export function departmentOrder(issue: string, desk: GrievanceDesk): string {
+export function departmentOrder(issue: string, desk: GrievanceDesk, progressUrl?: string): string {
   const text = issue.replace(/\+?\d[\d\s-]{7,}\d/g, ' ').replace(/\s+/g, ' ').trim();
+  const link = progressUrl
+    ? messageLanguage(issue) === 'te'
+      ? `\n\nపని పురోగతిని ఇక్కడ నవీకరించండి:\n${progressUrl}`
+      : `\n\nUpdate the work progress:\n${progressUrl}`
+    : '';
   if (messageLanguage(issue) === 'te') {
-    return `దీన్ని వెంటనే పరిష్కరించాలి.\n\nశాఖ: ${desk.department}\nప్రాంతం: ${desk.place}\nసమస్య: ${text}\nసంప్రదించాల్సిన నాయకుడు: ${desk.leader}`;
+    return `దీన్ని వెంటనే పరిష్కరించాలి.\n\nశాఖ: ${desk.department}\nప్రాంతం: ${desk.place}\nసమస్య: ${text}\nసంప్రదించాల్సిన నాయకుడు: ${desk.leader}${link}`;
   }
-  return `Need to solve this immediately.\n\nDepartment: ${desk.department}\nLocation: ${desk.place}\nIssue: ${text}\nLeader to contact: ${desk.leader}`;
+  return `Need to solve this immediately.\n\nDepartment: ${desk.department}\nLocation: ${desk.place}\nIssue: ${text}\nLeader to contact: ${desk.leader}${link}`;
 }
 
 /** Sample issues. The person who raised each one is split between Bobby and Sravani. */

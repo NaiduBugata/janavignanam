@@ -1,10 +1,14 @@
-import { ConflictException, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { ObjectId } from 'mongodb';
 import { DatabaseService } from '../database/database.service';
 import { demoProjectDocs, isDemoDataEnabled, isDemoDoc } from '../admin/demo-data';
-import { WORKSPACE_SECTIONS, type WorkspaceSection } from './workspace.dto';
+import { assignDesk, DEPARTMENT_WHATSAPP, leaderApproval, messageLanguage, raiserApproval } from '../chatbot/grievance-priority';
+import { phoneForName } from '../whatsapp/whatsapp.audience';
+import { sendTemplateMessage, sendTextMessage } from '../whatsapp/whatsapp.send';
+import { CASE_SECTIONS, TRACKED_SECTIONS, WORKSPACE_SECTIONS, type WorkspaceSection } from './workspace.dto';
+import { combinedPdf, defaultStages, recordsWorkbook, reportPdf, type ProgressStage, type ReportRow } from './progress-report';
 
 const USERS = 'jv_users';
 const RECORDS = 'jv_records';
@@ -24,7 +28,61 @@ export interface WorkspaceRecord {
   date: string;
   createdBy: string;
   followUpDepartment: string;
+  srNumber: string;
+  fullName: string;
+  contactNumber: string;
+  address: string;
+  email: string;
+  village: string;
+  mandal: string;
+  division: string;
+  assemblyConstituency: string;
+  dateOfVisit: string;
+  referenceName: string;
+  referenceNumber: string;
+  categories: string[];
+  others: string;
+  actionTaken: string;
+  actionToBeTaken: string;
+  assignedOfficer: string;
+  resolutionStatus: string;
+  deadline: string;
+  place: string;
+  visitDate: string;
+  visitTime: string;
+  leadPhone: string;
+  progressToken: string;
+  progressStages: ProgressStage[];
+  progressUpdatedAt: string;
+  department: string;
+  leader: string;
 }
+
+type CaseInput = {
+  srNumber?: string;
+  fullName?: string;
+  contactNumber?: string;
+  address?: string;
+  email?: string;
+  village?: string;
+  mandal?: string;
+  division?: string;
+  assemblyConstituency?: string;
+  dateOfVisit?: string;
+  referenceName?: string;
+  referenceNumber?: string;
+  categories?: string[];
+  others?: string;
+  actionTaken?: string;
+  actionToBeTaken?: string;
+  assignedOfficer?: string;
+  resolutionStatus?: string;
+  deadline?: string;
+  place?: string;
+  visitDate?: string;
+  visitTime?: string;
+  leadPhone?: string;
+};
 
 @Injectable()
 export class WorkspaceService {
@@ -76,19 +134,183 @@ export class WorkspaceService {
     return shown.map(toRecord);
   }
 
-  async create(input: { section: WorkspaceSection; title: string; detail?: string; status?: string; createdBy: string }): Promise<WorkspaceRecord> {
+  async create(input: { section: WorkspaceSection; title?: string; detail?: string; status?: string; createdBy: string } & CaseInput): Promise<WorkspaceRecord> {
     await this.ready();
     const createdAt = new Date().toISOString();
+    const visitor = (CASE_SECTIONS as readonly string[]).includes(input.section);
     const doc = {
       section: input.section,
-      title: input.title.trim(),
-      detail: (input.detail || '').trim(),
-      status: (input.status || 'Open').trim() || 'Open',
+      title: (visitor ? input.fullName || '' : input.title || '').trim(),
+      detail: (input.detail || (visitor ? caseDetail(input) : '')).trim(),
+      status: (visitor ? input.resolutionStatus : input.status || 'Open') || 'Open',
       createdAt,
       createdBy: input.createdBy,
+      ...(visitor ? storedCase(input) : simpleStored(input)),
+      ...((TRACKED_SECTIONS as readonly string[]).includes(input.section)
+        ? { progressToken: randomBytes(9).toString('hex'), progressStages: defaultStages(), progressUpdatedAt: createdAt }
+        : {}),
     };
     const inserted = await this.db.collection(RECORDS).insertOne(doc);
     return toRecord({ ...doc, _id: inserted.insertedId });
+  }
+
+  async update(id: string, input: CaseInput): Promise<WorkspaceRecord> {
+    await this.ready();
+    const existing = await this.storedRecord(id);
+    const visitor = (CASE_SECTIONS as readonly string[]).includes(String(existing.section || ''));
+    const saved = await this.db.collection(RECORDS).findOneAndUpdate({ _id: asId(id) as never }, { $set: visitor ? storedCase(input) : simpleStored(input) });
+    if (!saved) throw new NotFoundException('Record not found');
+    return toRecord({ ...existing, ...saved });
+  }
+
+  async remove(id: string): Promise<{ deleted: true }> {
+    await this.ready();
+    await this.storedRecord(id);
+    const result = await this.db.collection(RECORDS).deleteOne({ _id: asId(id) as never });
+    if (!result.deletedCount) throw new NotFoundException('Record not found');
+    return { deleted: true };
+  }
+
+  private async readRecord(id: string): Promise<Record<string, unknown>> {
+    if (id.startsWith('demo-')) {
+      const sample = demoProjectDocs().find((doc) => String(doc._id) === id);
+      if (!sample) throw new NotFoundException('Record not found');
+      return sample;
+    }
+    const existing = await this.db.collection(RECORDS).findOne({ _id: asId(id) as never });
+    if (!existing) throw new NotFoundException('Record not found');
+    return existing;
+  }
+
+  private async storedRecord(id: string): Promise<Record<string, unknown>> {
+    const existing = await this.readRecord(id);
+    if (id.startsWith('demo-') || isDemoDoc(existing)) throw new BadRequestException('Sample records cannot be changed');
+    return existing;
+  }
+
+  async get(id: string): Promise<WorkspaceRecord> {
+    await this.ready();
+    let doc = await this.readRecord(id);
+    if (id.startsWith('demo-') || isDemoDoc(doc)) {
+      const record = toRecord(doc);
+      if ((TRACKED_SECTIONS as readonly string[]).includes(record.section) && record.progressStages.length === 0) {
+        return { ...record, progressStages: defaultStages() };
+      }
+      return record;
+    }
+    const section = String(doc.section || '');
+    if ((TRACKED_SECTIONS as readonly string[]).includes(section) && !text(doc.progressToken)) {
+      const progressToken = randomBytes(9).toString('hex');
+      const stages = stagesOf(doc.progressStages);
+      const saved = await this.db.collection(RECORDS).findOneAndUpdate(
+        { _id: asId(id) as never },
+        { $set: { progressToken, ...(stages.length ? {} : { progressStages: defaultStages(), progressUpdatedAt: new Date().toISOString() }) } },
+      );
+      if (saved) doc = saved;
+    }
+    return toRecord(doc);
+  }
+
+  async approve(id: string): Promise<{ record: WorkspaceRecord; notice: string }> {
+    await this.ready();
+    const existing = await this.readRecord(id);
+    if (String(existing.section || '') !== 'grievances') throw new BadRequestException('Only a grievance can be approved');
+    if (id.startsWith('demo-') || isDemoDoc(existing)) throw new BadRequestException('Sample grievances are not sent on WhatsApp');
+    if (String(existing.status || '') === 'Approved') {
+      return { record: toRecord(existing), notice: 'This grievance is already approved.' };
+    }
+    const record = toRecord(existing);
+    const issue = [record.detail, record.title, record.village, record.place].filter(Boolean).join(' ');
+    const desk = assignDesk(issue);
+    const language = messageLanguage(issue);
+    const fresh = !text(existing.progressToken);
+    const token = text(existing.progressToken) || randomBytes(9).toString('hex');
+    const raiser = whatsappNumber(record.contactNumber || text(existing.reporterPhone));
+    const leaderPhone = phoneForName(desk.leader);
+
+    try {
+      await sendDepartmentLink(desk, issue, token);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'send failed';
+      throw new BadRequestException(`The department message was not sent. The grievance was not approved. ${reason}`.slice(0, 300));
+    }
+    const leaderSent = leaderPhone ? await sendQuiet(leaderPhone, leaderApproval(issue, desk)) : false;
+    const raiserSent = raiser ? await sendQuiet(raiser, raiserApproval(language)) : false;
+
+    const patch = {
+      status: 'Approved',
+      followUpDepartment: desk.department,
+      followUpAt: new Date().toISOString(),
+      progressToken: token,
+      ...(fresh ? { progressStages: defaultStages(), progressUpdatedAt: new Date().toISOString() } : {}),
+    };
+    const saved = await this.db.collection(RECORDS).findOneAndUpdate({ _id: asId(id) as never }, { $set: patch });
+    const notice = [
+      'Approved.',
+      raiserSent ? 'The person who raised it was messaged.' : 'The person who raised it has no WhatsApp number on this grievance.',
+      leaderSent ? `${desk.leader} was messaged.` : `${desk.leader} is not in the contact list.`,
+      'The department was sent the progress link.',
+    ].join(' ');
+    return { record: toRecord({ ...existing, ...(saved || {}), ...patch }), notice };
+  }
+
+  async progressByToken(token: string): Promise<{
+    title: string;
+    detail: string;
+    department: string;
+    place: string;
+    leader: string;
+    status: string;
+    stages: ProgressStage[];
+    updatedAt: string;
+  }> {
+    const row = reportOf(await this.byToken(token));
+    return {
+      title: row.title,
+      detail: row.detail,
+      department: row.department,
+      place: row.place,
+      leader: row.leader,
+      status: row.status,
+      stages: row.stages,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  async saveProgress(token: string, stages: ProgressStage[]): Promise<void> {
+    await this.ready();
+    await this.byToken(token);
+    const saved = await this.db.collection(RECORDS).findOneAndUpdate(
+      { progressToken: token },
+      { $set: { progressStages: stages, progressUpdatedAt: new Date().toISOString() } },
+    );
+    if (!saved) throw new NotFoundException('This progress link is no longer available');
+  }
+
+  async reportFile(id: string): Promise<{ name: string; bytes: Buffer }> {
+    const row = reportOf(await this.get(id));
+    return { name: fileName(row.title, 'pdf'), bytes: reportPdf(row) };
+  }
+
+  async reportBundle(section: 'grievances' | 'projects', format: 'pdf' | 'xlsx'): Promise<{ name: string; type: string; bytes: Buffer }> {
+    await this.ready();
+    const rows = (await this.list(section)).filter((row) => !row.id.startsWith('demo-')).map((row) => reportOf(row));
+    if (format === 'xlsx') {
+      return {
+        name: `${section}-reports.xlsx`,
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        bytes: await recordsWorkbook(rows),
+      };
+    }
+    return { name: `${section}-reports.pdf`, type: 'application/pdf', bytes: combinedPdf(rows) };
+  }
+
+  private async byToken(token: string): Promise<WorkspaceRecord> {
+    await this.ready();
+    if (!/^[a-f0-9]{18}$/i.test(token)) throw new NotFoundException('This progress link is no longer available');
+    const doc = await this.db.collection(RECORDS).findOne({ progressToken: token });
+    if (!doc || isDemoDoc(doc)) throw new NotFoundException('This progress link is no longer available');
+    return toRecord(doc);
   }
 
   async summary(): Promise<{
@@ -102,7 +324,7 @@ export class WorkspaceService {
     for (const section of WORKSPACE_SECTIONS) {
       counts[section] = await this.db.collection(RECORDS).countDocuments({ section });
     }
-    const open = await this.db.collection(RECORDS).countDocuments({ status: { $in: ['Open', 'In progress'] } });
+    const open = await this.db.collection(RECORDS).countDocuments({ status: { $in: ['Open', 'Pending', 'In progress'] } });
     let news = 0;
     try {
       news = await this.db.collection(this.db.articlesCollectionName).countDocuments({});
@@ -156,19 +378,174 @@ function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(next, prev);
 }
 
+/** Approved template, so WhatsApp delivers it after the 24-hour reply window has closed. */
+async function sendDepartmentLink(desk: { department: string; place: string; leader: string }, issue: string, token: string): Promise<void> {
+  const clean = (value: string) => value.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 200) || '—';
+  const when = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  await sendTemplateMessage(DEPARTMENT_WHATSAPP, 'jv_mp_action_request', {
+    language: 'en',
+    bodyParameters: [
+      clean(desk.department),
+      clean(issue),
+      clean(`${desk.place} - ${desk.leader}`),
+      when,
+    ],
+    urlButton: `progress/${token}`,
+  });
+}
+
+function whatsappNumber(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length >= 8 && digits.length <= 15) return digits;
+  return '';
+}
+
+async function sendQuiet(phone: string, body: string): Promise<boolean> {
+  try {
+    await sendTextMessage(phone, body);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function asId(id: string): ObjectId | string {
   return ObjectId.isValid(id) && String(new ObjectId(id)) === id ? new ObjectId(id) : id;
 }
 
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function simpleStored(input: { title?: string; detail?: string; status?: string } & CaseInput): Record<string, unknown> {
+  return {
+    title: (input.title || '').trim(),
+    detail: (input.detail || '').trim(),
+    status: input.status || 'Open',
+    place: input.place || '',
+    visitDate: input.visitDate || '',
+    visitTime: input.visitTime || '',
+    leadPhone: input.leadPhone || '',
+  };
+}
+
+function storedCase(input: CaseInput): Record<string, unknown> {
+  const categories = input.categories || [];
+  const place = [input.village, input.mandal, input.division, input.assemblyConstituency].filter(Boolean).join(', ');
+  return {
+    title: (input.fullName || '').trim(),
+    detail: caseDetail(input),
+    status: input.resolutionStatus || 'Open',
+    srNumber: input.srNumber || '',
+    fullName: input.fullName || '',
+    contactNumber: input.contactNumber || '',
+    address: input.address || '',
+    email: input.email || '',
+    village: input.village || '',
+    mandal: input.mandal || '',
+    division: input.division || '',
+    assemblyConstituency: input.assemblyConstituency || '',
+    dateOfVisit: input.dateOfVisit || '',
+    referenceName: input.referenceName || '',
+    referenceNumber: input.referenceNumber || '',
+    categories,
+    others: categories.includes('Others') ? input.others || '' : '',
+    actionTaken: input.actionTaken || '',
+    actionToBeTaken: input.actionToBeTaken || '',
+    assignedOfficer: input.assignedOfficer || '',
+    resolutionStatus: input.resolutionStatus || '',
+    deadline: input.deadline || '',
+    place,
+    visitDate: input.dateOfVisit || '',
+  };
+}
+
+function caseDetail(input: CaseInput): string {
+  const picked = (input.categories || []).filter((item) => item !== 'Others');
+  if (input.categories?.includes('Others') && input.others) picked.push(input.others);
+  return [picked.join(', '), input.actionToBeTaken ? `Action to be taken: ${input.actionToBeTaken}` : ''].filter(Boolean).join('. ');
+}
+
 function toRecord(doc: Record<string, unknown>): WorkspaceRecord {
+  const categories = Array.isArray(doc.categories) ? doc.categories.map((item) => String(item)) : [];
   return {
     id: String(doc._id),
     section: doc.section as WorkspaceSection,
     title: String(doc.title || ''),
     detail: String(doc.detail || ''),
     status: String(doc.status || 'Open'),
-    date: String(doc.createdAt || ''),
+    date: text(doc.dateOfVisit) || text(doc.visitDate) || String(doc.createdAt || ''),
     createdBy: String(doc.createdBy || ''),
     followUpDepartment: String(doc.followUpDepartment || ''),
+    srNumber: text(doc.srNumber),
+    fullName: text(doc.fullName),
+    contactNumber: text(doc.contactNumber),
+    address: text(doc.address),
+    email: text(doc.email),
+    village: text(doc.village),
+    mandal: text(doc.mandal),
+    division: text(doc.division),
+    assemblyConstituency: text(doc.assemblyConstituency),
+    dateOfVisit: text(doc.dateOfVisit),
+    referenceName: text(doc.referenceName),
+    referenceNumber: text(doc.referenceNumber),
+    categories,
+    others: text(doc.others),
+    actionTaken: text(doc.actionTaken),
+    actionToBeTaken: text(doc.actionToBeTaken),
+    assignedOfficer: text(doc.assignedOfficer),
+    resolutionStatus: text(doc.resolutionStatus),
+    deadline: text(doc.deadline),
+    place: text(doc.place),
+    visitDate: text(doc.visitDate) || text(doc.dateOfVisit),
+    visitTime: text(doc.visitTime),
+    leadPhone: text(doc.leadPhone),
+    progressToken: text(doc.progressToken),
+    progressStages: stagesOf(doc.progressStages),
+    progressUpdatedAt: text(doc.progressUpdatedAt),
+    ...deskFields(doc),
   };
+}
+
+function deskFields(doc: Record<string, unknown>): { department: string; leader: string } {
+  const section = String(doc.section || '');
+  if (section !== 'grievances' && section !== 'projects') return { department: '', leader: '' };
+  const desk = assignDesk(`${text(doc.title)} ${text(doc.detail)} ${text(doc.village)} ${text(doc.place)}`);
+  return { department: text(doc.followUpDepartment) || desk.department, leader: desk.leader };
+}
+
+function stagesOf(value: unknown): ProgressStage[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const stage = item as Record<string, unknown>;
+    const status = stage.status === 'Completed' || stage.status === 'In progress' || stage.status === 'Pending' ? stage.status : 'Pending';
+    const name = text(stage.name);
+    if (!name) return [];
+    return [{ name, status, note: text(stage.note) }];
+  });
+}
+
+function reportOf(record: WorkspaceRecord): ReportRow {
+  const issue = record.detail || record.title;
+  const desk = assignDesk(`${record.title} ${record.detail} ${record.village} ${record.place}`);
+  return {
+    title: record.fullName || record.title,
+    detail: issue,
+    status: record.status,
+    department: record.followUpDepartment || desk.department,
+    place: [record.village, record.mandal, record.assemblyConstituency].filter(Boolean).join(', ') || record.place || desk.place,
+    leader: desk.leader,
+    officer: record.assignedOfficer,
+    action: record.actionToBeTaken,
+    deadline: record.deadline,
+    stages: record.progressStages.length ? record.progressStages : defaultStages(),
+    updatedAt: record.progressUpdatedAt,
+  };
+}
+
+function fileName(title: string, extension: string): string {
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'report';
+  return `${slug}.${extension}`;
 }

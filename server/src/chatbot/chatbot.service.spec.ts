@@ -675,6 +675,8 @@ describe('ChatbotService', () => {
     expect(order).toContain('Vinukonda');
     expect(order).toContain('No drinking water');
     expect(order).toContain('Leader to contact: Ramesh');
+    expect(order).toContain('Update the work progress:');
+    expect(order).toContain('/progress/');
     expect(order).not.toContain('Udatha');
     expect(order).not.toContain('918885230708');
     expect(messageText(texts[1])).toContain('leader to contact for this issue: Ramesh');

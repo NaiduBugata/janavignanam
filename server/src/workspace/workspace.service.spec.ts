@@ -10,7 +10,22 @@ describe('WorkspaceService', () => {
       ensureConnected: async () => true,
       articlesCollectionName: 'articles',
       collection: (name: string) => ({
-        findOne: async (filter: { email?: string }) => users.find((row) => row.email === filter.email) || null,
+        findOne: async (filter: { email?: string; _id?: unknown }) => {
+          const rows = name === 'jv_users' ? users : records;
+          return rows.find((row) => (filter.email != null ? row.email === filter.email : String(row._id) === String(filter._id))) || null;
+        },
+        findOneAndUpdate: async (filter: { _id?: unknown }, update: { $set?: Record<string, unknown> }) => {
+          const row = records.find((item) => String(item._id) === String(filter._id));
+          if (!row) return null;
+          Object.assign(row, update.$set || {});
+          return row;
+        },
+        deleteOne: async (filter: { _id?: unknown }) => {
+          const index = records.findIndex((item) => String(item._id) === String(filter._id));
+          if (index < 0) return { deletedCount: 0 };
+          records.splice(index, 1);
+          return { deletedCount: 1 };
+        },
         insertOne: async (doc: Record<string, unknown>) => {
           const _id = `${name}-${(name === 'jv_users' ? users : records).length + 1}`;
           const row = { ...doc, _id };
@@ -41,8 +56,38 @@ describe('WorkspaceService', () => {
       title: 'Water supply',
       detail: 'Ward 14',
       createdBy: again.user.email,
+      fullName: 'Lakshmi',
+      village: 'Chilakaluripet',
+      categories: ['Water'],
+      resolutionStatus: 'Pending',
     });
-    expect(row.title).toBe('Water supply');
+    expect(row.title).toBe('Lakshmi');
+    expect(row.progressToken).toHaveLength(18);
+    expect(row.fullName).toBe('Lakshmi');
+    expect(row.village).toBe('Chilakaluripet');
+    expect(row.status).toBe('Pending');
     expect(await service.list('grievances')).toHaveLength(1);
+
+    const updated = await service.update(row.id, {
+      fullName: 'Lakshmi Rao',
+      resolutionStatus: 'Resolved',
+      categories: ['Water'],
+      village: 'Chilakaluripet',
+    });
+    expect(updated.fullName).toBe('Lakshmi Rao');
+    expect(updated.status).toBe('Resolved');
+    await service.remove(row.id);
+    expect(await service.list('grievances')).toHaveLength(0);
+
+    const campaign = await service.create({
+      section: 'campaigns',
+      title: 'Door to door',
+      detail: 'Narasaraopet ward visits this week.',
+      status: 'Open',
+      createdBy: again.user.email,
+    });
+    expect(campaign.title).toBe('Door to door');
+    expect(campaign.detail).toBe('Narasaraopet ward visits this week.');
+    expect(campaign.progressToken).toBe('');
   });
 });
