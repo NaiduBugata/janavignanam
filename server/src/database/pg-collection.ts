@@ -1,7 +1,21 @@
 import { ObjectId } from 'mongodb';
-import type { Pool } from 'pg';
 
-const DATE_FIELDS = new Set(['expires_at', 'acquired_at', 'updated_at', 'released_at']);
+export interface SqlPool {
+  query(
+    sql: string,
+    params?: unknown[],
+  ): Promise<{
+    rows: Array<Record<string, unknown>>;
+    rowCount?: number | null;
+  }>;
+}
+
+const DATE_FIELDS = new Set([
+  'expires_at',
+  'acquired_at',
+  'updated_at',
+  'released_at',
+]);
 
 export class DuplicateDocumentError extends Error {
   readonly code = 11000;
@@ -21,12 +35,17 @@ function isOperator(value: unknown): value is Record<string, unknown> {
 }
 
 function isObjectId(value: unknown): value is ObjectId {
-  return Boolean(value && typeof value === 'object' && typeof (value as ObjectId).toHexString === 'function');
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    typeof (value as ObjectId).toHexString === 'function',
+  );
 }
 
 function idKey(value: unknown): string | null {
   if (isObjectId(value)) return value.toHexString();
-  if (typeof value === 'string' && /^[a-f0-9]{24}$/i.test(value)) return value.toLowerCase();
+  if (typeof value === 'string' && /^[a-f0-9]{24}$/i.test(value))
+    return value.toLowerCase();
   return null;
 }
 
@@ -85,7 +104,8 @@ export function matches(doc: Doc, filter: Filter | undefined): boolean {
   for (const [key, expected] of entries) {
     if (key === '$or') {
       const clauses = Array.isArray(expected) ? expected : [];
-      if (!clauses.some((clause) => matches(doc, clause as Filter))) return false;
+      if (!clauses.some((clause) => matches(doc, clause as Filter)))
+        return false;
       continue;
     }
     if (!matchValue(doc[key], expected)) return false;
@@ -139,7 +159,8 @@ function toJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(toJson);
   if (value && typeof value === 'object') {
     const next: Doc = {};
-    for (const [key, item] of Object.entries(value as Doc)) next[key] = toJson(item);
+    for (const [key, item] of Object.entries(value as Doc))
+      next[key] = toJson(item);
     return next;
   }
   return value;
@@ -152,12 +173,20 @@ function docId(doc: Doc): string {
 }
 
 function sqlLiteral(value: unknown): string | null {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  )
+    return String(value);
   return null;
 }
 
 /** Count query for an empty filter, field equality, or `$in`. Returns null when the filter needs a full read. */
-function sqlCount(collection: string, filter: Filter): { text: string; params: unknown[] } | null {
+function sqlCount(
+  collection: string,
+  filter: Filter,
+): { text: string; params: unknown[] } | null {
   const params: unknown[] = [collection];
   const clauses = ['collection = $1'];
   for (const [key, expected] of Object.entries(filter)) {
@@ -177,7 +206,9 @@ function sqlCount(collection: string, filter: Filter): { text: string; params: u
       const values = expected.$in.map(sqlLiteral);
       if (values.some((value) => value === null)) return null;
       params.push(key, values);
-      clauses.push(`doc->>$${params.length - 1} = ANY($${params.length}::text[])`);
+      clauses.push(
+        `doc->>$${params.length - 1} = ANY($${params.length}::text[])`,
+      );
       continue;
     }
     return null;
@@ -237,7 +268,7 @@ class QueryCursor {
 /** Document collection stored as JSON rows in Neon (`mediasphere.documents`). */
 export class PgDocumentCollection {
   constructor(
-    private readonly pool: Pool,
+    private readonly pool: SqlPool,
     private readonly name: string,
     private readonly exclusive: <T>(fn: () => Promise<T>) => Promise<T>,
   ) {}
@@ -254,10 +285,16 @@ export class PgDocumentCollection {
     return new QueryCursor(() => this.load(), filter);
   }
 
-  async findOne(filter: Filter = {}, options?: { sort?: Record<string, number>; projection?: Record<string, number> }): Promise<Doc | null> {
+  async findOne(
+    filter: Filter = {},
+    options?: {
+      sort?: Record<string, number>;
+      projection?: Record<string, number>;
+    },
+  ): Promise<Doc | null> {
     const fast = await this.tryFastFindOne(filter, options);
     if (fast !== undefined) return fast;
-    let rows = (await this.load()).filter((doc) => matches(doc, filter));
+    const rows = (await this.load()).filter((doc) => matches(doc, filter));
     if (options?.sort) {
       const [field, direction] = Object.entries(options.sort)[0] || [];
       if (field) {
@@ -319,17 +356,32 @@ export class PgDocumentCollection {
     filter: Filter,
     update: { $set?: Doc; $setOnInsert?: Doc },
     options?: { upsert?: boolean },
-  ): Promise<{ matchedCount: number; modifiedCount: number; upsertedCount: number; upsertedId: unknown }> {
+  ): Promise<{
+    matchedCount: number;
+    modifiedCount: number;
+    upsertedCount: number;
+    upsertedId: unknown;
+  }> {
     return this.exclusive(async () => {
       const rows = await this.load();
       const hit = rows.find((doc) => matches(doc, filter));
       if (hit) {
         Object.assign(hit, update.$set || {});
         await this.write(hit);
-        return { matchedCount: 1, modifiedCount: 1, upsertedCount: 0, upsertedId: null };
+        return {
+          matchedCount: 1,
+          modifiedCount: 1,
+          upsertedCount: 0,
+          upsertedId: null,
+        };
       }
       if (!options?.upsert) {
-        return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0, upsertedId: null };
+        return {
+          matchedCount: 0,
+          modifiedCount: 0,
+          upsertedCount: 0,
+          upsertedId: null,
+        };
       }
       const created: Doc = {
         ...equalityFields(filter),
@@ -338,7 +390,12 @@ export class PgDocumentCollection {
       };
       docId(created);
       await this.write(created);
-      return { matchedCount: 0, modifiedCount: 0, upsertedCount: 1, upsertedId: created._id };
+      return {
+        matchedCount: 0,
+        modifiedCount: 0,
+        upsertedCount: 1,
+        upsertedId: created._id,
+      };
     });
   }
 
@@ -375,14 +432,20 @@ export class PgDocumentCollection {
   /** Equality and `$in` filters can be counted in SQL. Anything else returns null. */
   private async tryFastFindOne(
     filter: Filter,
-    options?: { sort?: Record<string, number>; projection?: Record<string, number> },
+    options?: {
+      sort?: Record<string, number>;
+      projection?: Record<string, number>;
+    },
   ): Promise<Doc | null | undefined> {
     const counted = sqlCount(this.name, filter);
     if (!counted) return undefined;
     const sort = Object.entries(options?.sort || {});
     if (sort.length > 1) return undefined;
     const params = [...counted.params];
-    let text = counted.text.replace(/^SELECT count\(\*\)::int AS n/, 'SELECT doc');
+    let text = counted.text.replace(
+      /^SELECT count\(\*\)::int AS n/,
+      'SELECT doc',
+    );
     if (sort.length === 1) {
       const [field, direction] = sort[0];
       params.push(field);

@@ -5,9 +5,10 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { neonConfig, Pool as NeonWsPool } from '@neondatabase/serverless';
 import { Socket, type SocketConnectOpts } from 'node:net';
 import { Pool } from 'pg';
-import { PgDocumentCollection } from './pg-collection';
+import { PgDocumentCollection, type SqlPool } from './pg-collection';
 
 /** One IPv4 address. Node's default Happy Eyeballs race also tries IPv6. */
 export function neonConnectOptions(
@@ -19,6 +20,55 @@ export function neonConnectOptions(
     host,
     family: 4,
     autoSelectFamily: false,
+  };
+}
+
+const UNREACHABLE = new Set([
+  'ETIMEDOUT',
+  'ENETUNREACH',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'ECONNRESET',
+]);
+
+/** True when the driver never completed a TCP session. Authentication errors are not included. */
+export function isNeonReachabilityError(err: unknown): boolean {
+  if (err == null) return false;
+  if (err instanceof AggregateError)
+    return err.errors.some((item) => isNeonReachabilityError(item));
+  if (!(err instanceof Error)) return false;
+  const rawCode = 'code' in err ? err.code : undefined;
+  const code =
+    typeof rawCode === 'string' || typeof rawCode === 'number'
+      ? String(rawCode)
+      : '';
+  if (UNREACHABLE.has(code)) return true;
+  return 'cause' in err && err.cause !== err
+    ? isNeonReachabilityError(err.cause)
+    : false;
+}
+
+function asSqlPool(pool: {
+  query: (
+    sql: string,
+    params?: unknown[],
+  ) => Promise<{
+    rows: unknown[];
+    rowCount?: number | null;
+  }>;
+  end: () => Promise<void>;
+}): SqlPool & { end: () => Promise<void> } {
+  return {
+    query: async (sql, params) => {
+      const result = await pool.query(sql, params);
+      return {
+        rows: result.rows as Array<Record<string, unknown>>,
+        rowCount: result.rowCount,
+      };
+    },
+    end: () => pool.end(),
   };
 }
 
@@ -92,7 +142,7 @@ export function describeDbError(err: unknown): string {
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
-  private pool: Pool | null = null;
+  private pool: (SqlPool & { end: () => Promise<void> }) | null = null;
   private connected = false;
   private connectPromise: Promise<void> | null = null;
   private readonly gates = new Map<string, Promise<unknown>>();
@@ -140,17 +190,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.connectPromise = (async () => {
-      if (!this.pool) {
-        this.pool = new Pool({
-          connectionString: uri.trim(),
-          ssl: { rejectUnauthorized: true },
-          max: 5,
-          connectionTimeoutMillis: 10000,
-          // pg connects by hostname, and Node 24 races AAAA records. Railway has
-          // no IPv6 route, so that race reports ENETUNREACH plus IPv4 timeouts.
-          stream: () => createNeonSocket(),
-        });
-      }
+      if (!this.pool) this.pool = await this.openPool(uri.trim());
       await this.pool.query('SELECT 1');
       await this.pool.query('CREATE SCHEMA IF NOT EXISTS mediasphere');
       await this.pool.query(`
@@ -174,6 +214,39 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     } finally {
       this.connectPromise = null;
     }
+  }
+
+  private async openPool(uri: string) {
+    const tcp = new Pool({
+      connectionString: uri,
+      ssl: { rejectUnauthorized: true },
+      max: 5,
+      connectionTimeoutMillis: 8000,
+      // pg connects by hostname, and Node 24 races AAAA records. Railway has
+      // no IPv6 route, so that race reports ENETUNREACH plus IPv4 timeouts.
+      stream: () => createNeonSocket(),
+    });
+    try {
+      await tcp.query('SELECT 1');
+      this.logger.log('Neon connected over IPv4');
+      return asSqlPool(tcp);
+    } catch (err) {
+      await tcp.end().catch(() => undefined);
+      if (!isNeonReachabilityError(err)) throw err;
+      this.logger.warn(
+        `Neon TCP unreachable; using the TLS websocket proxy: ${describeDbError(err)}`,
+      );
+      return this.openWebSocketPool(uri);
+    }
+  }
+
+  private async openWebSocketPool(uri: string) {
+    // wss provides the TLS session. Do not disable certificate checks.
+    neonConfig.useSecureWebSocket = true;
+    const pool = new NeonWsPool({ connectionString: uri, max: 5 });
+    await pool.query('SELECT 1');
+    this.logger.log('Neon connected over TLS websocket');
+    return asSqlPool(pool);
   }
 
   async close(): Promise<void> {

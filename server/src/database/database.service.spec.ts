@@ -1,6 +1,7 @@
 import {
   DatabaseService,
   describeDbError,
+  isNeonReachabilityError,
   neonConnectOptions,
 } from './database.service';
 import { ConfigService } from '@nestjs/config';
@@ -47,5 +48,21 @@ describe('DatabaseService health probe contract helpers', () => {
       family: 4,
       autoSelectFamily: false,
     });
+  });
+
+  it('treats TCP timeouts as unreachable and leaves authentication errors alone', () => {
+    const timeout = Object.assign(new Error('connect ETIMEDOUT ipv4:5432'), {
+      code: 'ETIMEDOUT',
+    });
+    expect(isNeonReachabilityError(new AggregateError([timeout], ''))).toBe(
+      true,
+    );
+    expect(
+      isNeonReachabilityError(
+        Object.assign(new Error('password authentication failed'), {
+          code: '28P01',
+        }),
+      ),
+    ).toBe(false);
   });
 });
