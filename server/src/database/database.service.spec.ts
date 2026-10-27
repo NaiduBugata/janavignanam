@@ -1,4 +1,8 @@
-import { DatabaseService, describeDbError } from './database.service';
+import {
+  DatabaseService,
+  describeDbError,
+  neonConnectOptions,
+} from './database.service';
 import { ConfigService } from '@nestjs/config';
 
 describe('DatabaseService health probe contract helpers', () => {
@@ -22,10 +26,11 @@ describe('DatabaseService health probe contract helpers', () => {
   it('reports a nested connection code without the database URL or address', () => {
     const inner = Object.assign(new Error('connect ENETUNREACH 2001:db8::1'), {
       code: 'ENETUNREACH',
+      syscall: 'connect',
     });
     const wrapped = new AggregateError([inner], '');
     const text = describeDbError(wrapped);
-    expect(text).toContain('ENETUNREACH');
+    expect(text).toContain('ENETUNREACH connect');
     expect(text).not.toContain('2001:db8');
     expect(
       describeDbError(
@@ -33,5 +38,14 @@ describe('DatabaseService health probe contract helpers', () => {
       ),
     ).toBe('failed postgresql://***');
     expect(describeDbError(new Error(''))).toBe('unknown database error');
+  });
+
+  it('opens the database socket on IPv4 without Happy Eyeballs', () => {
+    expect(neonConnectOptions(5432, 'db.example')).toEqual({
+      port: 5432,
+      host: 'db.example',
+      family: 4,
+      autoSelectFamily: false,
+    });
   });
 });

@@ -1,4 +1,3 @@
-import { setDefaultResultOrder } from 'node:dns';
 import {
   Injectable,
   Logger,
@@ -6,8 +5,48 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Socket, type SocketConnectOpts } from 'node:net';
 import { Pool } from 'pg';
 import { PgDocumentCollection } from './pg-collection';
+
+/** One IPv4 address. Node's default Happy Eyeballs race also tries IPv6. */
+export function neonConnectOptions(
+  port: number,
+  host?: string,
+): SocketConnectOpts {
+  return {
+    port,
+    host,
+    family: 4,
+    autoSelectFamily: false,
+  };
+}
+
+export function createNeonSocket(): Socket {
+  const socket = new Socket();
+  const connect = socket.connect.bind(socket) as (
+    options: SocketConnectOpts,
+  ) => Socket;
+  socket.connect = (first: unknown, second?: unknown) => {
+    if (typeof first === 'number') {
+      return connect(
+        neonConnectOptions(
+          first,
+          typeof second === 'string' ? second : undefined,
+        ),
+      );
+    }
+    if (typeof first === 'object' && first) {
+      return connect({
+        ...(first as SocketConnectOpts),
+        family: 4,
+        autoSelectFamily: false,
+      });
+    }
+    return connect(first as SocketConnectOpts);
+  };
+  return socket;
+}
 
 function safeError(err: unknown): string {
   return String(err instanceof Error ? err.message : err)
@@ -31,9 +70,14 @@ export function describeDbError(err: unknown): string {
         typeof rawCode === 'string' || typeof rawCode === 'number'
           ? String(rawCode)
           : '';
+      const rawSyscall = 'syscall' in value ? value.syscall : undefined;
+      const syscall =
+        typeof rawSyscall === 'string' || typeof rawSyscall === 'number'
+          ? String(rawSyscall)
+          : '';
       const message = safeError(value);
-      if (code || message)
-        parts.push([code, message].filter(Boolean).join(' '));
+      if (code || syscall || message)
+        parts.push([code, syscall, message].filter(Boolean).join(' '));
       const nested = 'cause' in value ? value.cause : undefined;
       if (nested && nested !== value) visit(nested);
       return;
@@ -97,14 +141,14 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
     this.connectPromise = (async () => {
       if (!this.pool) {
-        // pg 8.23 calls dns.lookup(host) with no family option. This Neon host publishes
-        // IPv6 addresses, and the production container failed immediately with an empty message.
-        setDefaultResultOrder('ipv4first');
         this.pool = new Pool({
           connectionString: uri.trim(),
           ssl: { rejectUnauthorized: true },
           max: 5,
           connectionTimeoutMillis: 10000,
+          // pg connects by hostname, and Node 24 races AAAA records. Railway has
+          // no IPv6 route, so that race reports ENETUNREACH plus IPv4 timeouts.
+          stream: () => createNeonSocket(),
         });
       }
       await this.pool.query('SELECT 1');
