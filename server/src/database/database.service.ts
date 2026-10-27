@@ -1,3 +1,4 @@
+import { setDefaultResultOrder } from 'node:dns';
 import {
   Injectable,
   Logger,
@@ -9,10 +10,39 @@ import { Pool } from 'pg';
 import { PgDocumentCollection } from './pg-collection';
 
 function safeError(err: unknown): string {
-  return String(err instanceof Error ? err.message : err).replace(
-    /postgres(?:ql)?:\/\/\S+/gi,
-    'postgresql://***',
-  );
+  return String(err instanceof Error ? err.message : err)
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, 'postgresql://***')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 'ipv4')
+    .replace(/\b[0-9a-f:]{8,}\b/gi, 'ipv6');
+}
+
+/** Sanitized cause chain. pg can reject with an empty message while the code sits on a nested error. */
+export function describeDbError(err: unknown): string {
+  const parts: string[] = [];
+  const visit = (value: unknown) => {
+    if (parts.length > 4 || value == null) return;
+    if (value instanceof AggregateError) {
+      for (const item of value.errors) visit(item);
+      return;
+    }
+    if (value instanceof Error) {
+      const rawCode = 'code' in value ? value.code : undefined;
+      const code =
+        typeof rawCode === 'string' || typeof rawCode === 'number'
+          ? String(rawCode)
+          : '';
+      const message = safeError(value);
+      if (code || message)
+        parts.push([code, message].filter(Boolean).join(' '));
+      const nested = 'cause' in value ? value.cause : undefined;
+      if (nested && nested !== value) visit(nested);
+      return;
+    }
+    const message = safeError(value);
+    if (message && message !== 'undefined') parts.push(message);
+  };
+  visit(err);
+  return parts.join('; ') || 'unknown database error';
 }
 
 @Injectable()
@@ -29,8 +59,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.connect();
     } catch (err) {
-      this.logger.warn('Neon initial connect failed; will retry on health/data access');
-      this.logger.debug(safeError(err));
+      this.logger.warn(
+        `Neon initial connect failed; will retry on health/data access: ${describeDbError(err)}`,
+      );
       this.connected = false;
     }
   }
@@ -66,10 +97,14 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
     this.connectPromise = (async () => {
       if (!this.pool) {
+        // pg 8.23 calls dns.lookup(host) with no family option. This Neon host publishes
+        // IPv6 addresses, and the production container failed immediately with an empty message.
+        setDefaultResultOrder('ipv4first');
         this.pool = new Pool({
-          connectionString: uri,
+          connectionString: uri.trim(),
           ssl: { rejectUnauthorized: true },
           max: 5,
+          connectionTimeoutMillis: 10000,
         });
       }
       await this.pool.query('SELECT 1');
@@ -91,7 +126,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       await this.connectPromise;
     } catch (err) {
       this.connected = false;
-      throw new Error(safeError(err));
+      throw new Error(describeDbError(err));
     } finally {
       this.connectPromise = null;
     }
@@ -129,11 +164,16 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
   collection(name: string): PgDocumentCollection {
     if (!this.pool) throw new Error('Neon database is not initialized');
-    return new PgDocumentCollection(this.pool, name, (fn) => this.exclusive(name, fn));
+    return new PgDocumentCollection(this.pool, name, (fn) =>
+      this.exclusive(name, fn),
+    );
   }
 
   /** Plain SQL for tables outside the document store (for example uploaded file bytes). */
-  async query<T extends Record<string, unknown> = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
+  async query<T extends Record<string, unknown> = Record<string, unknown>>(
+    sql: string,
+    params: unknown[] = [],
+  ): Promise<T[]> {
     if (!this.pool) throw new Error('Neon database is not initialized');
     const result = await this.pool.query(sql, params);
     return result.rows as T[];
@@ -157,7 +197,13 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private exclusive<T>(name: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.gates.get(name) ?? Promise.resolve();
     const run = previous.then(fn, fn);
-    this.gates.set(name, run.then(() => undefined, () => undefined));
+    this.gates.set(
+      name,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
     return run;
   }
 }
