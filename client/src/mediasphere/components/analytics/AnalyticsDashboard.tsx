@@ -99,6 +99,267 @@ interface NewsContextType {
   stats?: Record<string, unknown>;
 }
 
+interface TwoChartsProps {
+  articles: ArticleData[];
+  trendView: 'timeline' | 'constituency';
+  setTrendView: (v: 'timeline' | 'constituency') => void;
+  activeCategory?: string;
+}
+
+function AnalyticsTwoCharts({
+  articles,
+  trendView,
+  setTrendView,
+  activeCategory = 'all',
+}: TwoChartsProps) {
+  const chartData = useMemo(() => {
+    const total = articles.length;
+    const pos = articles.filter((a) => a.sentiment === 'Positive').length;
+    const neg = articles.filter((a) => a.sentiment === 'Negative').length;
+    const neut = articles.filter((a) => a.sentiment === 'Statement' || a.sentiment === 'Neutral').length;
+    const prob = articles.filter((a) => isGrievanceOrProblem(a)).length;
+
+    // Daily volume trend
+    const dateCounts: Record<string, number> = {};
+    articles.forEach((a) => {
+      const d = (a.created_on || a.first_seen_at || '').slice(0, 10);
+      if (d) dateCounts[d] = (dateCounts[d] || 0) + 1;
+    });
+    const trendData = Object.keys(dateCounts)
+      .sort()
+      .map((date) => ({ date, count: dateCounts[date] }));
+
+    // Constituency breakdown (7 assembly segments)
+    const segCounts: Record<string, number> = {};
+    articles.forEach((a) => {
+      const s = a.assembly_segment || 'Narasaraopet';
+      segCounts[s] = (segCounts[s] || 0) + 1;
+    });
+    const segmentData = Object.entries(segCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
+
+    // Sentiment / Category distribution for Donut Chart
+    let donutTitle = 'Sentiment Distribution';
+    let donutItems: { name: string; count: number; fill: string }[] = [];
+
+    if (activeCategory === 'all') {
+      donutTitle = 'Sentiment Distribution';
+      donutItems = [
+        { name: 'Positive', count: pos, fill: '#10B981' },
+        { name: 'Negative', count: neg, fill: '#EF4444' },
+        { name: 'Problems', count: prob, fill: '#F59E0B' },
+        { name: 'Statements', count: neut, fill: '#64748B' },
+      ].filter((s) => s.count > 0);
+    } else {
+      // Category Breakdown within the filtered sentiment
+      const catCounts: Record<string, number> = {};
+      articles.forEach((a) => {
+        const c = a.category || 'Other';
+        catCounts[c] = (catCounts[c] || 0) + 1;
+      });
+      const palette = ['#0D9488', '#2563EB', '#F59E0B', '#EF4444', '#8B5CF6', '#10B981', '#64748B'];
+      donutTitle = `${activeCategory.charAt(0).toUpperCase() + activeCategory.slice(1)}: Topic Breakdown`;
+      donutItems = Object.entries(catCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([name, count], idx) => ({
+          name,
+          count,
+          fill: palette[idx % palette.length],
+        }));
+    }
+
+    return { total, pos, neg, neut, prob, trendData, segmentData, donutTitle, donutItems };
+  }, [articles, activeCategory]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* CHART 1: Sentiment / Category Donut Chart */}
+      <div className="rounded-xl border bg-card p-4.5 shadow-xs flex flex-col justify-between">
+        <div className="flex items-center justify-between pb-2 border-b">
+          <div className="flex items-center gap-2">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <PieIcon className="size-3.5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-foreground">
+                {chartData.donutTitle}
+              </h3>
+              <p className="text-[11px] text-muted-foreground">
+                Proportion and volume across active records
+              </p>
+            </div>
+          </div>
+          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-foreground">
+            {chartData.total} Articles
+          </span>
+        </div>
+
+        <div className="h-60 w-full mt-3">
+          {chartData.donutItems.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={chartData.donutItems}
+                  dataKey="count"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={80}
+                  paddingAngle={3}
+                >
+                  {chartData.donutItems.map((entry, index) => (
+                    <Cell key={`donut-${index}`} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload as { name: string; count: number; fill: string };
+                      const pct = chartData.total > 0 ? ((data.count / chartData.total) * 100).toFixed(1) : 0;
+                      return (
+                        <div className="rounded-lg bg-[#0F172A] border border-slate-700 p-2 text-white text-xs shadow-lg">
+                          <p className="font-bold flex items-center gap-1.5">
+                            <span className="size-2 rounded-full inline-block" style={{ backgroundColor: data.fill }} />
+                            {data.name}
+                          </p>
+                          <p className="text-slate-300 mt-0.5">
+                            {data.count} articles ({pct}%)
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              No distribution data available for current selection
+            </div>
+          )}
+        </div>
+
+        {/* Legend with percentages and counts */}
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-2 border-t text-xs">
+          {chartData.donutItems.map((item) => {
+            const pct = chartData.total > 0 ? Math.round((item.count / chartData.total) * 100) : 0;
+            return (
+              <div key={item.name} className="flex items-center gap-1.5">
+                <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: item.fill }} />
+                <span className="text-muted-foreground">{item.name}:</span>
+                <span className="font-semibold text-foreground">
+                  {item.count} ({pct}%)
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* CHART 2: News Trends (Bar Chart with Toggle) */}
+      <div className="rounded-xl border bg-card p-4.5 shadow-xs flex flex-col justify-between">
+        <div className="flex items-center justify-between pb-2 border-b">
+          <div className="flex items-center gap-2">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <BarChart2 className="size-3.5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-foreground">
+                News Trends & Volume
+              </h3>
+              <p className="text-[11px] text-muted-foreground">
+                {trendView === 'timeline' ? 'Daily publication trend' : 'Constituency assembly comparison'}
+              </p>
+            </div>
+          </div>
+
+          {/* View toggle */}
+          <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-0.5">
+            <button
+              type="button"
+              onClick={() => setTrendView('timeline')}
+              className={`rounded px-2.5 py-1 text-[11px] font-medium transition-all ${
+                trendView === 'timeline'
+                  ? 'bg-card text-foreground shadow-xs font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Volume Trend
+            </button>
+            <button
+              type="button"
+              onClick={() => setTrendView('constituency')}
+              className={`rounded px-2.5 py-1 text-[11px] font-medium transition-all ${
+                trendView === 'constituency'
+                  ? 'bg-card text-foreground shadow-xs font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              By Constituency
+            </button>
+          </div>
+        </div>
+
+        <div className="h-64 w-full mt-3">
+          {trendView === 'timeline' ? (
+            chartData.trendData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData.trendData}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#0F172A',
+                      borderColor: '#334155',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Bar dataKey="count" name="Articles" fill="#1E3A8A" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                No timeline data available for this filter
+              </div>
+            )
+          ) : (
+            chartData.segmentData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData.segmentData} layout="vertical" margin={{ left: 15 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="name" width={85} tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#0F172A',
+                      borderColor: '#334155',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Bar dataKey="count" name="Articles" fill="#2563EB" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                No constituency data available for this filter
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsDashboard() {
   const context = (useNewsContext?.() || {}) as NewsContextType;
   const articles: ArticleData[] = useMemo(() => (context.articles || []), [context.articles]);
@@ -134,7 +395,8 @@ export default function AnalyticsDashboard() {
   const [selectedNewsCategory, setSelectedNewsCategory] = useState('all');
 
   // Periodic Report Mode & Dates
-  const [reportTab, setReportTab] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>('daily');
+  const [reportTab, setReportTab] = useState<'all' | 'daily' | 'weekly' | 'monthly' | 'custom'>('all');
+  const [trendView, setTrendView] = useState<'timeline' | 'constituency'>('timeline');
   const [dailyDateState, setDailyDateState] = useState<string | null>(null);
   const [weeklyEndDateState, setWeeklyEndDateState] = useState<string | null>(null);
   const [monthlyYearMonthState, setMonthlyYearMonthState] = useState<string | null>(null);
@@ -263,8 +525,8 @@ export default function AnalyticsDashboard() {
   // Periodic report calculations
   const periodicReportData = useMemo(() => {
     let dataset = articles;
-    let title = '';
-    let description = '';
+    let title = 'Overall Constituency Intelligence';
+    let description = 'Complete dataset across all reporting dates and segments';
 
     if (reportTab === 'daily') {
       dataset = articles.filter((a: ArticleData) => (a.created_on || a.first_seen_at || '').slice(0, 10) === dailyDate);
@@ -380,6 +642,31 @@ export default function AnalyticsDashboard() {
       setDownloadMenuOpen(false);
       setDownloadStatus(`Generating ${format.toUpperCase()} report...`);
 
+      let startDate: string | undefined;
+      let endDate: string | undefined;
+
+      if (reportTab === 'daily') {
+        startDate = dailyDate;
+        endDate = dailyDate;
+      } else if (reportTab === 'weekly') {
+        const end = new Date(weeklyEndDate);
+        const start = new Date(end);
+        start.setDate(start.getDate() - 6);
+        startDate = start.toISOString().slice(0, 10);
+        endDate = weeklyEndDate;
+      } else if (reportTab === 'monthly') {
+        const [y, m] = monthlyYearMonth.split('-').map(Number);
+        startDate = `${monthlyYearMonth}-01`;
+        const lastDay = new Date(y, m, 0).getDate();
+        endDate = `${monthlyYearMonth}-${String(lastDay).padStart(2, '0')}`;
+      } else if (reportTab === 'custom') {
+        startDate = customStartDate;
+        endDate = customEndDate;
+      } else if (reportTab === 'all') {
+        startDate = undefined;
+        endDate = undefined;
+      }
+
       const params = {
         format,
         sentiment: activeCategory !== 'all' ? activeCategory : undefined,
@@ -388,13 +675,27 @@ export default function AnalyticsDashboard() {
         category: selectedNewsCategory !== 'all' ? selectedNewsCategory : undefined,
         source: selectedSource !== 'all' ? selectedSource : undefined,
         search: searchQuery.trim() || undefined,
-        startDate: reportTab === 'daily' ? dailyDate : reportTab === 'custom' ? customStartDate : undefined,
-        endDate: reportTab === 'daily' ? dailyDate : reportTab === 'custom' ? customEndDate : undefined,
+        startDate,
+        endDate,
       };
 
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const catStr = activeCategory !== 'all' ? activeCategory : 'analytics';
-      const fallback = `janavignanam_${catStr}_report_${dateStr}.${format}`;
+      const dateStr =
+        startDate && endDate
+          ? startDate === endDate
+            ? startDate
+            : `${startDate}_to_${endDate}`
+          : new Date().toISOString().slice(0, 10);
+      const catStr =
+        activeCategory === 'positive'
+          ? 'positive_news'
+          : activeCategory === 'negative'
+            ? 'negative_news'
+            : activeCategory === 'neutral'
+              ? 'neutral_statements'
+              : activeCategory === 'problems'
+                ? 'problems_report'
+                : 'overall_report';
+      const fallback = `janavignanam_${catStr}_${dateStr}.${format}`;
 
       await downloadNewsReport(params, fallback);
       setDownloadStatus(`${format.toUpperCase()} report downloaded successfully!`);
@@ -852,6 +1153,17 @@ export default function AnalyticsDashboard() {
             <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1">
               <button
                 type="button"
+                onClick={() => setReportTab('all')}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+                  reportTab === 'all'
+                    ? 'bg-card text-foreground shadow-xs font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                All Records
+              </button>
+              <button
+                type="button"
                 onClick={() => setReportTab('daily')}
                 className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
                   reportTab === 'daily'
@@ -1003,159 +1315,14 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
 
-          {/* Interactive Recharts Visualizations */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
-            {/* Chart 1: Daily Trend */}
-            <div className="rounded-xl border bg-card p-4">
-              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <TrendingUp className="size-4 text-primary" />
-                Publication Timeline Trend
-              </h3>
-              <div className="h-64 w-full">
-                {periodicReportData.trendData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={periodicReportData.trendData}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                      <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1E293B',
-                          borderColor: '#334155',
-                          borderRadius: '8px',
-                          color: '#fff',
-                          fontSize: '12px',
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="count"
-                        name="Articles"
-                        stroke="#1E3A8A"
-                        strokeWidth={2.5}
-                        dot={{ r: 3, fill: '#1E3A8A' }}
-                        activeDot={{ r: 5 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    No timeline data for this period
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Chart 2: Sentiment Distribution Donut */}
-            <div className="rounded-xl border bg-card p-4">
-              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <PieIcon className="size-4 text-primary" />
-                Sentiment Breakdown
-              </h3>
-              <div className="h-64 w-full">
-                {periodicReportData.sentimentData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={periodicReportData.sentimentData}
-                        dataKey="count"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={80}
-                        paddingAngle={3}
-                        label={({ name, percent }: { name?: string; percent?: number }) => `${name} ${(((percent as number) || 0) * 100).toFixed(0)}%`}
-                      >
-                        {periodicReportData.sentimentData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.fill} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1E293B',
-                          borderColor: '#334155',
-                          borderRadius: '8px',
-                          color: '#fff',
-                          fontSize: '12px',
-                        }}
-                      />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    No sentiment data for this period
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Chart 3: Constituency-Wise Distribution */}
-            <div className="rounded-xl border bg-card p-4">
-              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <BarChart2 className="size-4 text-primary" />
-                Constituency Assembly Segments
-              </h3>
-              <div className="h-64 w-full">
-                {periodicReportData.segmentData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={periodicReportData.segmentData} layout="vertical" margin={{ left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} horizontal={false} />
-                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1E293B',
-                          borderColor: '#334155',
-                          borderRadius: '8px',
-                          color: '#fff',
-                          fontSize: '12px',
-                        }}
-                      />
-                      <Bar dataKey="count" name="Articles" fill="#1E3A8A" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    No constituency data for this period
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Chart 4: Top News Categories */}
-            <div className="rounded-xl border bg-card p-4">
-              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <BarChart2 className="size-4 text-primary" />
-                Top News Categories
-              </h3>
-              <div className="h-64 w-full">
-                {periodicReportData.categoryData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={periodicReportData.categoryData} layout="vertical" margin={{ left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} horizontal={false} />
-                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11 }} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#1E293B',
-                          borderColor: '#334155',
-                          borderRadius: '8px',
-                          color: '#fff',
-                          fontSize: '12px',
-                        }}
-                      />
-                      <Bar dataKey="count" name="Articles" fill="#0D9488" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    No category data for this period
-                  </div>
-                )}
-              </div>
-            </div>
+          {/* Interactive Recharts Visualizations: At most 2 charts */}
+          <div className="pt-2">
+            <AnalyticsTwoCharts
+              articles={periodicReportData.articles}
+              trendView={trendView}
+              setTrendView={setTrendView}
+              activeCategory="all"
+            />
           </div>
         </div>
       )}
@@ -1163,6 +1330,13 @@ export default function AnalyticsDashboard() {
       {/* SECTION 5: ARTICLE RESULTS LIST & TABLE (Sections 3 & 5) */}
       {isNavActive && (
         <div className="space-y-4">
+          {/* Context-aware 2 Charts reflecting active filters */}
+          <AnalyticsTwoCharts
+            articles={filteredArticles}
+            trendView={trendView}
+            setTrendView={setTrendView}
+            activeCategory={activeCategory}
+          />
           {filteredArticles.length === 0 ? (
             <div className="rounded-xl border bg-card p-12 text-center">
               <AlertTriangle className="size-8 mx-auto text-muted-foreground mb-3" />

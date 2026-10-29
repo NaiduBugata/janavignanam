@@ -59,6 +59,7 @@ import {
   type ProgressStage,
 } from '../workspace/progress-report';
 import { WorkspaceService } from '../workspace/workspace.service';
+import { GrievanceProgressService } from '../whatsapp/grievance-progress.service';
 import { discoverGroqApiKeys } from '../ai/groq-keys';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
@@ -297,13 +298,17 @@ export class ChatbotService {
   /** Visit messages go out after the menu reply, so a Follow up tap cannot freeze this chat. */
   private followUps: Promise<void> = Promise.resolve();
   private newsCache: { at: number; briefs: NewsBrief[] } | null = null;
+  private readonly gpmService: GrievanceProgressService;
 
   constructor(
     @Optional() private readonly articles?: ArticleRepository,
     @Optional() private readonly db?: DatabaseService,
     @Optional() private readonly followUp?: VisitFollowupService,
     @Optional() private readonly workspace?: WorkspaceService,
-  ) {}
+    @Optional() private readonly gpm?: GrievanceProgressService,
+  ) {
+    this.gpmService = gpm || new GrievanceProgressService(workspace, db);
+  }
 
   /** Starts a reply after the webhook has already been acknowledged. Never throws. */
   consider(payload: unknown, deps: ChatbotDeps = {}): void {
@@ -457,6 +462,14 @@ export class ChatbotService {
       last === undefined || now.getTime() - last > CONVERSATION_GAP_MS;
     const fetchImpl = replyFetch(deps.fetchImpl || fetch);
     try {
+      if (this.gpmService.isGpmEvent(event, sender)) {
+        await this.gpmService.handleEvent(event, sender, fetchImpl, env, deps);
+        this.answered.add(messageId);
+        this.lastReplyAt.set(sender, now.getTime());
+        this.logger.log(`Grievance progress manager replied to ${maskPhone(sender)}.`);
+        return;
+      }
+
       const followId = grievanceFollow(event);
       const picked = grievancePick(event);
       const followupId = followupContactId(event);

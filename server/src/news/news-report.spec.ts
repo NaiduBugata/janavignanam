@@ -2,6 +2,8 @@ import {
   generatePdfReport,
   generateExcelReport,
   generateCsvReport,
+  transliterateTeluguToLatin,
+  sanitizeTextForPdf,
   ReportFilterOptions,
   ReportStatsSummary,
 } from './news-report';
@@ -121,5 +123,33 @@ describe('News Report Generation', () => {
     expect(lines[2]).toContain(
       'New primary healthcare center inaugurated in Chilakaluripet',
     );
+  });
+
+  it('transliterates Telugu script to legible Latin characters and normalizes smart punctuation', () => {
+    const teluguHeadline = 'నరసరావుపేటలో తాగునీటి సమస్య పరిష్కరించాలని వినతి';
+    const result = transliterateTeluguToLatin(teluguHeadline);
+    expect(result).toBeTruthy();
+    expect(result).not.toBe('');
+    expect(result.toLowerCase()).toContain('narasara');
+    expect(result.toLowerCase()).toContain('taaguneeti');
+
+    const withQuotesAndCurrency = '₹50,000 “అభివృద్ధి” పనులు — ప్రారంభం';
+    const sanitized = sanitizeTextForPdf(withQuotesAndCurrency);
+    expect(sanitized).toContain('Rs. 50,000');
+    expect(sanitized).toContain('"');
+    expect(sanitized).toContain('-');
+  });
+
+  it('includes Page X of Y numbering and transliterated articles in the PDF stream', () => {
+    const teluguArticle: NormalizedArticle = {
+      ...dummyArticles[0],
+      _id: 'telugu_1',
+      title: 'నరసరావుపేటలో తాగునీటి సమస్య',
+      summary: 'గ్రామ ప్రజలు అధికారులకు వినతిపత్రం అందజేశారు.',
+    };
+    const pdfBuf = generatePdfReport([teluguArticle], dummyFilters, dummyStats);
+    const pdfContent = pdfBuf.toString('utf8');
+    expect(pdfContent).toContain('Page 1 of');
+    expect(pdfContent).toContain('narasara');
   });
 });

@@ -469,12 +469,37 @@ export class NewsService implements OnModuleInit {
     };
 
     const todayStr = new Date().toISOString().slice(0, 10);
-    const catPrefix = filters.sentiment || filters.category || 'overview';
+    let dateStr = todayStr;
+    if (filters.startDate && filters.endDate) {
+      dateStr =
+        filters.startDate === filters.endDate
+          ? filters.startDate
+          : `${filters.startDate}_to_${filters.endDate}`;
+    } else if (filters.startDate) {
+      dateStr = `from_${filters.startDate}`;
+    } else if (filters.endDate) {
+      dateStr = `to_${filters.endDate}`;
+    }
+
+    let catPrefix = 'overall';
+    if (filters.sentiment && filters.sentiment !== 'all') {
+      const s = filters.sentiment.toLowerCase();
+      if (s === 'positive') catPrefix = 'positive_news';
+      else if (s === 'negative') catPrefix = 'negative_news';
+      else if (s === 'neutral' || s === 'statement' || s === 'statements')
+        catPrefix = 'neutral_statements';
+      else if (s === 'problem' || s === 'problems')
+        catPrefix = 'problems_report';
+      else catPrefix = s;
+    } else if (filters.category && filters.category !== 'all') {
+      catPrefix = filters.category.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    }
+
     const segPrefix =
       filters.segment && filters.segment !== 'all'
         ? `_${filters.segment.toLowerCase()}`
         : '';
-    const baseName = `janavignanam_${catPrefix.toLowerCase()}${segPrefix}_${todayStr}`;
+    const baseName = `janavignanam_${catPrefix}${segPrefix}_${dateStr}`;
 
     if (format === 'xlsx') {
       const bytes = await generateExcelReport(filtered, filters, summary);
