@@ -10,7 +10,10 @@ import { WhatsAppWebhookRepository } from './whatsapp.repository';
   controllers: [WhatsAppController],
   providers: [
     WhatsAppChatbotBinder,
-    { provide: WhatsAppWebhookRepository, useValue: { saveEvent: async () => undefined } },
+    {
+      provide: WhatsAppWebhookRepository,
+      useValue: { saveEvent: async () => undefined },
+    },
     { provide: ChatbotService, useValue: { consider: () => undefined } },
   ],
 })
@@ -18,7 +21,10 @@ class ProbeModule {}
 
 describe('WhatsApp chatbot wiring', () => {
   it('gives the controller one constructor dependency', () => {
-    const params = Reflect.getMetadata('design:paramtypes', WhatsAppController) as unknown[];
+    const params = Reflect.getMetadata(
+      'design:paramtypes',
+      WhatsAppController,
+    ) as unknown[];
     expect(params).toHaveLength(1);
     expect(params[0]).toBe(WhatsAppWebhookRepository);
   });
@@ -29,7 +35,11 @@ describe('WhatsApp chatbot wiring', () => {
       imports: [ProbeModule],
     })
       .overrideProvider(ChatbotService)
-      .useValue({ consider: (payload: unknown) => { seen.push(payload); } })
+      .useValue({
+        consider: (payload: unknown) => {
+          seen.push(payload);
+        },
+      })
       .compile();
     const app = moduleRef.createNestApplication();
     await app.init();
@@ -37,15 +47,25 @@ describe('WhatsApp chatbot wiring', () => {
     process.env.WHATSAPP_WEBHOOK_ENABLED = 'true';
     const res = {
       statusCode: 0,
-      status(code: number) { this.statusCode = code; return this; },
-      type() { return this; },
-      send() { return this; },
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      type() {
+        return this;
+      },
+      send() {
+        return this;
+      },
     };
-    await controller.receive({
-      body: { object: 'whatsapp_business_account', entry: [] },
-      header: () => undefined,
-      ip: '127.0.0.1',
-    } as never, res as never);
+    await controller.receive(
+      {
+        body: { object: 'whatsapp_business_account', entry: [] },
+        header: () => undefined,
+        ip: '127.0.0.1',
+      } as never,
+      res as never,
+    );
     expect(res.statusCode).toBe(200);
     expect(seen).toHaveLength(1);
     await app.close();

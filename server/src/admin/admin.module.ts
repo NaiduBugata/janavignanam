@@ -12,8 +12,19 @@ import { PipelineModule } from '../pipeline/pipeline.module';
 
 @Module({
   imports: [PipelineModule],
-  controllers: [AdminAuthController, AdminController, AdminUploadController, AdminDeskController],
-  providers: [AdminAuthService, AdminFetchService, AdminAuthGuard, AdminUploadService, AdminDeskService],
+  controllers: [
+    AdminAuthController,
+    AdminController,
+    AdminUploadController,
+    AdminDeskController,
+  ],
+  providers: [
+    AdminAuthService,
+    AdminFetchService,
+    AdminAuthGuard,
+    AdminUploadService,
+    AdminDeskService,
+  ],
   exports: [AdminAuthService],
 })
 export class AdminModule {}

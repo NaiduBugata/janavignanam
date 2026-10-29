@@ -14,9 +14,21 @@ import { collectLokalNews } from '../../sources/lokal/lokal.collector';
 import { collectSakshiNews } from '../../sources/sakshi/sakshi.collector';
 import { collectYoutubeNews } from '../../sources/youtube/youtube.collector';
 import { mergeSourceResults } from '../combined-cycle';
-import { notifyFailureWhatsApp, notifyPendingWhatsApp, notifyPipelineWhatsApp } from '../../whatsapp/whatsapp.notify';
-import { describeFailure, FailureAlertGate, pipelineStatusWhatsAppEnabled } from './pipeline-alerts';
-import { ASSEMBLY_SEGMENTS, scoreConstituency, type AssemblySegment } from './constituency';
+import {
+  notifyFailureWhatsApp,
+  notifyPendingWhatsApp,
+  notifyPipelineWhatsApp,
+} from '../../whatsapp/whatsapp.notify';
+import {
+  describeFailure,
+  FailureAlertGate,
+  pipelineStatusWhatsAppEnabled,
+} from './pipeline-alerts';
+import {
+  ASSEMBLY_SEGMENTS,
+  scoreConstituency,
+  type AssemblySegment,
+} from './constituency';
 import { isReligionStory } from './religion';
 import { whatsappAlertsEnabled } from '../../whatsapp/whatsapp.send';
 import { sendPipelineFailureEmail } from '../../notifications/failure-email';
@@ -40,7 +52,8 @@ function lokalThumbnail(raw: Record<string, unknown> | undefined): string {
       continue;
     }
     const row = item as Record<string, unknown>;
-    const found = httpUrl(row.image) || httpUrl(row.thumb_url) || httpUrl(row.url);
+    const found =
+      httpUrl(row.image) || httpUrl(row.thumb_url) || httpUrl(row.url);
     if (found) return found;
   }
   return httpUrl(raw.image) || httpUrl(raw.thumb_url);
@@ -82,12 +95,18 @@ export class CombinedPipelineService {
     const known = await this.loadKnown();
     const checked: string[] = [];
 
-    results.push(await this.safeCollect('lokal', () => this.collectLokal(fetchImpl)));
     results.push(
-      await this.safeCollect('youtube', () => this.collectYoutube(fetchImpl, known, checked)),
+      await this.safeCollect('lokal', () => this.collectLokal(fetchImpl)),
     );
     results.push(
-      await this.safeCollect('sakshi', () => this.collectSakshi(fetchImpl, known, checked)),
+      await this.safeCollect('youtube', () =>
+        this.collectYoutube(fetchImpl, known, checked),
+      ),
+    );
+    results.push(
+      await this.safeCollect('sakshi', () =>
+        this.collectSakshi(fetchImpl, known, checked),
+      ),
     );
 
     let alreadySaved = 0;
@@ -99,12 +118,16 @@ export class CombinedPipelineService {
       }
       const segment = resolveSegment(article);
       if (!segment) {
-        this.logger.warn(`[SEGMENT_GATE] dropped source=${article.source} post_id=${article.post_id}: not one of the 7 assembly segments`);
+        this.logger.warn(
+          `[SEGMENT_GATE] dropped source=${article.source} post_id=${article.post_id}: not one of the 7 assembly segments`,
+        );
         continue;
       }
       if (isReligionStory(article.title, article.content || '')) {
         checked.push(`post:${article.post_id}`);
-        this.logger.log(`[RELIGION] skipped source=${article.source} post_id=${article.post_id}`);
+        this.logger.log(
+          `[RELIGION] skipped source=${article.source} post_id=${article.post_id}`,
+        );
         continue;
       }
       mapped.push({ ...article, assembly_segment: segment });
@@ -122,7 +145,12 @@ export class CombinedPipelineService {
         const outcome = await this.upsert(article, analyzed);
         if (outcome === 'inserted') {
           inserted += 1;
-          added.push({ ...analyzed, title: article.title, source: article.source, source_url: article.source_url || null });
+          added.push({
+            ...analyzed,
+            title: article.title,
+            source: article.source,
+            source_url: article.source_url || null,
+          });
         } else {
           duplicates += 1;
           checked.push(`post:${article.post_id}`);
@@ -131,7 +159,9 @@ export class CombinedPipelineService {
       } catch (err) {
         aiFailed += 1;
         const message = err instanceof Error ? err.message : String(err);
-        errors.push(`${article.source}:${article.post_id}:${message.slice(0, 180)}`);
+        errors.push(
+          `${article.source}:${article.post_id}:${message.slice(0, 180)}`,
+        );
         this.logger.error(
           `[AI_FAIL] source=${article.source} post_id=${article.post_id} ${message}`,
         );
@@ -139,7 +169,10 @@ export class CombinedPipelineService {
     }
 
     await this.remember(checked);
-    if (alreadySaved) this.logger.log(`[KNOWN] skipped ${alreadySaved} already-saved articles before analysis`);
+    if (alreadySaved)
+      this.logger.log(
+        `[KNOWN] skipped ${alreadySaved} already-saved articles before analysis`,
+      );
 
     const merged = mergeSourceResults(results);
     // One blocked source does not fail the cycle while another source delivered; its errors are still recorded and alerted.
@@ -157,7 +190,13 @@ export class CombinedPipelineService {
     };
     if (aiFailed) stats.errors.push(`ai_failed=${aiFailed}`);
 
-    await this.notifyPipeline(stats, exitCode, fetchImpl, Date.now() - started, added);
+    await this.notifyPipeline(
+      stats,
+      exitCode,
+      fetchImpl,
+      Date.now() - started,
+      added,
+    );
 
     this.logger.log(
       `[NATIVE_CYCLE] exit=${exitCode} inserted=${inserted} duplicates=${stats.duplicates} ai_ok=${aiOk} ai_failed=${aiFailed} ms=${Date.now() - started}`,
@@ -178,7 +217,10 @@ export class CombinedPipelineService {
     const known: KnownItems = { postIds: new Set(), urls: new Set() };
     try {
       await this.db.ensureConnected();
-      const saved = await this.db.query<{ post_id: string | null; source_url: string | null }>(
+      const saved = await this.db.query<{
+        post_id: string | null;
+        source_url: string | null;
+      }>(
         `SELECT doc->>'post_id' AS post_id, doc->>'source_url' AS source_url
            FROM mediasphere.documents WHERE collection = $1`,
         [this.db.articlesCollectionName],
@@ -197,7 +239,9 @@ export class CombinedPipelineService {
         else if (key.startsWith('url:')) known.urls.add(key.slice(4));
       }
     } catch (err) {
-      this.logger.warn(`[KNOWN] saved items unavailable, treating all as new: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(
+        `[KNOWN] saved items unavailable, treating all as new: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     return known;
   }
@@ -218,7 +262,9 @@ export class CombinedPipelineService {
         [SEEN_COLLECTION, SEEN_DAYS * 4],
       );
     } catch (err) {
-      this.logger.warn(`[KNOWN] could not remember checked items: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(
+        `[KNOWN] could not remember checked items: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -231,24 +277,30 @@ export class CombinedPipelineService {
       return await fn();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return this.emptyResult(source, startedAt, [`${source}_failed:${message.slice(0, 180)}`]);
+      return this.emptyResult(source, startedAt, [
+        `${source}_failed:${message.slice(0, 180)}`,
+      ]);
     }
   }
 
-  private async collectLokal(fetchImpl: typeof fetch): Promise<SourceCollectionResult> {
+  private async collectLokal(
+    fetchImpl: typeof fetch,
+  ): Promise<SourceCollectionResult> {
     const started = Date.now();
     const startedAt = new Date().toISOString();
     const collected = await collectLokalNews(fetchImpl);
-    const articles: CollectedArticle[] = collected.envelope.articles.map((article) => ({
-      post_id: String(article.id),
-      source: 'lokal',
-      title: article.title,
-      content: article.content,
-      created_on: article.created_on,
-      source_url: article.url,
-      thumbnail: lokalThumbnail(article.raw),
-      assembly_segment: article._constituency_validation?.segment ?? null,
-    }));
+    const articles: CollectedArticle[] = collected.envelope.articles.map(
+      (article) => ({
+        post_id: String(article.id),
+        source: 'lokal',
+        title: article.title,
+        content: article.content,
+        created_on: article.created_on,
+        source_url: article.url,
+        thumbnail: lokalThumbnail(article.raw),
+        assembly_segment: article._constituency_validation?.segment ?? null,
+      }),
+    );
     return {
       source: 'lokal',
       status: 'success',
@@ -273,34 +325,51 @@ export class CombinedPipelineService {
     const startedAt = new Date().toISOString();
     const started = Date.now();
     if (process.env.YOUTUBE_ENABLED === 'false') {
-      return { ...this.emptyResult('youtube', startedAt, []), status: 'skipped', exitCode: 0 };
+      return {
+        ...this.emptyResult('youtube', startedAt, []),
+        status: 'skipped',
+        exitCode: 0,
+      };
     }
     const existingVideoIds = new Set(
-      [...known.postIds].filter((id) => id.startsWith('yt_')).map((id) => id.slice(3)),
+      [...known.postIds]
+        .filter((id) => id.startsWith('yt_'))
+        .map((id) => id.slice(3)),
     );
     const collected = await collectYoutubeNews({ fetchImpl, existingVideoIds });
-    checked.push(...(collected.checkedVideoIds || []).map((id) => `post:yt_${id}`));
+    checked.push(
+      ...(collected.checkedVideoIds || []).map((id) => `post:yt_${id}`),
+    );
     if (collected.error) {
       return this.emptyResult('youtube', startedAt, [collected.error]);
     }
-    const blockedReasons = Object.entries(collected.blocked).map(([reason, count]) => `${reason}=${count}`).join(',') || 'none';
+    const blockedReasons =
+      Object.entries(collected.blocked)
+        .map(([reason, count]) => `${reason}=${count}`)
+        .join(',') || 'none';
     this.logger.log(
       `[YOUTUBE] videos=${collected.videosFound} articles=${collected.envelope.articles.length} no_captions=${collected.noCaptions} blocked=${blockedReasons} non_news=${collected.nonNews} other_constituency=${collected.constituencyRejected}`,
     );
-    const articles: CollectedArticle[] = collected.envelope.articles.map((article) => ({
-      post_id: `yt_${article.video_id}`,
-      source: 'youtube',
-      title: article.title,
-      content: article.content,
-      created_on: article.created_on,
-      source_url: article.url,
-      thumbnail: article.video_id
-        ? `https://i.ytimg.com/vi/${article.video_id}/hqdefault.jpg`
-        : '',
-      assembly_segment: article.assembly_segment ?? null,
-    }));
+    const articles: CollectedArticle[] = collected.envelope.articles.map(
+      (article) => ({
+        post_id: `yt_${article.video_id}`,
+        source: 'youtube',
+        title: article.title,
+        content: article.content,
+        created_on: article.created_on,
+        source_url: article.url,
+        thumbnail: article.video_id
+          ? `https://i.ytimg.com/vi/${article.video_id}/hqdefault.jpg`
+          : '',
+        assembly_segment: article.assembly_segment ?? null,
+      }),
+    );
     if (!articles.length && collected.errors.length) {
-      return this.emptyResult('youtube', startedAt, collected.errors.slice(0, 8));
+      return this.emptyResult(
+        'youtube',
+        startedAt,
+        collected.errors.slice(0, 8),
+      );
     }
     return {
       source: 'youtube',
@@ -326,27 +395,39 @@ export class CombinedPipelineService {
     const startedAt = new Date().toISOString();
     const started = Date.now();
     if (process.env.SAKSHI_ENABLED === 'false') {
-      return { ...this.emptyResult('sakshi', startedAt, []), status: 'skipped', exitCode: 0 };
+      return {
+        ...this.emptyResult('sakshi', startedAt, []),
+        status: 'skipped',
+        exitCode: 0,
+      };
     }
-    const collected = await collectSakshiNews({ fetchImpl, existingUrls: known.urls });
+    const collected = await collectSakshiNews({
+      fetchImpl,
+      existingUrls: known.urls,
+    });
     checked.push(...(collected.checkedUrls || []).map((url) => `url:${url}`));
     if (collected.error) {
       return this.emptyResult('sakshi', startedAt, [collected.error]);
     }
-    const articles: CollectedArticle[] = collected.envelope.articles.map((article) => ({
-      post_id: article.id.startsWith('sakshi_') ? article.id : `sakshi_${article.id}`,
-      source: 'sakshi',
-      title: article.title,
-      content: article.content,
-      created_on: article.created_on,
-      source_url: article.source_url,
-      thumbnail: article.thumbnail || '',
-      assembly_segment: article.assembly_segment,
-    }));
+    const articles: CollectedArticle[] = collected.envelope.articles.map(
+      (article) => ({
+        post_id: article.id.startsWith('sakshi_')
+          ? article.id
+          : `sakshi_${article.id}`,
+        source: 'sakshi',
+        title: article.title,
+        content: article.content,
+        created_on: article.created_on,
+        source_url: article.source_url,
+        thumbnail: article.thumbnail || '',
+        assembly_segment: article.assembly_segment,
+      }),
+    );
     this.logger.log(
       `[SAKSHI] links=${collected.linksFound} already_saved=${collected.skippedExisting} new=${articles.length} rejected=${collected.envelope.filter_stats.rejected}`,
     );
-    if (!collected.linksFound) return this.emptyResult('sakshi', startedAt, ['sakshi_no_links']);
+    if (!collected.linksFound)
+      return this.emptyResult('sakshi', startedAt, ['sakshi_no_links']);
     return {
       source: 'sakshi',
       status: 'success',
@@ -416,15 +497,15 @@ export class CombinedPipelineService {
     };
     let prior: Array<{ title?: string; post_id?: string }> = [];
     try {
-      prior = (await coll
-        .find({ source: article.source })
-        .limit(15)
-        .toArray()) as Array<{ title?: string; post_id?: string }>;
+      prior = await coll.find({ source: article.source }).limit(15).toArray();
     } catch {
       prior = [];
     }
     for (const row of prior) {
-      if (row.post_id !== article.post_id && titlesMatch(article.title, String(row.title || ''))) {
+      if (
+        row.post_id !== article.post_id &&
+        titlesMatch(article.title, String(row.title || ''))
+      ) {
         return 'duplicate';
       }
     }
@@ -463,13 +544,18 @@ export class CombinedPipelineService {
       this.failureAlerts.clear();
       if (pipelineStatusWhatsAppEnabled()) {
         try {
-          await notifyPipelineWhatsApp({
-            ...stats,
-            duration_seconds: Math.round(durationMs / 1000),
-            status: 'Finished Successfully',
-          }, fetchImpl);
+          await notifyPipelineWhatsApp(
+            {
+              ...stats,
+              duration_seconds: Math.round(durationMs / 1000),
+              status: 'Finished Successfully',
+            },
+            fetchImpl,
+          );
         } catch (err) {
-          this.logger.error(`[NOTIFY_PIPELINE] WhatsApp failed: ${err instanceof Error ? err.message : String(err)}`);
+          this.logger.error(
+            `[NOTIFY_PIPELINE] WhatsApp failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
     }
@@ -480,8 +566,12 @@ export class CombinedPipelineService {
         fetchImpl,
         findPending: async () => {
           await this.db.ensureConnected();
-          const rows = await this.db.collection(this.db.articlesCollectionName).find({ whatsapp_sent: false }).toArray();
-          return rows as Array<Record<string, unknown>>;
+          const rows = await this.db
+            .collection(this.db.articlesCollectionName)
+            .find({ whatsapp_sent: false })
+            .limit(5)
+            .toArray();
+          return rows;
         },
         markSent: async (postId, messageId, critical) => {
           const now = new Date().toISOString();
@@ -494,25 +584,38 @@ export class CombinedPipelineService {
             update.whatsapp_critical_sent = true;
             update.whatsapp_critical_sent_at = now;
           }
-          await this.db.collection(this.db.articlesCollectionName).updateOne({ post_id: postId }, { $set: update });
+          await this.db
+            .collection(this.db.articlesCollectionName)
+            .updateOne({ post_id: postId }, { $set: update });
         },
       });
     } catch (err) {
       this.logger.error(
-        'notification failed (ignored): ' + (err instanceof Error ? err.message : String(err)),
+        'notification failed (ignored): ' +
+          (err instanceof Error ? err.message : String(err)),
       );
     }
   }
 
-  private async emailNewArticles(added: Array<Record<string, unknown>>, fetchImpl: typeof fetch): Promise<void> {
+  private async emailNewArticles(
+    added: Array<Record<string, unknown>>,
+    fetchImpl: typeof fetch,
+  ): Promise<void> {
     if (!added.length) return;
     try {
       const email = await sendNewArticlesEmail({ articles: added, fetchImpl });
-      if (email.success && !email.skipped) this.logger.log(`[NOTIFY_NEWS_EMAIL] sent articles=${added.length}`);
-      else if (email.skipped) this.logger.log(`[NOTIFY_NEWS_EMAIL] skipped: ${email.skip_reason}`);
-      else this.logger.error(`[NOTIFY_NEWS_EMAIL] failed: ${String(email.error).slice(0, 300)}`);
+      if (email.success && !email.skipped)
+        this.logger.log(`[NOTIFY_NEWS_EMAIL] sent articles=${added.length}`);
+      else if (email.skipped)
+        this.logger.log(`[NOTIFY_NEWS_EMAIL] skipped: ${email.skip_reason}`);
+      else
+        this.logger.error(
+          `[NOTIFY_NEWS_EMAIL] failed: ${String(email.error).slice(0, 300)}`,
+        );
     } catch (err) {
-      this.logger.error(`[NOTIFY_NEWS_EMAIL] failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(
+        `[NOTIFY_NEWS_EMAIL] failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -520,24 +623,46 @@ export class CombinedPipelineService {
    * Failure alert by email, and on WhatsApp to the super admin. A new problem alerts at once;
    * the same problem repeats only after PIPELINE_ALERT_REPEAT_HOURS. Never throws.
    */
-  async alertFailure(errors: readonly string[], fetchImpl: typeof fetch = fetch): Promise<void> {
+  async alertFailure(
+    errors: readonly string[],
+    fetchImpl: typeof fetch = fetch,
+  ): Promise<void> {
     const reason = describeFailure(errors).slice(0, 500);
     if (!this.failureAlerts.shouldAlert(errors, Date.now())) {
-      this.logger.warn(`[NOTIFY_FAILURE] same problem as the last alert; email skipped: ${reason}`);
+      this.logger.warn(
+        `[NOTIFY_FAILURE] same problem as the last alert; email skipped: ${reason}`,
+      );
       return;
     }
     try {
-      await notifyFailureWhatsApp('combined_pipeline', reason, 'N/A', fetchImpl);
+      await notifyFailureWhatsApp(
+        'combined_pipeline',
+        reason,
+        'N/A',
+        fetchImpl,
+      );
     } catch (err) {
-      this.logger.error(`[NOTIFY_FAILURE] WhatsApp failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(
+        `[NOTIFY_FAILURE] WhatsApp failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     try {
-      const email = await sendPipelineFailureEmail({ reason, errors, fetchImpl });
+      const email = await sendPipelineFailureEmail({
+        reason,
+        errors,
+        fetchImpl,
+      });
       if (email.success) this.logger.log('[NOTIFY_FAILURE_EMAIL] sent');
-      else if (email.skipped) this.logger.log(`[NOTIFY_FAILURE_EMAIL] skipped: ${email.skip_reason}`);
-      else this.logger.error(`[NOTIFY_FAILURE_EMAIL] failed: ${String(email.error).slice(0, 300)}`);
+      else if (email.skipped)
+        this.logger.log(`[NOTIFY_FAILURE_EMAIL] skipped: ${email.skip_reason}`);
+      else
+        this.logger.error(
+          `[NOTIFY_FAILURE_EMAIL] failed: ${String(email.error).slice(0, 300)}`,
+        );
     } catch (err) {
-      this.logger.error(`[NOTIFY_FAILURE_EMAIL] failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(
+        `[NOTIFY_FAILURE_EMAIL] failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -575,10 +700,15 @@ export function decide(
 }
 
 /** The segment a collector assigned, or a fresh full check. Anything else is outside the constituency. */
-export function resolveSegment(article: CollectedArticle): AssemblySegment | null {
+export function resolveSegment(
+  article: CollectedArticle,
+): AssemblySegment | null {
   const assigned = article.assembly_segment;
-  if (assigned && (ASSEMBLY_SEGMENTS as readonly string[]).includes(assigned)) return assigned as AssemblySegment;
-  const checked = scoreConstituency(`${article.title || ''}\n${article.content || ''}`);
+  if (assigned && (ASSEMBLY_SEGMENTS as readonly string[]).includes(assigned))
+    return assigned as AssemblySegment;
+  const checked = scoreConstituency(
+    `${article.title || ''}\n${article.content || ''}`,
+  );
   return checked.valid ? checked.segment : null;
 }
 

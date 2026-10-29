@@ -14,24 +14,70 @@ export interface FollowupContact {
 }
 
 const RECENT_NAMES = [
-  'Ravi Teja', 'Ananya Reddy', 'Suresh Babu', 'Lakshmi Devi', 'Praveen Kumar',
-  'Sravani Rao', 'Venkat Reddy', 'Meena Kumari', 'Harish Naidu', 'Divya Sri',
-  'Naveen Chandra', 'Pooja Sharma', 'Kiran Kumar', 'Swathi Reddy', 'Ajay Krishna',
-  'Bhavani Rao', 'Manoj Varma', 'Keerthi Nair', 'Sandeep Yadav', 'Ramya Krishna',
-  'Gopal Rao', 'Sindhu Priya', 'Chaitanya Rao', 'Nandini Iyer', 'Vikram Singh',
+  'Ravi Teja',
+  'Ananya Reddy',
+  'Suresh Babu',
+  'Lakshmi Devi',
+  'Praveen Kumar',
+  'Sravani Rao',
+  'Venkat Reddy',
+  'Meena Kumari',
+  'Harish Naidu',
+  'Divya Sri',
+  'Naveen Chandra',
+  'Pooja Sharma',
+  'Kiran Kumar',
+  'Swathi Reddy',
+  'Ajay Krishna',
+  'Bhavani Rao',
+  'Manoj Varma',
+  'Keerthi Nair',
+  'Sandeep Yadav',
+  'Ramya Krishna',
+  'Gopal Rao',
+  'Sindhu Priya',
+  'Chaitanya Rao',
+  'Nandini Iyer',
+  'Vikram Singh',
 ];
 
 const FREQUENT_NAMES = [
-  'Arjun Reddy', 'Kavya Nair', 'Ramesh Goud', 'Pallavi Sharma', 'Srinivas Rao',
-  'Deepika Reddy', 'Mahesh Babu', 'Shreya Patel', 'Anil Kumar', 'Harika Devi',
-  'Rajesh Naidu', 'Sneha Iyer', 'Prasad Varma', 'Lavanya Sri', 'Vamsi Krishna',
-  'Jyothi Rao', 'Karthik Reddy', 'Aishwarya Rao', 'Sathish Kumar', 'Madhavi Devi',
-  'Nitin Sharma', 'Priyanka Reddy', 'Raghu Ram', 'Tejaswini Rao', 'Yashwanth Goud',
+  'Arjun Reddy',
+  'Kavya Nair',
+  'Ramesh Goud',
+  'Pallavi Sharma',
+  'Srinivas Rao',
+  'Deepika Reddy',
+  'Mahesh Babu',
+  'Shreya Patel',
+  'Anil Kumar',
+  'Harika Devi',
+  'Rajesh Naidu',
+  'Sneha Iyer',
+  'Prasad Varma',
+  'Lavanya Sri',
+  'Vamsi Krishna',
+  'Jyothi Rao',
+  'Karthik Reddy',
+  'Aishwarya Rao',
+  'Sathish Kumar',
+  'Madhavi Devi',
+  'Nitin Sharma',
+  'Priyanka Reddy',
+  'Raghu Ram',
+  'Tejaswini Rao',
+  'Yashwanth Goud',
 ];
 
 const PENDING_NAMES = [
-  'Balaji Rao', 'Ishwarya Devi', 'Murali Krishna', 'Tanvi Reddy', 'Sai Kiran',
-  'Anusha Rao', 'Dinesh Goud', 'Padma Lakshmi',
+  'Balaji Rao',
+  'Ishwarya Devi',
+  'Murali Krishna',
+  'Tanvi Reddy',
+  'Sai Kiran',
+  'Anusha Rao',
+  'Dinesh Goud',
+  'Padma Lakshmi',
 ];
 
 let contacts: FollowupContact[] | null = null;
@@ -52,10 +98,22 @@ export function followupBucket(contact: FollowupContact): FollowupBucket {
 }
 
 export function followupContactsIn(bucket: FollowupBucket): FollowupContact[] {
-  const rows = allFollowupContacts().filter((row) => followupBucket(row) === bucket);
-  if (bucket === 'pending') return [...rows].sort((left, right) => left.name.localeCompare(right.name));
-  if (bucket === 'frequent') return [...rows].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
-  return [...rows].sort((left, right) => String(right.lastFollowedAt || '').localeCompare(String(left.lastFollowedAt || '')) || left.name.localeCompare(right.name));
+  const rows = allFollowupContacts().filter(
+    (row) => followupBucket(row) === bucket,
+  );
+  if (bucket === 'pending')
+    return [...rows].sort((left, right) => left.name.localeCompare(right.name));
+  if (bucket === 'frequent')
+    return [...rows].sort(
+      (left, right) =>
+        right.count - left.count || left.name.localeCompare(right.name),
+    );
+  return [...rows].sort(
+    (left, right) =>
+      String(right.lastFollowedAt || '').localeCompare(
+        String(left.lastFollowedAt || ''),
+      ) || left.name.localeCompare(right.name),
+  );
 }
 
 export function findFollowupContact(id: string): FollowupContact | undefined {
@@ -63,7 +121,10 @@ export function findFollowupContact(id: string): FollowupContact | undefined {
 }
 
 /** Marks a follow-up done. First send goes to Recent; later sends go to Frequently Followed Up. */
-export function recordFollowup(id: string, at = new Date()): FollowupContact | undefined {
+export function recordFollowup(
+  id: string,
+  at = new Date(),
+): FollowupContact | undefined {
   const contact = findFollowupContact(id);
   if (!contact) return undefined;
   contact.count += 1;
@@ -76,13 +137,34 @@ export function followupMessage(name: string): string {
 }
 
 function seed(): FollowupContact[] {
-  const recent = RECENT_NAMES.map((name, index) => contact(`r${pad(index + 1)}`, name, 1, `2026-10-13T0${Math.min(9, index)}:00:00.000Z`));
-  const frequent = FREQUENT_NAMES.map((name, index) => contact(`f${pad(index + 1)}`, name, 2 + (index % 3), `2026-10-12T0${Math.min(9, index)}:30:00.000Z`));
-  const pending = PENDING_NAMES.map((name, index) => contact(`n${pad(index + 1)}`, name, 0, null));
+  const recent = RECENT_NAMES.map((name, index) =>
+    contact(
+      `r${pad(index + 1)}`,
+      name,
+      1,
+      `2026-10-13T0${Math.min(9, index)}:00:00.000Z`,
+    ),
+  );
+  const frequent = FREQUENT_NAMES.map((name, index) =>
+    contact(
+      `f${pad(index + 1)}`,
+      name,
+      2 + (index % 3),
+      `2026-10-12T0${Math.min(9, index)}:30:00.000Z`,
+    ),
+  );
+  const pending = PENDING_NAMES.map((name, index) =>
+    contact(`n${pad(index + 1)}`, name, 0, null),
+  );
   return [...recent, ...frequent, ...pending];
 }
 
-function contact(id: string, name: string, count: number, lastFollowedAt: string | null): FollowupContact {
+function contact(
+  id: string,
+  name: string,
+  count: number,
+  lastFollowedAt: string | null,
+): FollowupContact {
   return { id, name, phone: FOLLOWUP_PHONE, count, lastFollowedAt };
 }
 

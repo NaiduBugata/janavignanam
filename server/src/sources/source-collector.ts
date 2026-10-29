@@ -1,4 +1,4 @@
-export type SourceName = "lokal" | "youtube" | "sakshi";
+export type SourceName = 'lokal' | 'youtube' | 'sakshi';
 
 export interface PipelineContext {
   runId: string;
@@ -17,7 +17,7 @@ export interface CollectedArticle {
 
 export interface SourceCollectionResult {
   source: SourceName;
-  status: "success" | "failed" | "skipped";
+  status: 'success' | 'failed' | 'skipped';
   startedAt: string;
   completedAt: string;
   durationMs: number;

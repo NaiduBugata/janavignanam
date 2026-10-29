@@ -16,7 +16,7 @@ export class PipelineStateRepository {
   async getState(): Promise<Document> {
     const doc = await this.db
       .collection(STATE_COLLECTION)
-      .findOne({ _id: STATE_ID as unknown as Document['_id'] });
+      .findOne({ _id: STATE_ID });
     return doc || {};
   }
 

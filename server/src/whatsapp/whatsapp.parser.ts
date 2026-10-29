@@ -1,6 +1,18 @@
 const KNOWN_MESSAGE_TYPES = new Set([
-  'text', 'image', 'document', 'audio', 'video', 'sticker', 'interactive',
-  'button', 'contacts', 'location', 'reaction', 'order', 'system', 'unknown',
+  'text',
+  'image',
+  'document',
+  'audio',
+  'video',
+  'sticker',
+  'interactive',
+  'button',
+  'contacts',
+  'location',
+  'reaction',
+  'order',
+  'system',
+  'unknown',
 ]);
 const KNOWN_STATUS_VALUES = new Set(['sent', 'delivered', 'read', 'failed']);
 
@@ -36,8 +48,12 @@ function baseEvent(
     event_category: eventCategory,
     event_type: eventType,
     waba_id: wabaId,
-    phone_number_id: metadata.phone_number_id ? String(metadata.phone_number_id) : null,
-    display_phone_number: metadata.display_phone_number ? String(metadata.display_phone_number) : null,
+    phone_number_id: metadata.phone_number_id
+      ? String(metadata.phone_number_id)
+      : null,
+    display_phone_number: metadata.display_phone_number
+      ? String(metadata.display_phone_number)
+      : null,
     change_field: changeField,
     sender_wa_id: null,
     sender_profile_name: null,
@@ -59,8 +75,12 @@ function contactMap(contacts: unknown): Record<string, string> {
   for (const contact of contacts) {
     if (!contact || typeof contact !== 'object') continue;
     const row = contact as Record<string, unknown>;
-    const profile = row.profile && typeof row.profile === 'object' ? (row.profile as Record<string, unknown>) : {};
-    if (row.wa_id) mapping[String(row.wa_id)] = profile.name ? String(profile.name) : '';
+    const profile =
+      row.profile && typeof row.profile === 'object'
+        ? (row.profile as Record<string, unknown>)
+        : {};
+    if (row.wa_id)
+      mapping[String(row.wa_id)] = profile.name ? String(profile.name) : '';
   }
   return mapping;
 }
@@ -86,36 +106,65 @@ function parseMessage(
   event.sender_wa_id = sender || null;
   event.sender_profile_name = contacts[sender] || null;
   event.message_id = message.id ? String(message.id) : null;
-  event.message_timestamp = message.timestamp ? String(message.timestamp) : null;
+  event.message_timestamp = message.timestamp
+    ? String(message.timestamp)
+    : null;
   if (msgType === 'text') {
-    const text = message.text && typeof message.text === 'object' ? (message.text as Record<string, unknown>) : {};
+    const text =
+      message.text && typeof message.text === 'object'
+        ? (message.text as Record<string, unknown>)
+        : {};
     event.message_text = text.body ? String(text.body) : null;
-  } else if (['image', 'document', 'audio', 'video', 'sticker'].includes(msgType)) {
+  } else if (
+    ['image', 'document', 'audio', 'video', 'sticker'].includes(msgType)
+  ) {
     const block = message[msgType];
-    const mediaId = block && typeof block === 'object' ? (block as Record<string, unknown>).id : null;
+    const mediaId =
+      block && typeof block === 'object'
+        ? (block as Record<string, unknown>).id
+        : null;
     if (mediaId) event.media_ids = [String(mediaId)];
   } else if (msgType === 'interactive' || msgType === 'button') {
-    const interactive = message.interactive && typeof message.interactive === 'object'
-      ? (message.interactive as Record<string, unknown>)
-      : null;
-    const button = message.button && typeof message.button === 'object' ? (message.button as Record<string, unknown>) : null;
+    const interactive =
+      message.interactive && typeof message.interactive === 'object'
+        ? (message.interactive as Record<string, unknown>)
+        : null;
+    const button =
+      message.button && typeof message.button === 'object'
+        ? (message.button as Record<string, unknown>)
+        : null;
     if (interactive) {
       event.interactive_response = { type: interactive.type };
-      if (interactive.button_reply) event.interactive_response.button_reply = interactive.button_reply;
-      if (interactive.list_reply) event.interactive_response.list_reply = interactive.list_reply;
+      if (interactive.button_reply)
+        event.interactive_response.button_reply = interactive.button_reply;
+      if (interactive.list_reply)
+        event.interactive_response.list_reply = interactive.list_reply;
       const reply = event.interactive_response;
-      const buttonReply = reply.button_reply as Record<string, unknown> | undefined;
+      const buttonReply = reply.button_reply as
+        Record<string, unknown> | undefined;
       const listReply = reply.list_reply as Record<string, unknown> | undefined;
-      event.message_text = buttonReply?.title ? String(buttonReply.title) : listReply?.title ? String(listReply.title) : null;
+      event.message_text = buttonReply?.title
+        ? String(buttonReply.title)
+        : listReply?.title
+          ? String(listReply.title)
+          : null;
     } else if (button) {
       event.interactive_response = { type: 'button', button };
-      event.message_text = button.text ? String(button.text) : button.payload ? String(button.payload) : null;
+      event.message_text = button.text
+        ? String(button.text)
+        : button.payload
+          ? String(button.payload)
+          : null;
     }
   } else if (msgType === 'location') {
-    const location = message.location && typeof message.location === 'object' ? (message.location as Record<string, unknown>) : {};
+    const location =
+      message.location && typeof message.location === 'object'
+        ? (message.location as Record<string, unknown>)
+        : {};
     event.message_text = `lat=${location.latitude}, lng=${location.longitude}, name=${location.name}, address=${location.address}`;
   }
-  if (event.event_type === 'unknown' && !event.message_text) event.message_text = JSON.stringify(message);
+  if (event.event_type === 'unknown' && !event.message_text)
+    event.message_text = JSON.stringify(message);
   return event;
 }
 
@@ -140,60 +189,137 @@ function parseStatus(
   event.status = statusValue;
   event.sender_wa_id = status.recipient_id ? String(status.recipient_id) : null;
   const errors = Array.isArray(status.errors) ? status.errors : [];
-  event.error_codes = errors.filter((item) => item && typeof item === 'object').map((item) => {
-    const err = item as Record<string, unknown>;
-    return { code: err.code, title: err.title, message: err.message, details: err.error_data };
-  });
+  event.error_codes = errors
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const err = item as Record<string, unknown>;
+      return {
+        code: err.code,
+        title: err.title,
+        message: err.message,
+        details: err.error_data,
+      };
+    });
   return event;
 }
 
-function parseChange(change: Record<string, unknown>, wabaId: string | null): WhatsAppEvent[] {
-  const value = change.value && typeof change.value === 'object' && !Array.isArray(change.value)
-    ? (change.value as Record<string, unknown>)
-    : null;
+function parseChange(
+  change: Record<string, unknown>,
+  wabaId: string | null,
+): WhatsAppEvent[] {
+  const value =
+    change.value &&
+    typeof change.value === 'object' &&
+    !Array.isArray(change.value)
+      ? (change.value as Record<string, unknown>)
+      : null;
   if (!value) return [];
-  const metadata = value.metadata && typeof value.metadata === 'object' ? (value.metadata as Record<string, unknown>) : {};
+  const metadata =
+    value.metadata && typeof value.metadata === 'object'
+      ? (value.metadata as Record<string, unknown>)
+      : {};
   const contacts = contactMap(value.contacts);
   const field = change.field ? String(change.field) : null;
   const events: WhatsAppEvent[] = [];
   for (const message of Array.isArray(value.messages) ? value.messages : []) {
-    if (message && typeof message === 'object') events.push(parseMessage(message as Record<string, unknown>, wabaId, metadata, contacts, field, change));
+    if (message && typeof message === 'object')
+      events.push(
+        parseMessage(
+          message as Record<string, unknown>,
+          wabaId,
+          metadata,
+          contacts,
+          field,
+          change,
+        ),
+      );
   }
   for (const status of Array.isArray(value.statuses) ? value.statuses : []) {
-    if (status && typeof status === 'object') events.push(parseStatus(status as Record<string, unknown>, wabaId, metadata, field, change));
+    if (status && typeof status === 'object')
+      events.push(
+        parseStatus(
+          status as Record<string, unknown>,
+          wabaId,
+          metadata,
+          field,
+          change,
+        ),
+      );
   }
   const template = value.message_template_status_update;
   if (template && typeof template === 'object') {
-    const event = baseEvent('template', 'message_template_status_update', wabaId, metadata, field, change);
+    const event = baseEvent(
+      'template',
+      'message_template_status_update',
+      wabaId,
+      metadata,
+      field,
+      change,
+    );
     const row = template as Record<string, unknown>;
     event.template_status = row;
-    event.message_id = row.message_template_id ? String(row.message_template_id) : row.id ? String(row.id) : null;
-    event.status = row.event ? String(row.event) : row.status ? String(row.status) : null;
+    event.message_id = row.message_template_id
+      ? String(row.message_template_id)
+      : row.id
+        ? String(row.id)
+        : null;
+    event.status = row.event
+      ? String(row.event)
+      : row.status
+        ? String(row.status)
+        : null;
     events.push(event);
   }
   for (const err of Array.isArray(value.errors) ? value.errors : []) {
     if (!err || typeof err !== 'object') continue;
-    const event = baseEvent('error', 'webhook_error', wabaId, metadata, field, change);
+    const event = baseEvent(
+      'error',
+      'webhook_error',
+      wabaId,
+      metadata,
+      field,
+      change,
+    );
     const row = err as Record<string, unknown>;
-    event.error_codes = [{ code: row.code, title: row.title, message: row.message, details: row.error_data }];
+    event.error_codes = [
+      {
+        code: row.code,
+        title: row.title,
+        message: row.message,
+        details: row.error_data,
+      },
+    ];
     events.push(event);
   }
-  if (!events.length && field) events.push(baseEvent('unknown', field, wabaId, metadata, field, change));
+  if (!events.length && field)
+    events.push(baseEvent('unknown', field, wabaId, metadata, field, change));
   return events;
 }
 
-export function parseWebhookPayload(payload: Record<string, unknown>): WhatsAppEvent[] {
+export function parseWebhookPayload(
+  payload: Record<string, unknown>,
+): WhatsAppEvent[] {
   const events: WhatsAppEvent[] = [];
   for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
     if (!entry || typeof entry !== 'object') continue;
     const row = entry as Record<string, unknown>;
     const wabaId = row.id != null ? String(row.id) : null;
     for (const change of Array.isArray(row.changes) ? row.changes : []) {
-      if (change && typeof change === 'object') events.push(...parseChange(change as Record<string, unknown>, wabaId));
+      if (change && typeof change === 'object')
+        events.push(...parseChange(change as Record<string, unknown>, wabaId));
     }
   }
   if (!events.length) {
-    events.push(baseEvent('unknown', String(payload.object || 'unknown'), null, {}, null, { payload }));
+    events.push(
+      baseEvent(
+        'unknown',
+        String(payload.object || 'unknown'),
+        null,
+        {},
+        null,
+        { payload },
+      ),
+    );
   }
   return events;
 }

@@ -29,7 +29,9 @@ export interface ReminderSlot {
 }
 
 /** Every distinct mobile on the visit. The same number is not messaged twice. */
-export function listedPhones(visit: Pick<FollowUpVisit, 'leadPhone' | 'leadPhones'>): string[] {
+export function listedPhones(
+  visit: Pick<FollowUpVisit, 'leadPhone' | 'leadPhones'>,
+): string[] {
   const seen = new Set<string>();
   const phones: string[] = [];
   for (const value of [...(visit.leadPhones || []), visit.leadPhone || '']) {
@@ -42,11 +44,17 @@ export function listedPhones(visit: Pick<FollowUpVisit, 'leadPhone' | 'leadPhone
 }
 
 /** Up to three times before the visit. A timed visit is 3, 2, and 1 hour before. Anytime is 7:00 AM, 12:00 PM, and 4:00 PM. */
-export function reminderSlots(visitDate: string, visitTime: string): ReminderSlot[] {
+export function reminderSlots(
+  visitDate: string,
+  visitTime: string,
+): ReminderSlot[] {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) return [];
   const start = firstMinutes(visitTime);
   if (start === null) {
-    return ANYTIME_MINUTES.map((minutes) => ({ id: `${visitDate}@${minutes}`, at: istDate(visitDate, minutes) }));
+    return ANYTIME_MINUTES.map((minutes) => ({
+      id: `${visitDate}@${minutes}`,
+      at: istDate(visitDate, minutes),
+    }));
   }
   return TIMED_LEAD_HOURS.map((hours) => {
     const shifted = start - hours * 60;
@@ -57,7 +65,10 @@ export function reminderSlots(visitDate: string, visitTime: string): ReminderSlo
 }
 
 /** The next reminder to send, plus earlier missed slots that should not be sent late. */
-export function reminderPlan(visit: FollowUpVisit, now: Date): { send: ReminderSlot | null; skip: string[] } {
+export function reminderPlan(
+  visit: FollowUpVisit,
+  now: Date,
+): { send: ReminderSlot | null; skip: string[] } {
   const none = { send: null, skip: [] as string[] };
   if (!listedPhones(visit).length || !visit.visitDate) return none;
   const sent = new Set(visit.followUpSent || []);
@@ -68,10 +79,15 @@ export function reminderPlan(visit: FollowUpVisit, now: Date): { send: ReminderS
     (slot) => !sent.has(slot.id) && now.getTime() >= slot.at.getTime(),
   );
   if (!due.length) return none;
-  return { send: due[due.length - 1], skip: due.slice(0, -1).map((slot) => slot.id) };
+  return {
+    send: due[due.length - 1],
+    skip: due.slice(0, -1).map((slot) => slot.id),
+  };
 }
 
-export function followUpParameters(visit: Pick<FollowUpVisit, 'title' | 'place' | 'visitTime'>): Record<string, string> {
+export function followUpParameters(
+  visit: Pick<FollowUpVisit, 'title' | 'place' | 'visitTime'>,
+): Record<string, string> {
   return {
     title: templateValue(visit.title, 'Scheduled visit'),
     place: templateValue(visit.place, 'as scheduled'),
@@ -80,7 +96,11 @@ export function followUpParameters(visit: Pick<FollowUpVisit, 'title' | 'place' 
 }
 
 function templateValue(value: string, fallback: string): string {
-  const cleaned = value.replace(/[\r\n\t]+/g, ' ').replace(/ {4,}/g, '   ').trim().slice(0, 1024);
+  const cleaned = value
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/ {4,}/g, '   ')
+    .trim()
+    .slice(0, 1024);
   return cleaned || fallback;
 }
 

@@ -68,7 +68,10 @@ function makeHarness(
   const config = {
     get: (key: string) => (key === 'pipeline.executor' ? 'python' : undefined),
   };
-  const native = { runCombinedOnce: jest.fn(), alertFailure: jest.fn().mockResolvedValue(undefined) };
+  const native = {
+    runCombinedOnce: jest.fn(),
+    alertFailure: jest.fn().mockResolvedValue(undefined),
+  };
   const runner = new PipelineRunnerService(
     lock as unknown as PipelineLockService,
     state as unknown as PipelineStateService,
@@ -179,7 +182,9 @@ describe('PipelineRunnerService (canonical single-writer runner)', () => {
     expect(result.errors).toContain('spawn exploded');
     expect(h.lock.release).toHaveBeenCalledWith('owner-1');
     expect(h.runner.busy).toBe(false);
-    expect(h.native.alertFailure).toHaveBeenCalledWith(['pipeline_crashed: spawn exploded']);
+    expect(h.native.alertFailure).toHaveBeenCalledWith([
+      'pipeline_crashed: spawn exploded',
+    ]);
   });
 
   it('still finishes a crashed run when the crash alert itself fails', async () => {

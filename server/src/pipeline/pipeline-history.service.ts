@@ -196,7 +196,7 @@ export class PipelineHistoryService {
     if (!doc) {
       try {
         doc = await this.collection().findOne({
-          _id: new ObjectId(runId) as unknown as Document['_id'],
+          _id: new ObjectId(runId),
         });
       } catch {
         doc = null;

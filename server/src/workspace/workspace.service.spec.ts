@@ -12,16 +12,29 @@ describe('WorkspaceService', () => {
       collection: (name: string) => ({
         findOne: async (filter: { email?: string; _id?: unknown }) => {
           const rows = name === 'jv_users' ? users : records;
-          return rows.find((row) => (filter.email != null ? row.email === filter.email : String(row._id) === String(filter._id))) || null;
+          return (
+            rows.find((row) =>
+              filter.email != null
+                ? row.email === filter.email
+                : String(row._id) === String(filter._id),
+            ) || null
+          );
         },
-        findOneAndUpdate: async (filter: { _id?: unknown }, update: { $set?: Record<string, unknown> }) => {
-          const row = records.find((item) => String(item._id) === String(filter._id));
+        findOneAndUpdate: async (
+          filter: { _id?: unknown },
+          update: { $set?: Record<string, unknown> },
+        ) => {
+          const row = records.find(
+            (item) => String(item._id) === String(filter._id),
+          );
           if (!row) return null;
           Object.assign(row, update.$set || {});
           return row;
         },
         deleteOne: async (filter: { _id?: unknown }) => {
-          const index = records.findIndex((item) => String(item._id) === String(filter._id));
+          const index = records.findIndex(
+            (item) => String(item._id) === String(filter._id),
+          );
           if (index < 0) return { deletedCount: 0 };
           records.splice(index, 1);
           return { deletedCount: 1 };
@@ -35,21 +48,34 @@ describe('WorkspaceService', () => {
         find: () => ({
           sort: () => ({
             limit: () => ({
-              toArray: async () => records.filter((row) => row.section === 'grievances'),
+              toArray: async () =>
+                records.filter((row) => row.section === 'grievances'),
             }),
           }),
         }),
-        countDocuments: async (filter: { section?: string }) => records.filter((row) => !filter.section || row.section === filter.section).length,
+        countDocuments: async (filter: { section?: string }) =>
+          records.filter(
+            (row) => !filter.section || row.section === filter.section,
+          ).length,
       }),
     };
     const config = { get: () => 'test-secret' } as unknown as ConfigService;
-    const service = new WorkspaceService(db as unknown as DatabaseService, config);
+    const service = new WorkspaceService(
+      db as unknown as DatabaseService,
+      config,
+    );
 
-    const created = await service.register('local@janavignanam.local', 'localpass', 'local');
+    const created = await service.register(
+      'local@janavignanam.local',
+      'localpass',
+      'local',
+    );
     expect(created.user.email).toBe('local@janavignanam.local');
     const again = await service.login('local@janavignanam.local', 'localpass');
     expect(again.user.name).toBe('local');
-    await expect(service.login('local@janavignanam.local', 'wrongpass')).rejects.toThrow('incorrect');
+    await expect(
+      service.login('local@janavignanam.local', 'wrongpass'),
+    ).rejects.toThrow('incorrect');
 
     const row = await service.create({
       section: 'grievances',

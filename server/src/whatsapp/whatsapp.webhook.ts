@@ -20,7 +20,13 @@ export function verifyWebhook(
 ): WebhookHttpResult {
   if (!webhookEnabled(env)) return { body: 'Webhook disabled', status: 503 };
   const expected = (env.WHATSAPP_VERIFY_TOKEN || '').trim();
-  if (query.mode === 'subscribe' && query.token && expected && query.token === expected && query.challenge != null) {
+  if (
+    query.mode === 'subscribe' &&
+    query.token &&
+    expected &&
+    query.token === expected &&
+    query.challenge != null
+  ) {
     logger.log('WhatsApp webhook verification succeeded');
     return { body: String(query.challenge), status: 200 };
   }
@@ -37,7 +43,9 @@ export async function processWebhookPost(
   },
 ): Promise<WebhookHttpResult> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    logger.error(`Invalid WhatsApp webhook JSON from ${options.clientIp || 'unknown'}`);
+    logger.error(
+      `Invalid WhatsApp webhook JSON from ${options.clientIp || 'unknown'}`,
+    );
     return { body: 'Invalid JSON payload', status: 400 };
   }
   const body = payload as Record<string, unknown>;
@@ -47,7 +55,12 @@ export async function processWebhookPost(
   const wabaId = (options.wabaId || '').trim();
   if (wabaId) {
     const entryIds = (Array.isArray(body.entry) ? body.entry : [])
-      .filter((entry) => entry && typeof entry === 'object' && (entry as Record<string, unknown>).id != null)
+      .filter(
+        (entry) =>
+          entry &&
+          typeof entry === 'object' &&
+          (entry as Record<string, unknown>).id != null,
+      )
       .map((entry) => String((entry as Record<string, unknown>).id));
     if (entryIds.length && !entryIds.includes(wabaId)) {
       logger.warn(`WhatsApp WABA mismatch: expected ${wabaId}`);
@@ -62,8 +75,12 @@ export async function processWebhookPost(
   }
   for (const event of events) {
     try {
-      if (event.event_category === 'unknown') logger.warn(`Unknown WhatsApp event ${event.event_type}`);
-      else logger.log(`WhatsApp ${event.event_category}/${event.event_type} id=${event.message_id || '-'}`);
+      if (event.event_category === 'unknown')
+        logger.warn(`Unknown WhatsApp event ${event.event_type}`);
+      else
+        logger.log(
+          `WhatsApp ${event.event_category}/${event.event_type} id=${event.message_id || '-'}`,
+        );
       await options.save(event, body);
     } catch (err) {
       logger.error(err instanceof Error ? err.message : String(err));

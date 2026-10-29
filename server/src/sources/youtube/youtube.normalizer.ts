@@ -1,7 +1,10 @@
 import type { YoutubeArticle, YoutubeTranscript } from './youtube.models';
 
 /** Port of sources/youtube/normalizer.py::normalize_video. */
-export function normalizeYoutubeVideo(item: YoutubeTranscript, cleanText: string): YoutubeArticle {
+export function normalizeYoutubeVideo(
+  item: YoutubeTranscript,
+  cleanText: string,
+): YoutubeArticle {
   return {
     id: item.video_id,
     video_id: item.video_id,

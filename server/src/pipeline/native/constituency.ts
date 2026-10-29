@@ -56,14 +56,24 @@ export function loadDictionary(): Dict {
     ? resolve(process.cwd(), process.env.LOCATION_DICTIONARY_PATH)
     : resolve(__dirname, '../data/location_dictionary.json');
   const data = JSON.parse(readFileSync(path, 'utf8')) as Dict;
-  const unknown = Object.keys(data.segments || {}).filter((name) => !(ASSEMBLY_SEGMENTS as readonly string[]).includes(name));
-  if (unknown.length) throw new Error(`location dictionary lists segments outside the constituency: ${unknown.join(', ')}`);
+  const unknown = Object.keys(data.segments || {}).filter(
+    (name) => !(ASSEMBLY_SEGMENTS as readonly string[]).includes(name),
+  );
+  if (unknown.length)
+    throw new Error(
+      `location dictionary lists segments outside the constituency: ${unknown.join(', ')}`,
+    );
   cached = data;
   return cached;
 }
 
-export function hasAssemblySegment(doc: { assembly_segment?: unknown }): boolean {
-  return typeof doc.assembly_segment === 'string' && (ASSEMBLY_SEGMENTS as readonly string[]).includes(doc.assembly_segment);
+export function hasAssemblySegment(doc: {
+  assembly_segment?: unknown;
+}): boolean {
+  return (
+    typeof doc.assembly_segment === 'string' &&
+    (ASSEMBLY_SEGMENTS as readonly string[]).includes(doc.assembly_segment)
+  );
 }
 
 /** Every place word for the seven segments, for URL ranking and search. */
@@ -71,30 +81,50 @@ export function constituencyKeywords(): string[] {
   const data = loadDictionary();
   const words: string[] = [];
   for (const entry of Object.values(data.segments || {})) {
-    words.push(...(entry.names || []), ...(entry.mandals || []), ...(entry.ambiguous || []), ...(entry.landmarks || []));
+    words.push(
+      ...(entry.names || []),
+      ...(entry.mandals || []),
+      ...(entry.ambiguous || []),
+      ...(entry.landmarks || []),
+    );
   }
   return [...new Set(words.map((word) => word.trim()).filter(Boolean))];
 }
 
 function firstIndex(haystack: string, keyword: string): number {
   if (!keyword) return -1;
-  if ([...keyword].some((ch) => ch.charCodeAt(0) > 127)) return haystack.indexOf(keyword);
-  const pattern = keyword.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-  const match = new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, 'iu').exec(haystack);
+  if ([...keyword].some((ch) => ch.charCodeAt(0) > 127))
+    return haystack.indexOf(keyword);
+  const pattern = keyword
+    .toLowerCase()
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+');
+  const match = new RegExp(
+    `(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`,
+    'iu',
+  ).exec(haystack);
   return match ? match.index : -1;
 }
 
-function findMatches(haystack: string, keywords: string[] = []): Array<{ word: string; at: number }> {
+function findMatches(
+  haystack: string,
+  keywords: string[] = [],
+): Array<{ word: string; at: number }> {
   return keywords
     .map((word) => ({ word, at: firstIndex(haystack, word) }))
     .filter((hit) => hit.at >= 0);
 }
 
-function stripConstituencyReferences(text: string, references: string[] = []): string {
+function stripConstituencyReferences(
+  text: string,
+  references: string[] = [],
+): string {
   let out = text;
   for (const phrase of references) {
     if (!phrase) continue;
-    const pattern = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+    const pattern = phrase
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\s+/g, '\\s*');
     out = out.replace(new RegExp(pattern, 'giu'), ' ');
   }
   return out;
@@ -112,9 +142,17 @@ export function mapSegment(text: string): SegmentMatch {
     mandal: data.scoring?.mandal ?? 4,
     landmark: data.scoring?.landmark ?? 6,
   };
-  const haystack = stripConstituencyReferences(text, data.constituency_references);
+  const haystack = stripConstituencyReferences(
+    text,
+    data.constituency_references,
+  );
   const districtNamed = findMatches(haystack, data.district_aliases).length > 0;
-  let best: { segment: AssemblySegment; evidence: number; at: number; matches: string[] } | null = null;
+  let best: {
+    segment: AssemblySegment;
+    evidence: number;
+    at: number;
+    matches: string[];
+  } | null = null;
 
   for (const segment of ASSEMBLY_SEGMENTS) {
     const entry = data.segments?.[segment];
@@ -123,16 +161,31 @@ export function mapSegment(text: string): SegmentMatch {
     const mandals = findMatches(haystack, entry.mandals);
     const landmarks = findMatches(haystack, entry.landmarks);
     const ambiguous = findMatches(haystack, entry.ambiguous);
-    const corroborated = names.length > 0 || mandals.length > 0 || landmarks.length > 0 || districtNamed;
-    const usable = [...names, ...mandals, ...landmarks, ...(corroborated ? ambiguous : [])];
+    const corroborated =
+      names.length > 0 ||
+      mandals.length > 0 ||
+      landmarks.length > 0 ||
+      districtNamed;
+    const usable = [
+      ...names,
+      ...mandals,
+      ...landmarks,
+      ...(corroborated ? ambiguous : []),
+    ];
     if (!usable.length) continue;
-    const distinctMandals = mandals.length + (corroborated ? ambiguous.length : 0);
+    const distinctMandals =
+      mandals.length + (corroborated ? ambiguous.length : 0);
     let evidence = 0;
     if (names.length) evidence += weights.name;
     if (landmarks.length) evidence += weights.landmark;
-    if (distinctMandals) evidence += weights.mandal + Math.min(4, (distinctMandals - 1) * 2);
+    if (distinctMandals)
+      evidence += weights.mandal + Math.min(4, (distinctMandals - 1) * 2);
     const at = Math.min(...usable.map((hit) => hit.at));
-    if (!best || evidence > best.evidence || (evidence === best.evidence && at < best.at)) {
+    if (
+      !best ||
+      evidence > best.evidence ||
+      (evidence === best.evidence && at < best.at)
+    ) {
       best = { segment, evidence, at, matches: usable.map((hit) => hit.word) };
     }
   }
@@ -155,30 +208,73 @@ export function scoreConstituency(text: string, category = ''): ScoreResult {
   const penalty = data.scoring?.negative_penalty ?? 8;
 
   const mapped = mapSegment(text);
-  if (!mapped.segment) return { valid: false, score: 0, reason: 'no_segment', segment: null };
+  if (!mapped.segment)
+    return { valid: false, score: 0, reason: 'no_segment', segment: null };
 
-  const negative = findMatches(text, data.negative_keywords).map((hit) => hit.word);
+  const negative = findMatches(text, data.negative_keywords).map(
+    (hit) => hit.word,
+  );
   for (const neg of data.negative_categories || []) {
-    if (neg && category.toLowerCase().includes(neg.toLowerCase()) && !negative.includes(neg)) negative.push(neg);
+    if (
+      neg &&
+      category.toLowerCase().includes(neg.toLowerCase()) &&
+      !negative.includes(neg)
+    )
+      negative.push(neg);
   }
   const score = mapped.evidence;
   if (negative.length && score < override) {
-    return { valid: false, score: Math.max(0, score - penalty), reason: 'negative_filter', segment: mapped.segment };
+    return {
+      valid: false,
+      score: Math.max(0, score - penalty),
+      reason: 'negative_filter',
+      segment: mapped.segment,
+    };
   }
-  if (score >= accept) return { valid: true, score, reason: 'segment_match', segment: mapped.segment };
-  if (score >= borderline) return { valid: false, score, reason: 'borderline', segment: mapped.segment };
-  return { valid: false, score, reason: 'score_below_threshold', segment: mapped.segment };
+  if (score >= accept)
+    return {
+      valid: true,
+      score,
+      reason: 'segment_match',
+      segment: mapped.segment,
+    };
+  if (score >= borderline)
+    return {
+      valid: false,
+      score,
+      reason: 'borderline',
+      segment: mapped.segment,
+    };
+  return {
+    valid: false,
+    score,
+    reason: 'score_below_threshold',
+    segment: mapped.segment,
+  };
 }
 
 export function buildSearchableText(raw: Record<string, unknown>): string {
   const parts: string[] = [];
-  for (const key of ['title', 'description', 'summary', 'og_description', 'content', 'article', 'category']) {
+  for (const key of [
+    'title',
+    'description',
+    'summary',
+    'og_description',
+    'content',
+    'article',
+    'category',
+  ]) {
     const value = raw[key];
     if (typeof value === 'string' && value.trim()) parts.push(value.trim());
   }
-  if (Array.isArray(raw.tags)) parts.push(...raw.tags.map((item) => String(item).trim()).filter(Boolean));
-  if (Array.isArray(raw.breadcrumb)) parts.push(...raw.breadcrumb.map((item) => String(item).trim()).filter(Boolean));
-  else if (typeof raw.breadcrumb === 'string' && raw.breadcrumb.trim()) parts.push(raw.breadcrumb.trim());
+  if (Array.isArray(raw.tags))
+    parts.push(...raw.tags.map((item) => String(item).trim()).filter(Boolean));
+  if (Array.isArray(raw.breadcrumb))
+    parts.push(
+      ...raw.breadcrumb.map((item) => String(item).trim()).filter(Boolean),
+    );
+  else if (typeof raw.breadcrumb === 'string' && raw.breadcrumb.trim())
+    parts.push(raw.breadcrumb.trim());
   const location = raw.location;
   if (location && typeof location === 'object' && !Array.isArray(location)) {
     for (const key of ['district', 'mandal', 'village', 'town', 'state']) {
@@ -191,7 +287,11 @@ export function buildSearchableText(raw: Record<string, unknown>): string {
 
 function constituencyAiEnabled(useAi?: boolean): boolean {
   if (useAi !== undefined) return useAi;
-  const env = (process.env.CONSTITUENCY_AI_VALIDATION || process.env.SAKSHI_AI_VALIDATION || '')
+  const env = (
+    process.env.CONSTITUENCY_AI_VALIDATION ||
+    process.env.SAKSHI_AI_VALIDATION ||
+    ''
+  )
     .trim()
     .toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(env)) return true;
@@ -199,15 +299,24 @@ function constituencyAiEnabled(useAi?: boolean): boolean {
   return loadDictionary().ai_validation?.enabled !== false;
 }
 
-export function parseSegmentAnswer(content: string): AssemblySegment | 'NONE' | 'UNCERTAIN' {
+export function parseSegmentAnswer(
+  content: string,
+): AssemblySegment | 'NONE' | 'UNCERTAIN' {
   const upper = content.trim().toUpperCase();
   const aliases: Array<[string, AssemblySegment]> = [
     ['SATTENAPALLI', 'Sattenapalle'],
     ['SATTENPALLI', 'Sattenapalle'],
     ['GURAJALA', 'Gurazala'],
-    ...ASSEMBLY_SEGMENTS.map((segment): [string, AssemblySegment] => [segment.toUpperCase(), segment]),
+    ...ASSEMBLY_SEGMENTS.map((segment): [string, AssemblySegment] => [
+      segment.toUpperCase(),
+      segment,
+    ]),
   ];
-  const found = new Set(aliases.filter(([alias]) => upper.includes(alias)).map(([, segment]) => segment));
+  const found = new Set(
+    aliases
+      .filter(([alias]) => upper.includes(alias))
+      .map(([, segment]) => segment),
+  );
   if (found.size === 1) return [...found][0];
   if (found.size > 1) return 'UNCERTAIN';
   if (upper.includes('NONE') || upper === 'NO') return 'NONE';
@@ -235,28 +344,35 @@ export async function checkBorderlineConstituency(
       process.env.CONSTITUENCY_AI_VALIDATION_MODEL ||
       process.env.SAKSHI_AI_VALIDATION_MODEL ||
       'openai/gpt-oss-20b';
-    const response = await fetchImpl('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${keys[0]}`,
-        'Content-Type': 'application/json',
+    const response = await fetchImpl(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${keys[0]}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 300,
+          ...(model.startsWith('openai/gpt-oss')
+            ? { reasoning_effort: 'low' }
+            : {}),
+          messages: [
+            {
+              role: 'system',
+              content: `You map news articles to one of these assembly segments: ${ASSEMBLY_SEGMENTS.join(', ')}. Reply with only one segment name or NONE.`,
+            },
+            { role: 'user', content: prompt },
+          ],
+        }),
       },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        max_tokens: 300,
-        ...(model.startsWith('openai/gpt-oss') ? { reasoning_effort: 'low' } : {}),
-        messages: [
-          {
-            role: 'system',
-            content: `You map news articles to one of these assembly segments: ${ASSEMBLY_SEGMENTS.join(', ')}. Reply with only one segment name or NONE.`,
-          },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    });
+    );
     if (!response.ok) return 'UNCERTAIN';
-    const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const body = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
     return parseSegmentAnswer(body.choices?.[0]?.message?.content || '');
   } catch {
     return 'UNCERTAIN';
@@ -276,9 +392,27 @@ export async function validateConstituency(
   const text = buildSearchableText(raw);
   const result = scoreConstituency(text, category);
   if (result.valid || result.reason !== 'borderline') return result;
-  if (!constituencyAiEnabled(useAi)) return { ...result, reason: 'borderline_no_ai' };
+  if (!constituencyAiEnabled(useAi))
+    return { ...result, reason: 'borderline_no_ai' };
   const decision = await checkBorderlineConstituency(raw, text, fetchImpl);
-  if (decision === result.segment) return { ...result, valid: true, reason: 'ai_confirmed_segment', ai_decision: decision };
-  if (decision === 'UNCERTAIN') return { ...result, valid: false, reason: 'ai_uncertain', ai_decision: decision };
-  return { ...result, valid: false, reason: 'ai_other_segment_or_none', ai_decision: decision };
+  if (decision === result.segment)
+    return {
+      ...result,
+      valid: true,
+      reason: 'ai_confirmed_segment',
+      ai_decision: decision,
+    };
+  if (decision === 'UNCERTAIN')
+    return {
+      ...result,
+      valid: false,
+      reason: 'ai_uncertain',
+      ai_decision: decision,
+    };
+  return {
+    ...result,
+    valid: false,
+    reason: 'ai_other_segment_or_none',
+    ai_decision: decision,
+  };
 }

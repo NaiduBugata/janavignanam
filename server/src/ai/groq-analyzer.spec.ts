@@ -1,4 +1,8 @@
-import { analyzeNewsArticle, extractEntities, validateAnalysis } from './groq-analyzer';
+import {
+  analyzeNewsArticle,
+  extractEntities,
+  validateAnalysis,
+} from './groq-analyzer';
 import { normalizeCategory, normalizeDistrict } from './groq-normalizer';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -58,11 +62,17 @@ describe('analyzeNewsArticle', () => {
       if (key.startsWith('GROQ_API_KEY')) delete process.env[key];
     }
     const content = 'నరసరావుపేట పట్టణంలో రోడ్లపై గుంతలు ఏర్పడ్డాయి';
-    await expect(analyzeNewsArticle({ articleId: '1', title: 't', content })).rejects.toThrow('no_groq_keys');
+    await expect(
+      analyzeNewsArticle({ articleId: '1', title: 't', content }),
+    ).rejects.toThrow('no_groq_keys');
 
     process.env.GROQ_API_KEY = 'test-key';
-    await expect(analyzeNewsArticle({ articleId: '1', title: '  ', content: '  ' })).rejects.toThrow('empty_article');
-    await expect(analyzeNewsArticle({ articleId: '1', title: 't', content: 'short' })).rejects.toThrow('short_article');
+    await expect(
+      analyzeNewsArticle({ articleId: '1', title: '  ', content: '  ' }),
+    ).rejects.toThrow('empty_article');
+    await expect(
+      analyzeNewsArticle({ articleId: '1', title: 't', content: 'short' }),
+    ).rejects.toThrow('short_article');
   });
 
   it('merges three stages, assigns a problem id, and accepts a short summary', async () => {
@@ -71,14 +81,19 @@ describe('analyzeNewsArticle', () => {
     let calls = 0;
     const fetchImpl = (async () => {
       calls += 1;
-      return jsonResponse({ choices: [{ message: { content: JSON.stringify(stagePayload(calls)) } }] });
+      return jsonResponse({
+        choices: [
+          { message: { content: JSON.stringify(stagePayload(calls)) } },
+        ],
+      });
     }) as typeof fetch;
 
     const analysis = await analyzeNewsArticle(
       {
         articleId: '42',
         title: 'నరసరావుపేట రోడ్డు',
-        content: 'నరసరావుపేట పట్టణంలో రోడ్లపై గుంతలు ఏర్పడి వాహనదారులు ఇబ్బంది పడుతున్నారు',
+        content:
+          'నరసరావుపేట పట్టణంలో రోడ్లపై గుంతలు ఏర్పడి వాహనదారులు ఇబ్బంది పడుతున్నారు',
       },
       fetchImpl,
     );
@@ -88,12 +103,22 @@ describe('analyzeNewsArticle', () => {
     expect(analysis.category).toBe('Roads');
     expect(analysis.problem_id).toEqual(expect.stringMatching(/^PROB-/));
     expect(analysis.article_id).toBe('42');
-    expect((analysis.location as { district: string }).district).toBe('Palnadu');
+    expect((analysis.location as { district: string }).district).toBe(
+      'Palnadu',
+    );
     expect(analysis.keywords).toEqual(['road']);
     expect(analysis.subcategory).toBe('civic works');
     const issues = validateAnalysis(analysis);
-    expect(issues.some((item) => item.severity === 'CRITICAL' || item.severity === 'ERROR')).toBe(false);
-    expect(issues.some((item) => item.field === 'summary' && item.severity === 'WARNING')).toBe(true);
+    expect(
+      issues.some(
+        (item) => item.severity === 'CRITICAL' || item.severity === 'ERROR',
+      ),
+    ).toBe(false);
+    expect(
+      issues.some(
+        (item) => item.field === 'summary' && item.severity === 'WARNING',
+      ),
+    ).toBe(true);
     expect(typeof analysis.quality_score).toBe('number');
   });
 
@@ -107,14 +132,19 @@ describe('analyzeNewsArticle', () => {
       calls += 1;
       if (calls === 1) return jsonResponse({}, 429);
       stage += 1;
-      return jsonResponse({ choices: [{ message: { content: JSON.stringify(stagePayload(stage)) } }] });
+      return jsonResponse({
+        choices: [
+          { message: { content: JSON.stringify(stagePayload(stage)) } },
+        ],
+      });
     }) as typeof fetch;
 
     const analysis = await analyzeNewsArticle(
       {
         articleId: '9',
         title: 'Narasaraopet water',
-        content: 'Narasaraopet municipal water supply was interrupted across several wards today',
+        content:
+          'Narasaraopet municipal water supply was interrupted across several wards today',
       },
       fetchImpl,
     );
@@ -124,10 +154,17 @@ describe('analyzeNewsArticle', () => {
     let rejectCalls = 0;
     const rejecting = (async () => {
       rejectCalls += 1;
-      return jsonResponse({ choices: [{ message: { content: JSON.stringify(stagePayload(rejectCalls)) } }] });
+      return jsonResponse({
+        choices: [
+          { message: { content: JSON.stringify(stagePayload(rejectCalls)) } },
+        ],
+      });
     }) as typeof fetch;
     await expect(
-      analyzeNewsArticle({ articleId: 'x', title: '   ', content: 'x'.repeat(40) }, rejecting),
+      analyzeNewsArticle(
+        { articleId: 'x', title: '   ', content: 'x'.repeat(40) },
+        rejecting,
+      ),
     ).rejects.toThrow('decision_reject');
     expect(rejectCalls).toBe(3);
   });
@@ -138,8 +175,16 @@ describe('analyzeNewsArticle', () => {
       location: { district: 'Palnadu', mandal: 'Narasaraopet' },
       summary: '',
     });
-    expect(entities.some((item) => item.type === 'Person' && item.name === 'Lakshmi Devi')).toBe(true);
-    expect(entities.some((item) => item.type === 'District' && item.name === 'Palnadu')).toBe(true);
+    expect(
+      entities.some(
+        (item) => item.type === 'Person' && item.name === 'Lakshmi Devi',
+      ),
+    ).toBe(true);
+    expect(
+      entities.some(
+        (item) => item.type === 'District' && item.name === 'Palnadu',
+      ),
+    ).toBe(true);
     expect(entities.some((item) => item.type === 'Political Party')).toBe(true);
   });
 });

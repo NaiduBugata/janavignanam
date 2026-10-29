@@ -278,7 +278,11 @@ export class PgDocumentCollection {
       'SELECT doc_id, doc FROM mediasphere.documents WHERE collection = $1',
       [this.name],
     );
-    return result.rows.map((row: { doc: unknown }) => hydrate(row.doc));
+    return result.rows.map((row: { doc_id?: string; doc: unknown }) => {
+      const doc = hydrate(row.doc);
+      if (doc._id == null && row.doc_id) doc._id = row.doc_id;
+      return doc;
+    });
   }
 
   find(filter: Filter = {}): QueryCursor {
@@ -401,13 +405,19 @@ export class PgDocumentCollection {
 
   async findOneAndUpdate(
     filter: Filter,
-    update: { $set?: Doc },
+    update: { $set?: Doc; $push?: Record<string, unknown> },
     _options?: { returnDocument?: string },
   ): Promise<Doc | null> {
     return this.exclusive(async () => {
       const hit = (await this.load()).find((doc) => matches(doc, filter));
       if (!hit) return null;
-      Object.assign(hit, update.$set || {});
+      if (update.$set) Object.assign(hit, update.$set);
+      if (update.$push) {
+        for (const [key, value] of Object.entries(update.$push)) {
+          if (!Array.isArray(hit[key])) hit[key] = [];
+          (hit[key] as unknown[]).push(value);
+        }
+      }
       await this.write(hit);
       return hit;
     });

@@ -13,7 +13,11 @@ function parseReportDate(value: unknown): string | null {
   const text = String(value);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
   const parsed = new Date(`${text}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== text) return null;
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== text
+  )
+    return null;
   return text;
 }
 
@@ -22,7 +26,10 @@ export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 
   @Get('history')
-  async history(@Query('limit') limit = '60', @Res({ passthrough: true }) res: Response) {
+  async history(
+    @Query('limit') limit = '60',
+    @Res({ passthrough: true }) res: Response,
+  ) {
     try {
       const parsed = Number.parseInt(String(limit), 10);
       if (!Number.isFinite(parsed)) throw new Error('bad limit');
@@ -34,35 +41,58 @@ export class ReportsController {
   }
 
   @Post('send-now')
-  async sendNow(@Body() body: ReportBody, @Res({ passthrough: true }) res: Response) {
+  async sendNow(
+    @Body() body: ReportBody,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     try {
-      const result = await this.reports.generateAndSend(parseReportDate(body?.date), {
-        force: Boolean(body?.force),
-      });
-      res.status(result.status === 'sent' || result.status === 'skipped' ? 200 : 502);
+      const result = await this.reports.generateAndSend(
+        parseReportDate(body?.date),
+        {
+          force: Boolean(body?.force),
+        },
+      );
+      res.status(
+        result.status === 'sent' || result.status === 'skipped' ? 200 : 502,
+      );
       return result;
     } catch (err) {
       res.status(500);
-      return { status: 'error', error: err instanceof Error ? err.message : String(err) };
+      return {
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
   @Post('regenerate')
-  async regenerate(@Body() body: ReportBody, @Res({ passthrough: true }) res: Response) {
+  async regenerate(
+    @Body() body: ReportBody,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     try {
-      const result = await this.reports.generateAndSend(parseReportDate(body?.date) || previousReportDay(), {
-        force: true,
-      });
+      const result = await this.reports.generateAndSend(
+        parseReportDate(body?.date) || previousReportDay(),
+        {
+          force: true,
+        },
+      );
       res.status(result.status === 'sent' ? 200 : 502);
       return result;
     } catch (err) {
       res.status(500);
-      return { status: 'error', error: err instanceof Error ? err.message : String(err) };
+      return {
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
   @Get(':reportId')
-  async detail(@Param('reportId') reportId: string, @Res({ passthrough: true }) res: Response) {
+  async detail(
+    @Param('reportId') reportId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     try {
       const doc = await this.reports.getById(reportId);
       if (!doc) {

@@ -10,7 +10,8 @@ import { collapseText, parseSakshiDatetime } from './sakshi.parser';
 function metaContent(html: ReturnType<typeof load>, ...keys: string[]): string {
   for (const key of keys) {
     const content =
-      html(`meta[property="${key}"]`).attr('content') || html(`meta[name="${key}"]`).attr('content');
+      html(`meta[property="${key}"]`).attr('content') ||
+      html(`meta[name="${key}"]`).attr('content');
     if (content && content.trim()) return content.trim();
   }
   return '';
@@ -28,10 +29,16 @@ function fallbackParagraphs(html: string): string[] {
 }
 
 /** Port of sources/sakshi/extractor.py::extract_article. */
-export function extractSakshiArticle(html: string, url: string): SakshiRawArticle | null {
+export function extractSakshiArticle(
+  html: string,
+  url: string,
+): SakshiRawArticle | null {
   const page = load(html);
   let title = collapseText(page(sakshiTitleSelector()).first().text());
-  if (!title) title = metaContent(page, 'og:title') || collapseText(page('title').first().text());
+  if (!title)
+    title =
+      metaContent(page, 'og:title') ||
+      collapseText(page('title').first().text());
 
   const bodyNode = page(sakshiBodySelector()).first();
   let paragraphs: string[] = [];
@@ -47,8 +54,9 @@ export function extractSakshiArticle(html: string, url: string): SakshiRawArticl
   if (!title || content.length < 80) return null;
 
   let published =
-    parseSakshiDatetime(metaContent(page, 'article:published_time', 'publish-date', 'date')) ||
-    parseSakshiDatetime(metaContent(page, 'og:updated_time'));
+    parseSakshiDatetime(
+      metaContent(page, 'article:published_time', 'publish-date', 'date'),
+    ) || parseSakshiDatetime(metaContent(page, 'og:updated_time'));
   if (!published) {
     const timeTag = page('time').first();
     published = parseSakshiDatetime(timeTag.attr('datetime') || timeTag.text());
@@ -56,10 +64,12 @@ export function extractSakshiArticle(html: string, url: string): SakshiRawArticl
 
   const canonical = (page('link[rel="canonical"]').attr('href') || '').trim();
   const breadcrumbs: string[] = [];
-  page('nav.breadcrumb li, .breadcrumb li, ol.breadcrumb li').each((_, element) => {
-    const text = collapseText(page(element).text());
-    if (text) breadcrumbs.push(text);
-  });
+  page('nav.breadcrumb li, .breadcrumb li, ol.breadcrumb li').each(
+    (_, element) => {
+      const text = collapseText(page(element).text());
+      if (text) breadcrumbs.push(text);
+    },
+  );
   const tags: string[] = [];
   page("a[rel='tag'], .tags a, .story-tags a").each((_, element) => {
     const text = collapseText(page(element).text());
@@ -69,7 +79,9 @@ export function extractSakshiArticle(html: string, url: string): SakshiRawArticl
   const author =
     metaContent(page, 'article:author', 'author') ||
     collapseText(page('.author, .byline, span.author-name').first().text());
-  const category = metaContent(page, 'article:section') || (breadcrumbs.length >= 2 ? breadcrumbs[breadcrumbs.length - 2] : '');
+  const category =
+    metaContent(page, 'article:section') ||
+    (breadcrumbs.length >= 2 ? breadcrumbs[breadcrumbs.length - 2] : '');
   const summary = metaContent(page, 'og:description', 'description');
   const thumbnail = metaContent(page, 'og:image');
 

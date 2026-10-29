@@ -1,11 +1,37 @@
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 
-export const WORKSPACE_SECTIONS = ['grievances', 'projects', 'people', 'campaigns', 'followups', 'schedules', 'visits'] as const;
+export const WORKSPACE_SECTIONS = [
+  'grievances',
+  'projects',
+  'people',
+  'campaigns',
+  'followups',
+  'schedules',
+  'visits',
+] as const;
 export type WorkspaceSection = (typeof WORKSPACE_SECTIONS)[number];
 
 /** Grievances, projects, constituency, and follow ups keep the visitor slip. */
-export const CASE_SECTIONS = ['grievances', 'projects', 'people', 'followups'] as const;
+export const CASE_SECTIONS = [
+  'grievances',
+  'projects',
+  'people',
+  'followups',
+] as const;
 
 export const TRACKED_SECTIONS = ['grievances', 'projects'] as const;
 
@@ -42,7 +68,11 @@ export const ISSUE_CATEGORIES = [
   'Others',
 ] as const;
 
-export const RESOLUTION_STATUSES = ['Pending', 'In progress', 'Resolved'] as const;
+export const RESOLUTION_STATUSES = [
+  'Pending',
+  'In progress',
+  'Resolved',
+] as const;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PHONE = /^(?:\+?91[\s-]?)?\d{10}$/;
@@ -166,13 +196,17 @@ export class CreateRecordDto {
   @Matches(DATE, { message: 'Date of visit must be a date' })
   dateOfVisit?: string;
 
-  @ValidateIf((dto: CreateRecordDto) => isCase(dto) && filled(dto.referenceName))
+  @ValidateIf(
+    (dto: CreateRecordDto) => isCase(dto) && filled(dto.referenceName),
+  )
   @Transform(({ value }) => trim(value))
   @IsString()
   @MaxLength(120)
   referenceName?: string;
 
-  @ValidateIf((dto: CreateRecordDto) => isCase(dto) && filled(dto.referenceNumber))
+  @ValidateIf(
+    (dto: CreateRecordDto) => isCase(dto) && filled(dto.referenceNumber),
+  )
   @Transform(({ value }) => trim(value))
   @IsString()
   @MaxLength(40)
@@ -184,7 +218,12 @@ export class CreateRecordDto {
   @IsIn(ISSUE_CATEGORIES, { each: true })
   categories: string[];
 
-  @ValidateIf((dto: CreateRecordDto) => isCase(dto) && Array.isArray(dto.categories) && dto.categories.includes('Others'))
+  @ValidateIf(
+    (dto: CreateRecordDto) =>
+      isCase(dto) &&
+      Array.isArray(dto.categories) &&
+      dto.categories.includes('Others'),
+  )
   @Transform(({ value }) => trim(value))
   @IsString()
   @MinLength(1)
@@ -238,13 +277,27 @@ export class CreateRecordDto {
   @MaxLength(40)
   visitTime?: string;
 
-  @ValidateIf((dto: CreateRecordDto) => dto.section === 'visits' && typeof dto.leadPhone === 'string' && dto.leadPhone.trim() !== '')
+  @ValidateIf(
+    (dto: CreateRecordDto) =>
+      dto.section === 'visits' &&
+      typeof dto.leadPhone === 'string' &&
+      dto.leadPhone.trim() !== '',
+  )
   @Transform(({ value }) => trim(value))
   @Matches(PHONE, { message: 'Lead phone must be a 10-digit number' })
   leadPhone?: string;
 }
 
 export const STAGE_STATUSES = ['Pending', 'In progress', 'Completed'] as const;
+export const PROGRESS_STATUSES = [
+  'Pending',
+  'In progress',
+  'Completed',
+  'Resolved',
+  'Open',
+  'Reviewed',
+  'Approved',
+] as const;
 
 export class ProgressStageDto {
   @Transform(({ value }) => trim(value))
@@ -264,10 +317,27 @@ export class ProgressStageDto {
 }
 
 export class UpdateProgressDto {
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(12)
   @ValidateNested({ each: true })
   @Type(() => ProgressStageDto)
-  stages: ProgressStageDto[];
+  stages?: ProgressStageDto[];
+
+  @IsOptional()
+  @Transform(({ value }) => trim(value))
+  @IsIn(PROGRESS_STATUSES, { message: 'Invalid status' })
+  status?: (typeof PROGRESS_STATUSES)[number];
+
+  @IsOptional()
+  @Transform(({ value }) => trim(value))
+  @IsString()
+  @MaxLength(1000)
+  remarks?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => trim(value))
+  @IsString()
+  @MaxLength(120)
+  department?: string;
 }

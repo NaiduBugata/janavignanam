@@ -2,7 +2,9 @@ export function locationLabel(article: Record<string, unknown>): string {
   const location = article.location;
   if (location && typeof location === 'object' && !Array.isArray(location)) {
     for (const key of ['village', 'mandal', 'town', 'district']) {
-      const value = String((location as Record<string, unknown>)[key] || '').trim();
+      const value = String(
+        (location as Record<string, unknown>)[key] || '',
+      ).trim();
       if (value && value.toLowerCase() !== 'unknown') return value;
     }
   }
@@ -10,16 +12,24 @@ export function locationLabel(article: Record<string, unknown>): string {
 }
 
 export function isCriticalArticle(article: Record<string, unknown>): boolean {
-  const sentiment = String(article.sentiment || '').trim().toLowerCase();
-  const severity = String(article.severity || '').trim().toLowerCase();
-  return (sentiment === 'negative' || sentiment === 'problem') && severity === 'high';
+  const sentiment = String(article.sentiment || '')
+    .trim()
+    .toLowerCase();
+  const severity = String(article.severity || '')
+    .trim()
+    .toLowerCase();
+  return (
+    (sentiment === 'negative' || sentiment === 'problem') && severity === 'high'
+  );
 }
 
 function clip(value: string, max: number): string {
   return value.length <= max ? value : value.slice(0, max);
 }
 
-export function articleTemplateVariables(article: Record<string, unknown>): string[] {
+export function articleTemplateVariables(
+  article: Record<string, unknown>,
+): string[] {
   const title = clip(String(article.title || 'Untitled'), 120);
   const summary = clip(String(article.summary || article.problem || ''), 180);
   const critical = isCriticalArticle(article);
@@ -27,8 +37,16 @@ export function articleTemplateVariables(article: Record<string, unknown>): stri
     ? summary || title
     : clip(`New article: ${title}${summary ? ` — ${summary}` : ''}`, 200);
   const source = String(article.source || 'MediaSphere');
-  const priority = critical ? (String(article.severity || 'HIGH').toUpperCase() || 'HIGH') : 'INFO';
-  return [locationLabel(article), problem || 'New article collected successfully.', priority, source, new Date().toISOString()];
+  const priority = critical
+    ? String(article.severity || 'HIGH').toUpperCase() || 'HIGH'
+    : 'INFO';
+  return [
+    locationLabel(article),
+    problem || 'New article collected successfully.',
+    priority,
+    source,
+    new Date().toISOString(),
+  ];
 }
 
 export function articleAlertText(article: Record<string, unknown>): string {
@@ -54,20 +72,32 @@ export function articleAlertText(article: Record<string, unknown>): string {
   ].join('\n');
 }
 
-export function summaryText(stats: Record<string, unknown>, reportDate: string): string {
+export function summaryText(
+  stats: Record<string, unknown>,
+  reportDate: string,
+): string {
   const total = stats.total || stats.article_count || 0;
   const positive = stats.positive_count || stats.positive || 0;
   const negative = stats.negative_count || stats.negative || 0;
   const neutral = stats.neutral_count || stats.neutral || 0;
-  const problems = stats.problem_count || stats.problems || stats.high_priority_problems || 0;
+  const problems =
+    stats.problem_count || stats.problems || stats.high_priority_problems || 0;
   const categories = stats.category || stats.top_categories || {};
   const locations = stats.district || stats.top_locations || {};
-  const topCat = typeof categories === 'object' && categories
-    ? Object.entries(categories as Record<string, unknown>).slice(0, 5).map(([key, value]) => `${key} (${value})`).join(', ') || 'N/A'
-    : String(categories || 'N/A');
-  const topLoc = typeof locations === 'object' && locations
-    ? Object.entries(locations as Record<string, unknown>).slice(0, 5).map(([key, value]) => `${key} (${value})`).join(', ') || 'N/A'
-    : String(locations || 'N/A');
+  const topCat =
+    typeof categories === 'object' && categories
+      ? Object.entries(categories as Record<string, unknown>)
+          .slice(0, 5)
+          .map(([key, value]) => `${key} (${value})`)
+          .join(', ') || 'N/A'
+      : String(categories || 'N/A');
+  const topLoc =
+    typeof locations === 'object' && locations
+      ? Object.entries(locations as Record<string, unknown>)
+          .slice(0, 5)
+          .map(([key, value]) => `${key} (${value})`)
+          .join(', ') || 'N/A'
+      : String(locations || 'N/A');
   return [
     'DAILY NEWS SUMMARY',
     `Date: ${reportDate}`,
@@ -102,7 +132,11 @@ export function pipelineStatusText(stats: Record<string, unknown>): string {
   ].join('\n');
 }
 
-export function failureText(module: string, reason: string, retryStatus = 'N/A'): string {
+export function failureText(
+  module: string,
+  reason: string,
+  retryStatus = 'N/A',
+): string {
   return [
     'PIPELINE FAILURE',
     `Module: ${module || 'unknown'}`,
@@ -116,7 +150,9 @@ export function failureText(module: string, reason: string, retryStatus = 'N/A')
 
 export function healthText(checks: Record<string, string>): string {
   const ok = Object.values(checks).every((value) =>
-    ['ok', 'healthy', 'connected', 'running', 'ready', 'true'].includes(value.toLowerCase()),
+    ['ok', 'healthy', 'connected', 'running', 'ready', 'true'].includes(
+      value.toLowerCase(),
+    ),
   );
   return [
     'MediaSphere Health Report',
@@ -128,5 +164,11 @@ export function healthText(checks: Record<string, string>): string {
 
 export function summaryVariables(text: string): string[] {
   const compact = clip(text.replace(/\s+/g, ' ').trim(), 200);
-  return ['Narasaraopet', compact || 'MediaSphere notification', 'INFO', 'MediaSphere', new Date().toISOString()];
+  return [
+    'Narasaraopet',
+    compact || 'MediaSphere notification',
+    'INFO',
+    'MediaSphere',
+    new Date().toISOString(),
+  ];
 }

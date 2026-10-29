@@ -31,6 +31,8 @@ import { emptyPlace, PlaceFilters } from "@/PlaceFilters.tsx";
 import { matchesPlace } from "@/places.ts";
 import { ReportActions, ReportDownloads } from "@/ReportPage.tsx";
 import { SimpleRecordForm } from "@/SimpleRecordForm.tsx";
+import { NewsProvider } from "@/mediasphere/context/NewsContext.jsx";
+import AnalyticsDashboard from "@/mediasphere/components/analytics/AnalyticsDashboard.tsx";
 
 type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics";
 type ListSection = "grievances" | "projects" | "people" | "campaigns";
@@ -61,6 +63,8 @@ type RecordItem = {
   deadline?: string;
   place?: string;
   progressStages?: { name: string; status: string; note: string }[];
+  progressRemarks?: string;
+  progressUpdatedAt?: string;
 };
 type Session = { token: string; email: string; name: string };
 type Summary = { counts: Record<CaseSection, number>; open: number; news: number; mongo: boolean };
@@ -370,17 +374,10 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove }
   }
 
   if (section === "analytics") {
-    const cards = [
-      ["Articles", stats?.total ?? summary?.news ?? 0],
-      ["Positive", stats?.positive_count ?? 0],
-      ["Negative", stats?.negative_count ?? 0],
-      ["Problems", stats?.problem_count ?? 0],
-    ];
     return (
-      <>
-        <SectionHeading meta={meta} />
-        <div className="grid gap-4 sm:grid-cols-4">{cards.map(([label, value]) => <div key={String(label)} className="rounded-xl border bg-card p-5"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-1 font-display text-3xl font-semibold">{value}</p></div>)}</div>
-      </>
+      <NewsProvider>
+        <AnalyticsDashboard />
+      </NewsProvider>
     );
   }
 
@@ -418,6 +415,7 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove }
               {item.assignedOfficer ? <p className="mt-1 truncate text-sm">Assigned officer: {item.assignedOfficer}</p> : null}
               {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
               {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
+              {item.progressRemarks ? <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">Remarks:</span> {item.progressRemarks}</p> : null}
               {item.status === "Reviewed" && item.followUpDepartment ? <p className="mt-1 text-sm text-muted-foreground">Follow up sent to {item.followUpDepartment}.</p> : null}
               {item.status === "Approved" && item.followUpDepartment ? <p className="mt-1 text-sm text-muted-foreground">The department, the leader, and the person who raised it were messaged.</p> : null}
               <div className="mt-3 flex flex-wrap items-center justify-end gap-2">

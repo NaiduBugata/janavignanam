@@ -1,5 +1,11 @@
 import { discoverGroqApiKeys } from '../ai/groq-keys';
-import { constituencyName, formatLocation, formatLongDate, type ReportArticle, type ReportStats } from './report-stats';
+import {
+  constituencyName,
+  formatLocation,
+  formatLongDate,
+  type ReportArticle,
+  type ReportStats,
+} from './report-stats';
 
 const SYSTEM_PROMPT =
   'You are a senior political intelligence analyst preparing a concise executive ' +
@@ -21,7 +27,8 @@ export function templateSummary(target: string, stats: ReportStats): string {
     );
   }
   let sentiment = 'balanced';
-  if (stats.negative > stats.positive) sentiment = 'predominantly negative, reflecting public concerns';
+  if (stats.negative > stats.positive)
+    sentiment = 'predominantly negative, reflecting public concerns';
   else if (stats.positive > stats.negative) sentiment = 'largely positive';
   const parts = [
     `On ${when}, ${stats.total} categorized news items were recorded across ${name} constituency. ` +
@@ -29,7 +36,8 @@ export function templateSummary(target: string, stats: ReportStats): string {
       `and ${stats.statement} statement-type reports.`,
   ];
   if (stats.problems) {
-    const department = stats.action_items[0]?.department || 'relevant departments';
+    const department =
+      stats.action_items[0]?.department || 'relevant departments';
     parts.push(
       `${stats.problems} issues require attention (${stats.high_priority_problems} high priority), ` +
         `concentrated in ${stats.most_affected_mandal} mandal. The ${department} and related ` +
@@ -38,7 +46,10 @@ export function templateSummary(target: string, stats: ReportStats): string {
   } else {
     parts.push('No actionable problems were flagged during this period.');
   }
-  if (stats.positive_items[0]) parts.push(`Notable positive developments include: ${stats.positive_items[0].title}.`);
+  if (stats.positive_items[0])
+    parts.push(
+      `Notable positive developments include: ${stats.positive_items[0].title}.`,
+    );
   parts.push(
     `The most active category was ${stats.most_common_category}. Most reported locations were ` +
       `${stats.most_affected_mandal} (mandal) and ${stats.most_affected_village} (village).`,
@@ -56,18 +67,25 @@ function context(target: string, stats: ReportStats): string {
     `Most common category: ${stats.most_common_category}`,
     `Most affected mandal: ${stats.most_affected_mandal}, village: ${stats.most_affected_village}`,
   ];
-  const categories = stats.category_summary.filter((item) => item.count).map((item) => `${item.name}: ${item.count}`);
-  if (categories.length) lines.push(`Category breakdown: ${categories.join(', ')}`);
+  const categories = stats.category_summary
+    .filter((item) => item.count)
+    .map((item) => `${item.name}: ${item.count}`);
+  if (categories.length)
+    lines.push(`Category breakdown: ${categories.join(', ')}`);
   if (stats.action_items.length) {
     lines.push('Top problems requiring attention:');
     for (const item of stats.action_items.slice(0, 6)) {
-      lines.push(`- [${item.priority}] ${item.title} (${item.category}, ${formatLocation(item.location)}) -> ${item.department}`);
+      lines.push(
+        `- [${item.priority}] ${item.title} (${item.category}, ${formatLocation(item.location)}) -> ${item.department}`,
+      );
     }
   }
   if (stats.positive_items.length) {
     lines.push('Positive developments:');
     for (const item of stats.positive_items.slice(0, 5)) {
-      lines.push(`- ${item.title} (${item.category}, ${formatLocation(item.location)})`);
+      lines.push(
+        `- ${item.title} (${item.category}, ${formatLocation(item.location)})`,
+      );
     }
   }
   return lines.join('\n');
@@ -83,21 +101,32 @@ export async function generateExecutiveSummary(
   const keys = discoverGroqApiKeys();
   if (!keys.length) return templateSummary(target, stats);
   try {
-    const response = await fetchImpl('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${keys[0]}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-        temperature: 0.3,
-        max_tokens: 500,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: `Constituency data for the day:\n\n${context(target, stats)}` },
-        ],
-      }),
-    });
+    const response = await fetchImpl(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${keys[0]}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+          temperature: 0.3,
+          max_tokens: 500,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            {
+              role: 'user',
+              content: `Constituency data for the day:\n\n${context(target, stats)}`,
+            },
+          ],
+        }),
+      },
+    );
     if (!response.ok) return templateSummary(target, stats);
-    const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const body = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
     const text = (body.choices?.[0]?.message?.content || '').trim();
     return text || templateSummary(target, stats);
   } catch {

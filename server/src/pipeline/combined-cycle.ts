@@ -1,4 +1,4 @@
-import type { SourceCollectionResult } from "../sources/source-collector";
+import type { SourceCollectionResult } from '../sources/source-collector';
 
 /**
  * Merge semantics from Flask pipeline/runner.py::_merge_stats + exit rule:
@@ -17,16 +17,18 @@ export function mergeSourceResults(results: SourceCollectionResult[]): {
   errors: string[];
 } {
   const by = (name: string) => results.find((r) => r.source === name);
-  const lokal = by("lokal");
-  const youtube = by("youtube");
-  const sakshi = by("sakshi");
+  const lokal = by('lokal');
+  const youtube = by('youtube');
+  const sakshi = by('sakshi');
   const errors = results.flatMap((r) => r.errors);
-  const exitCode = results.every((r) => r.exitCode === 0 || r.status === "skipped")
+  const exitCode = results.every(
+    (r) => r.exitCode === 0 || r.status === 'skipped',
+  )
     ? 0
     : 1;
   return {
     exitCode,
-    status: exitCode === 0 ? "Finished Successfully" : "Completed with errors",
+    status: exitCode === 0 ? 'Finished Successfully' : 'Completed with errors',
     articles_fetched: results.reduce((n, r) => n + r.itemsFound, 0),
     duplicates: results.reduce((n, r) => n + r.itemsDuplicate, 0),
     inserted: results.reduce((n, r) => n + r.itemsNew, 0),

@@ -6,10 +6,7 @@ import { collectSakshiNews, rankSakshiLinks } from './sakshi.collector';
 import { isArticleUrl } from './sakshi.parser';
 import { normalizeSakshiArticle } from './sakshi.normalizer';
 
-const FIXTURES = resolve(
-  __dirname,
-  'fixtures',
-);
+const FIXTURES = resolve(__dirname, 'fixtures');
 
 function htmlResponse(body: string, status = 200): Response {
   return {
@@ -26,8 +23,12 @@ describe('sakshi link ranking', () => {
   it('keeps only Narasaraopet place-name article links', () => {
     const links = rankSakshiLinks(tagPage);
     expect(links).toHaveLength(2);
-    expect(links.some((url) => url.includes('narasaraopet-road-works'))).toBe(true);
-    expect(links.some((url) => url.includes('local-school-reopens-narasaraopet'))).toBe(true);
+    expect(links.some((url) => url.includes('narasaraopet-road-works'))).toBe(
+      true,
+    );
+    expect(
+      links.some((url) => url.includes('local-school-reopens-narasaraopet')),
+    ).toBe(true);
     expect(links.some((url) => url.includes('iran-alert'))).toBe(false);
     expect(links.some((url) => url.includes('/videos/'))).toBe(false);
     expect(links.some((url) => url.includes('example.com'))).toBe(false);
@@ -35,17 +36,22 @@ describe('sakshi link ranking', () => {
 
   it('accepts news article URLs and rejects videos and tag pages', () => {
     expect(
-      isArticleUrl('https://www.sakshi.com/news/andhra-pradesh/some-long-story-slug-here'),
+      isArticleUrl(
+        'https://www.sakshi.com/news/andhra-pradesh/some-long-story-slug-here',
+      ),
     ).toBe(true);
     expect(isArticleUrl('https://www.sakshi.com/videos/clip')).toBe(false);
-    expect(isArticleUrl('https://www.sakshi.com/tags/narasaraopet')).toBe(false);
+    expect(isArticleUrl('https://www.sakshi.com/tags/narasaraopet')).toBe(
+      false,
+    );
   });
 });
 
 describe('sakshi article extract', () => {
   it('normalizes a constituency article', () => {
     const html = readFileSync(resolve(FIXTURES, 'article_page.html'), 'utf8');
-    const url = 'https://www.sakshi.com/news/andhra-pradesh/narasaraopet-road-works-12345';
+    const url =
+      'https://www.sakshi.com/news/andhra-pradesh/narasaraopet-road-works-12345';
     const raw = extractSakshiArticle(html, url);
     expect(raw).not.toBeNull();
     expect(raw?.title).toContain('రోడ్డు');
@@ -65,13 +71,17 @@ describe('sakshi article extract', () => {
 
 describe('collectSakshiNews', () => {
   const tagPage = readFileSync(resolve(FIXTURES, 'tag_page.html'), 'utf8');
-  const articlePage = readFileSync(resolve(FIXTURES, 'article_page.html'), 'utf8');
+  const articlePage = readFileSync(
+    resolve(FIXTURES, 'article_page.html'),
+    'utf8',
+  );
 
   it('downloads constituency links and drops a story that is not about Narasaraopet', async () => {
     const fetched: string[] = [];
     const fetchImpl = (async (url: string) => {
       fetched.push(String(url));
-      if (String(url).includes('/tags/narasaraopet')) return htmlResponse(tagPage);
+      if (String(url).includes('/tags/narasaraopet'))
+        return htmlResponse(tagPage);
       if (String(url).includes('local-school-reopens')) {
         return htmlResponse(
           '<h1>Mumbai cinema premiere</h1><div class="story-content"><p>' +
@@ -89,14 +99,20 @@ describe('collectSakshiNews', () => {
     });
 
     expect(fetched.some((url) => url.includes('iran-alert'))).toBe(false);
-    expect(collected.envelope.source).toBe('https://www.sakshi.com/tags/narasaraopet');
-    expect(collected.envelope.articles.map((article) => article.title)).toEqual([
-      'నరసరావుపేట రోడ్డు పనులు',
-    ]);
+    expect(collected.envelope.source).toBe(
+      'https://www.sakshi.com/tags/narasaraopet',
+    );
+    expect(collected.envelope.articles.map((article) => article.title)).toEqual(
+      ['నరసరావుపేట రోడ్డు పనులు'],
+    );
     expect(collected.envelope.filter_stats.rejected).toBe(1);
     expect(collected.envelope.filter_stats.accepted).toBe(1);
-    expect(collected.envelope.articles[0].constituency_score).toBeGreaterThanOrEqual(6);
-    expect(collected.envelope.articles[0].assembly_segment).toBe('Narasaraopet');
+    expect(
+      collected.envelope.articles[0].constituency_score,
+    ).toBeGreaterThanOrEqual(6);
+    expect(collected.envelope.articles[0].assembly_segment).toBe(
+      'Narasaraopet',
+    );
   });
 
   it('reads every segment tag page, alternates their links, and survives one failed tag', async () => {
@@ -104,12 +120,19 @@ describe('collectSakshiNews', () => {
     process.env.SAKSHI_TAG_URLS =
       'https://www.sakshi.com/tags/macherla,https://www.sakshi.com/tags/vinukonda,https://www.sakshi.com/tags/gurazala';
     const tag = (slugs: string[]) =>
-      slugs.map((slug) => `<a href="https://www.sakshi.com/news/andhra-pradesh/${slug}-1234567">${slug}</a>`).join('');
+      slugs
+        .map(
+          (slug) =>
+            `<a href="https://www.sakshi.com/news/andhra-pradesh/${slug}-1234567">${slug}</a>`,
+        )
+        .join('');
     const articles: string[] = [];
     const fetchImpl = (async (url: string) => {
       const target = String(url);
-      if (target.endsWith('/tags/macherla')) return htmlResponse(tag(['macherla-road', 'macherla-water']));
-      if (target.endsWith('/tags/vinukonda')) return htmlResponse(tag(['vinukonda-school']));
+      if (target.endsWith('/tags/macherla'))
+        return htmlResponse(tag(['macherla-road', 'macherla-water']));
+      if (target.endsWith('/tags/vinukonda'))
+        return htmlResponse(tag(['vinukonda-school']));
       if (target.endsWith('/tags/gurazala')) return htmlResponse('', 403);
       articles.push(target);
       const place = target.includes('vinukonda') ? 'Vinukonda' : 'Macherla';
@@ -119,18 +142,18 @@ describe('collectSakshiNews', () => {
     }) as typeof fetch;
 
     try {
-      const collected = await collectSakshiNews({ fetchImpl, requestDelayMs: 0, retryDelayMs: 0 });
+      const collected = await collectSakshiNews({
+        fetchImpl,
+        requestDelayMs: 0,
+        retryDelayMs: 0,
+      });
       expect(collected.error).toBeUndefined();
-      expect(articles.map((url) => url.replace(/.*\/(\w+-\w+)-\d+$/, '$1'))).toEqual([
-        'macherla-road',
-        'vinukonda-school',
-        'macherla-water',
-      ]);
-      expect(collected.envelope.articles.map((article) => article.assembly_segment)).toEqual([
-        'Macherla',
-        'Vinukonda',
-        'Macherla',
-      ]);
+      expect(
+        articles.map((url) => url.replace(/.*\/(\w+-\w+)-\d+$/, '$1')),
+      ).toEqual(['macherla-road', 'vinukonda-school', 'macherla-water']);
+      expect(
+        collected.envelope.articles.map((article) => article.assembly_segment),
+      ).toEqual(['Macherla', 'Vinukonda', 'Macherla']);
     } finally {
       if (original === undefined) delete process.env.SAKSHI_TAG_URLS;
       else process.env.SAKSHI_TAG_URLS = original;
@@ -160,9 +183,15 @@ describe('collectSakshiNews', () => {
       });
       expect(collected.error).toBeUndefined();
       expect(collected.envelope.articles).toHaveLength(1);
-      expect(collected.envelope.articles[0].title).toBe('నరసరావుపేటలో రోడ్డు పనులు');
-      expect(collected.envelope.articles[0].assembly_segment).toBe('Narasaraopet');
-      expect(collected.envelope.articles[0].source_url).toBe('https://news.google.com/rss/articles/story1');
+      expect(collected.envelope.articles[0].title).toBe(
+        'నరసరావుపేటలో రోడ్డు పనులు',
+      );
+      expect(collected.envelope.articles[0].assembly_segment).toBe(
+        'Narasaraopet',
+      );
+      expect(collected.envelope.articles[0].source_url).toBe(
+        'https://news.google.com/rss/articles/story1',
+      );
     } finally {
       if (original === undefined) delete process.env.SAKSHI_TAG_URLS;
       else process.env.SAKSHI_TAG_URLS = original;
@@ -178,9 +207,13 @@ describe('sakshi http', () => {
       if (calls === 1) return htmlResponse('', 503);
       return htmlResponse('<html></html>', 200);
     }) as typeof fetch;
-    const html = await fetchSakshiHtml('https://www.sakshi.com/news/example-long-enough', fetchImpl, {
-      retryDelayMs: 0,
-    });
+    const html = await fetchSakshiHtml(
+      'https://www.sakshi.com/news/example-long-enough',
+      fetchImpl,
+      {
+        retryDelayMs: 0,
+      },
+    );
     expect(html).toContain('html');
     expect(calls).toBe(2);
   });
@@ -192,9 +225,13 @@ describe('sakshi http', () => {
       return htmlResponse('missing', 404);
     }) as typeof fetch;
     await expect(
-      fetchSakshiHtml('https://www.sakshi.com/news/missing-article-page', fetchImpl, {
-        retryDelayMs: 0,
-      }),
+      fetchSakshiHtml(
+        'https://www.sakshi.com/news/missing-article-page',
+        fetchImpl,
+        {
+          retryDelayMs: 0,
+        },
+      ),
     ).rejects.toBeInstanceOf(PermanentHttpError);
     expect(calls).toBe(1);
   });

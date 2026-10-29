@@ -11,8 +11,10 @@ function dedupKey(event: WhatsAppEvent): Record<string, unknown> {
   };
   if (event.message_id) key.message_id = event.message_id;
   if (event.status) key.status = event.status;
-  if (event.sender_wa_id && !event.message_id) key.sender_wa_id = event.sender_wa_id;
-  if (event.message_timestamp && !event.message_id) key.message_timestamp = event.message_timestamp;
+  if (event.sender_wa_id && !event.message_id)
+    key.sender_wa_id = event.sender_wa_id;
+  if (event.message_timestamp && !event.message_id)
+    key.message_timestamp = event.message_timestamp;
   return key;
 }
 
@@ -23,14 +25,24 @@ export class WhatsAppWebhookRepository {
   constructor(private readonly db: DatabaseService) {}
 
   /** Upsert one webhook event. A database failure is logged and does not fail the Meta response. */
-  async saveEvent(event: WhatsAppEvent, clientIp: string | null, rawPayload: Record<string, unknown>): Promise<void> {
+  async saveEvent(
+    event: WhatsAppEvent,
+    clientIp: string | null,
+    rawPayload: Record<string, unknown>,
+  ): Promise<void> {
     try {
       await this.db.ensureConnected();
       const now = new Date().toISOString();
       await this.db.collection(COLLECTION).updateOne(
         dedupKey(event),
         {
-          $set: { ...event, client_ip: clientIp, raw_payload: rawPayload, received_at: now, updated_at: now },
+          $set: {
+            ...event,
+            client_ip: clientIp,
+            raw_payload: rawPayload,
+            received_at: now,
+            updated_at: now,
+          },
           $setOnInsert: { created_at: now },
         },
         { upsert: true },

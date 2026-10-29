@@ -98,12 +98,30 @@ export class PipelineSchedulerService implements OnModuleInit, OnModuleDestroy {
 
     this.start();
 
+    let releasedOrphan = false;
+    try {
+      releasedOrphan = await this.lock.releaseLocalOrphan();
+      if (releasedOrphan) {
+        this.logger.warn(
+          'Released a news-fetch lock left behind when this process restarted. A new fetch can start.',
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        'Could not check the news-fetch lock: ' +
+          (err instanceof Error ? err.message : String(err)),
+      );
+    }
+
     try {
       await this.state.updateState({
         status: 'idle',
         next_run: this.nextRunIso(),
         scheduler: 'running',
         interval_seconds: this.intervalSeconds,
+        ...(releasedOrphan
+          ? { current_run_id: null, pending_run_id: null }
+          : {}),
       });
     } catch (err) {
       this.logger.warn(
@@ -235,7 +253,9 @@ export class PipelineSchedulerService implements OnModuleInit, OnModuleDestroy {
         'No GROQ_API_KEY / GROQ_API_KEY_N found. A native cycle cannot analyze articles until one is set.',
       );
     }
-    const executor = (this.config.get<string>('pipeline.executor') || 'native').toLowerCase();
+    const executor = (
+      this.config.get<string>('pipeline.executor') || 'native'
+    ).toLowerCase();
     const pythonCwd = this.config.get<string>('pipeline.python.cwd') || '';
     if (executor === 'python' && !pythonCwd) {
       result.errors.push(

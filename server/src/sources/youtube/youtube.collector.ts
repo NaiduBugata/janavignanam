@@ -7,7 +7,11 @@ import {
   youtubeMinContentChars,
   youtubeSearchPeriodDays,
 } from './youtube.constants';
-import type { YoutubeArticle, YoutubeCollectorEnvelope, YoutubeVideo } from './youtube.models';
+import type {
+  YoutubeArticle,
+  YoutubeCollectorEnvelope,
+  YoutubeVideo,
+} from './youtube.models';
 import { normalizeYoutubeVideo } from './youtube.normalizer';
 import { cleanTranscript, toRfc3339 } from './youtube.parser';
 import { searchYoutubeKeyword } from './youtube.search';
@@ -40,7 +44,9 @@ export interface CollectYoutubeOptions {
  * Search constituency keywords, keep Telugu news transcripts that score as
  * the Narasaraopet parliamentary constituency. Does not read or write MongoDB.
  */
-export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): Promise<YoutubeCollection> {
+export async function collectYoutubeNews(
+  options: CollectYoutubeOptions = {},
+): Promise<YoutubeCollection> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? new Date();
   const existing = options.existingVideoIds ?? new Set<string>();
@@ -48,7 +54,9 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
   const minChars = youtubeMinContentChars();
   const maxChars = youtubeMaxContentChars();
   const lookback = youtubeSearchPeriodDays();
-  const publishedAfter = toRfc3339(new Date(now.getTime() - lookback * 86400000));
+  const publishedAfter = toRfc3339(
+    new Date(now.getTime() - lookback * 86400000),
+  );
   const publishedBefore = toRfc3339(now);
   const errors: string[] = [];
   const seen = new Set<string>();
@@ -85,7 +93,12 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
     if (videos.length >= maxNew) break;
     let found;
     try {
-      found = await searchYoutubeKeyword(keyword, publishedAfter, publishedBefore, fetchImpl);
+      found = await searchYoutubeKeyword(
+        keyword,
+        publishedAfter,
+        publishedBefore,
+        fetchImpl,
+      );
     } catch {
       errors.push('youtube_search_failed');
       continue;
@@ -115,7 +128,11 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
       continue;
     }
     const result = await fetchTeluguTranscriptResult(video.video_id, fetchImpl);
-    if (result.reason.startsWith('caption_http_429') || result.reason.startsWith('player_http_429')) captionRefusals += 1;
+    if (
+      result.reason.startsWith('caption_http_429') ||
+      result.reason.startsWith('player_http_429')
+    )
+      captionRefusals += 1;
     else captionRefusals = 0;
     const transcript = result.text;
     if (!transcript) {
@@ -136,7 +153,10 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
       continue;
     }
     const content = cleaned.clean_text.slice(0, maxChars);
-    const score = await validateConstituency({ title: video.title, content }, fetchImpl);
+    const score = await validateConstituency(
+      { title: video.title, content },
+      fetchImpl,
+    );
     if (!score.valid) {
       constituencyRejected += 1;
       continue;
@@ -154,9 +174,14 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
     noCaptions = 0;
     checkedVideoIds.length = 0;
   }
-  const blockedCount = Object.values(blocked).reduce((sum, count) => sum + count, 0);
+  const blockedCount = Object.values(blocked).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
   if (blockedCount) {
-    const reasons = Object.entries(blocked).map(([reason, count]) => `${reason}=${count}`).join(',');
+    const reasons = Object.entries(blocked)
+      .map(([reason, count]) => `${reason}=${count}`)
+      .join(',');
     errors.push(`youtube_blocked:${blockedCount}/${videos.length}(${reasons})`);
   }
   return finish(articles, nonNews, constituencyRejected);

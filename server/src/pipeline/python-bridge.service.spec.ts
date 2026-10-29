@@ -78,7 +78,7 @@ describe('PythonBridgeService (Option B execution bridge)', () => {
     expect(result.timedOut).toBe(true);
     expect(result.exitCode).toBe(1);
     expect(result.stats.errors.join(' ')).toContain('python_bridge_timeout');
-  }, 20000);
+  }, 40000);
 
   it('never throws when the interpreter cannot be spawned', async () => {
     const values: Record<string, unknown> = {

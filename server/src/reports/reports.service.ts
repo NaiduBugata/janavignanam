@@ -16,7 +16,11 @@ import {
   type ReportStats,
 } from './report-stats';
 import { notifyDailyWhatsApp } from '../whatsapp/whatsapp.notify';
-import { parseRecipients, sendReportEmail, type EmailSendResult } from './report-email';
+import {
+  parseRecipients,
+  sendReportEmail,
+  type EmailSendResult,
+} from './report-email';
 
 export interface ReportRunResult {
   status: string;
@@ -61,7 +65,10 @@ export class ReportsService {
   }
 
   /** Build and record a report, email it with the PDF, and post the summary on WhatsApp when alerts are on there. */
-  async generateAndSend(target: string | null, options: GenerateOptions = {}): Promise<ReportRunResult> {
+  async generateAndSend(
+    target: string | null,
+    options: GenerateOptions = {},
+  ): Promise<ReportRunResult> {
     const day = target || previousReportDay(options.now || new Date());
     if (!options.force && (await this.reports.alreadySent(day))) {
       this.logger.log(`Report for ${day} already sent; skipping.`);
@@ -73,31 +80,79 @@ export class ReportsService {
       const recipients = options.recipients?.length
         ? options.recipients
         : parseRecipients(process.env.REPORT_RECIPIENTS || '').valid;
-      await this.reports.recordGeneration(day, built.stats, recipients, built.pdfPath);
-      const email = await this.emailReport(built, options.recipients, fetchImpl);
+      await this.reports.recordGeneration(
+        day,
+        built.stats,
+        recipients,
+        built.pdfPath,
+      );
+      const email = await this.emailReport(
+        built,
+        options.recipients,
+        fetchImpl,
+      );
       const whatsapp = await notifyDailyWhatsApp(
-        { total: built.stats.total, positive: built.stats.positive, negative: built.stats.negative, problems: built.stats.problems },
+        {
+          total: built.stats.total,
+          positive: built.stats.positive,
+          negative: built.stats.negative,
+          problems: built.stats.problems,
+        },
         day,
         fetchImpl,
       );
-      const notifications = { results: [{ ...email }, { channel: 'whatsapp', ...whatsapp }] };
-      const delivered = [email, whatsapp].filter((result) => result.success && !result.skipped);
+      const notifications = {
+        results: [{ ...email }, { channel: 'whatsapp', ...whatsapp }],
+      };
+      const delivered = [email, whatsapp].filter(
+        (result) => result.success && !result.skipped,
+      );
       if (delivered.length) {
         const attempts = delivered[0].attempts;
         await this.reports.recordSent(day, attempts);
-        return this.outcome('sent', day, built, recipients, attempts, null, notifications);
+        return this.outcome(
+          'sent',
+          day,
+          built,
+          recipients,
+          attempts,
+          null,
+          notifications,
+        );
       }
-      const problem = (channel: string, result: { skipped: boolean; skip_reason?: string; error: string | null }) =>
-        result.skipped ? `${channel}_skipped: ${result.skip_reason || 'unknown'}` : `${channel}_failed: ${result.error || 'unknown'}`;
+      const problem = (
+        channel: string,
+        result: {
+          skipped: boolean;
+          skip_reason?: string;
+          error: string | null;
+        },
+      ) =>
+        result.skipped
+          ? `${channel}_skipped: ${result.skip_reason || 'unknown'}`
+          : `${channel}_failed: ${result.error || 'unknown'}`;
       const error = `${problem('email', email)}; ${problem('whatsapp', whatsapp)}`;
       const attempts = Math.max(email.attempts, whatsapp.attempts);
       await this.reports.recordFailed(day, attempts, error);
-      return this.outcome('failed', day, built, recipients, attempts, error, notifications);
+      return this.outcome(
+        'failed',
+        day,
+        built,
+        recipients,
+        attempts,
+        error,
+        notifications,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Report build failed for ${day}: ${message}`);
       await this.reports.recordFailed(day, 0, `build_failed: ${message}`);
-      return { status: 'error', reason: 'build_failed', error: message, report_date: day };
+      return {
+        status: 'error',
+        reason: 'build_failed',
+        error: message,
+        report_date: day,
+      };
     }
   }
 
@@ -107,15 +162,30 @@ export class ReportsService {
     fetchImpl: typeof fetch,
   ): Promise<EmailSendResult> {
     try {
-      return await sendReportEmail(built.subject, built.html, built.pdfPath, recipients, fetchImpl);
+      return await sendReportEmail(
+        built.subject,
+        built.html,
+        built.pdfPath,
+        recipients,
+        fetchImpl,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Report email failed: ${message}`);
-      return { channel: 'email', success: false, skipped: false, error: message, attempts: 0 };
+      return {
+        channel: 'email',
+        success: false,
+        skipped: false,
+        error: message,
+        attempts: 0,
+      };
     }
   }
 
-  private async build(day: string, options: GenerateOptions): Promise<{
+  private async build(
+    day: string,
+    options: GenerateOptions,
+  ): Promise<{
     stats: ReportStats;
     html: string;
     pdfPath: string;
@@ -124,11 +194,16 @@ export class ReportsService {
     const now = options.now || new Date();
     let articles = options.articles;
     if (!articles) {
-      const docs = options.sourceDocs || ((await this.articles.findAll()) as Array<Record<string, unknown>>);
+      const docs = options.sourceDocs || (await this.articles.findAll());
       articles = articlesForDay(docs, day);
     }
     const stats = computeStats(articles);
-    const summary = await generateExecutiveSummary(day, articles, stats, options.fetchImpl || fetch);
+    const summary = await generateExecutiveSummary(
+      day,
+      articles,
+      stats,
+      options.fetchImpl || fetch,
+    );
     const html = buildEmailHtml(day, now, articles, stats, summary);
     const fileName = `Daily_Report_${day.replace(/-/g, '_')}.pdf`;
     const lines = [
@@ -143,18 +218,29 @@ export class ReportsService {
       `Positive: ${stats.positive}`,
       `Negative: ${stats.negative}`,
     ];
-    let pdfPath = resolve(process.cwd(), process.env.REPORT_OUTPUT_DIR || join(tmpdir(), 'mediasphere_reports'), fileName);
+    let pdfPath = resolve(
+      process.cwd(),
+      process.env.REPORT_OUTPUT_DIR || join(tmpdir(), 'mediasphere_reports'),
+      fileName,
+    );
     try {
       writeTextPdf(pdfPath, lines);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== 'EACCES' && code !== 'EPERM' && code !== 'EROFS') throw err;
       // Hosts such as Railway run as a user who cannot write under /app.
-      this.logger.warn(`report folder not writable (${code}); using the temp folder`);
+      this.logger.warn(
+        `report folder not writable (${code}); using the temp folder`,
+      );
       pdfPath = join(tmpdir(), 'mediasphere_reports', fileName);
       writeTextPdf(pdfPath, lines);
     }
-    return { stats, html, pdfPath, subject: `MediaSphere Daily Constituency Report - ${formatLongDate(day)}` };
+    return {
+      stats,
+      html,
+      pdfPath,
+      subject: `MediaSphere Daily Constituency Report - ${formatLongDate(day)}`,
+    };
   }
 
   private outcome(

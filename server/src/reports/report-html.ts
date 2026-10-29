@@ -47,7 +47,9 @@ export function buildEmailHtml(
         `<li><strong>[${escapeHtml(item.priority)}]</strong> ${escapeHtml(item.title)} — ${escapeHtml(item.department)}</li>`,
     )
     .join('');
-  const positive = stats.positive_items.map((item) => `<li>${escapeHtml(item.title)}</li>`).join('');
+  const positive = stats.positive_items
+    .map((item) => `<li>${escapeHtml(item.title)}</li>`)
+    .join('');
   const digest = articles
     .map(
       (article) =>

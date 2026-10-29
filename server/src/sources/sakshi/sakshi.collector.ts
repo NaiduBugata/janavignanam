@@ -10,8 +10,15 @@ import {
   sakshiTagUrls,
 } from './sakshi.constants';
 import { extractSakshiArticle } from './sakshi.extractor';
-import { PermanentHttpError, TransientHttpError, fetchSakshiHtml } from './sakshi.http';
-import type { SakshiCollectorEnvelope, SakshiFilterStats } from './sakshi.models';
+import {
+  PermanentHttpError,
+  TransientHttpError,
+  fetchSakshiHtml,
+} from './sakshi.http';
+import type {
+  SakshiCollectorEnvelope,
+  SakshiFilterStats,
+} from './sakshi.models';
 import { normalizeSakshiArticle } from './sakshi.normalizer';
 import { isReligionStory } from '../../pipeline/native/religion';
 import { fetchSegmentHeadlines } from './sakshi.feed';
@@ -66,7 +73,10 @@ function interleaveUnique(lists: string[][]): string[] {
  * Links on the Narasaraopet tag page that name a constituency place.
  * Sidebar and national links (priority under 100) are not downloaded.
  */
-export function rankSakshiLinks(html: string, baseUrl = sakshiBaseUrl()): string[] {
+export function rankSakshiLinks(
+  html: string,
+  baseUrl = sakshiBaseUrl(),
+): string[] {
   const page = load(html);
   const keywords = loadUrlPriorityKeywords();
   const ranked: Array<[number, number, string]> = [];
@@ -80,7 +90,12 @@ export function rankSakshiLinks(html: string, baseUrl = sakshiBaseUrl()): string
     } catch {
       return;
     }
-    if (seen.has(absolute) || !isArticleUrl(absolute) || isSectionHubUrl(absolute)) return;
+    if (
+      seen.has(absolute) ||
+      !isArticleUrl(absolute) ||
+      isSectionHubUrl(absolute)
+    )
+      return;
     seen.add(absolute);
     const anchorText = page(element).text().replace(/\s+/g, ' ').trim();
     if (isReligionStory(anchorText)) return;
@@ -96,7 +111,9 @@ export function rankSakshiLinks(html: string, baseUrl = sakshiBaseUrl()): string
  * One Sakshi cycle for the Narasaraopet tag.
  * Does not read or write MongoDB. Pass existingUrls when a caller already knows them.
  */
-export async function collectSakshiNews(options: CollectSakshiOptions = {}): Promise<SakshiCollection> {
+export async function collectSakshiNews(
+  options: CollectSakshiOptions = {},
+): Promise<SakshiCollection> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? new Date();
   const existing = options.existingUrls ?? new Set<string>();
@@ -139,17 +156,32 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
   for (const [index, url] of sakshiTagUrls().entries()) {
     if (index > 0 && requestDelayMs > 0) await sleep(requestDelayMs);
     try {
-      const html = await fetchSakshiHtml(url, fetchImpl, { retryDelayMs: options.retryDelayMs });
+      const html = await fetchSakshiHtml(url, fetchImpl, {
+        retryDelayMs: options.retryDelayMs,
+      });
       perTag.push(rankSakshiLinks(html));
     } catch (err) {
-      const status = err instanceof PermanentHttpError || err instanceof TransientHttpError ? err.statusCode : 0;
+      const status =
+        err instanceof PermanentHttpError || err instanceof TransientHttpError
+          ? err.statusCode
+          : 0;
       firstError ??= status ? `sakshi_http_${status}` : 'sakshi_fetch_failed';
     }
   }
   if (!perTag.length) {
-    const recovered = await recoverRefusedTags(fetchImpl, existing, maxArticles, now);
+    const recovered = await recoverRefusedTags(
+      fetchImpl,
+      existing,
+      maxArticles,
+      now,
+    );
     if (recovered.linksFound) {
-      return finish(recovered.articles, recovered.stats, recovered.linksFound, recovered.skippedExisting);
+      return finish(
+        recovered.articles,
+        recovered.stats,
+        recovered.linksFound,
+        recovered.skippedExisting,
+      );
     }
     return finish([], emptyStats(), 0, 0, firstError || 'sakshi_fetch_failed');
   }
@@ -165,7 +197,9 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
     const url = pending[index];
     let pageHtml: string;
     try {
-      pageHtml = await fetchSakshiHtml(url, fetchImpl, { retryDelayMs: options.retryDelayMs });
+      pageHtml = await fetchSakshiHtml(url, fetchImpl, {
+        retryDelayMs: options.retryDelayMs,
+      });
     } catch {
       continue;
     }
@@ -175,19 +209,29 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
     if (isReligionStory(raw.title, raw.summary, raw.content, raw.category)) {
       stats.fetched += 1;
       stats.rejected += 1;
-      stats.rejected_reasons.religion = (stats.rejected_reasons.religion || 0) + 1;
+      stats.rejected_reasons.religion =
+        (stats.rejected_reasons.religion || 0) + 1;
       continue;
     }
     stats.fetched += 1;
-    const score = await validateConstituency(raw as unknown as Record<string, unknown>, fetchImpl);
+    const score = await validateConstituency(
+      raw as unknown as Record<string, unknown>,
+      fetchImpl,
+    );
     stats.scores.push(score.score);
     if (!score.valid) {
       stats.rejected += 1;
-      stats.rejected_reasons[score.reason] = (stats.rejected_reasons[score.reason] || 0) + 1;
+      stats.rejected_reasons[score.reason] =
+        (stats.rejected_reasons[score.reason] || 0) + 1;
       continue;
     }
     stats.accepted += 1;
-    raw._constituency_validation = { valid: score.valid, score: score.score, reason: score.reason, segment: score.segment };
+    raw._constituency_validation = {
+      valid: score.valid,
+      score: score.score,
+      reason: score.reason,
+      segment: score.segment,
+    };
     articles.push(normalizeSakshiArticle(raw, now));
   }
 
@@ -206,7 +250,13 @@ async function recoverRefusedTags(
   linksFound: number;
   skippedExisting: number;
 }> {
-  const stats: SakshiFilterStats = { fetched: 0, accepted: 0, rejected: 0, rejected_reasons: {}, scores: [] };
+  const stats: SakshiFilterStats = {
+    fetched: 0,
+    accepted: 0,
+    rejected: 0,
+    rejected_reasons: {},
+    scores: [],
+  };
   const articles: SakshiCollectorEnvelope['articles'] = [];
   const seen = new Set<string>();
   let linksFound = 0;
@@ -230,7 +280,8 @@ async function recoverRefusedTags(
       if (isReligionStory(item.title)) {
         stats.fetched += 1;
         stats.rejected += 1;
-        stats.rejected_reasons.religion = (stats.rejected_reasons.religion || 0) + 1;
+        stats.rejected_reasons.religion =
+          (stats.rejected_reasons.religion || 0) + 1;
         continue;
       }
       const raw: SakshiRawArticle = {
@@ -248,15 +299,24 @@ async function recoverRefusedTags(
         og_description: item.title,
       };
       stats.fetched += 1;
-      const score = await validateConstituency(raw as unknown as Record<string, unknown>, fetchImpl);
+      const score = await validateConstituency(
+        raw as unknown as Record<string, unknown>,
+        fetchImpl,
+      );
       stats.scores.push(score.score);
       if (!score.valid) {
         stats.rejected += 1;
-        stats.rejected_reasons[score.reason] = (stats.rejected_reasons[score.reason] || 0) + 1;
+        stats.rejected_reasons[score.reason] =
+          (stats.rejected_reasons[score.reason] || 0) + 1;
         continue;
       }
       stats.accepted += 1;
-      raw._constituency_validation = { valid: score.valid, score: score.score, reason: score.reason, segment: score.segment };
+      raw._constituency_validation = {
+        valid: score.valid,
+        score: score.score,
+        reason: score.reason,
+        segment: score.segment,
+      };
       articles.push(normalizeSakshiArticle(raw, now));
     }
   }

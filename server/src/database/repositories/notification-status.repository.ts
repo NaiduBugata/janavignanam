@@ -21,7 +21,7 @@ export class NotificationStatusRepository {
   async get(channel: string): Promise<ChannelStoredStatus | null> {
     try {
       const doc = await this.db.collection(COLLECTION).findOne({
-        _id: channel as unknown as Document['_id'],
+        _id: channel,
       });
       if (!doc) return null;
       return {
@@ -50,17 +50,24 @@ export class NotificationStatusRepository {
 
   async record(
     channel: 'email' | 'whatsapp',
-    input: { status: string; enabled?: boolean; error?: string | null; notificationType?: string; httpCode?: number },
+    input: {
+      status: string;
+      enabled?: boolean;
+      error?: string | null;
+      notificationType?: string;
+      httpCode?: number;
+    },
   ): Promise<void> {
-    const normalized = input.status === 'skipped'
-      ? 'skipped'
-      : ['ok', 'sent', 'partial', 'sent_text_fallback'].includes(input.status)
-        ? 'ok'
-        : 'failed';
+    const normalized =
+      input.status === 'skipped'
+        ? 'skipped'
+        : ['ok', 'sent', 'partial', 'sent_text_fallback'].includes(input.status)
+          ? 'ok'
+          : 'failed';
     try {
       await this.db.ensureConnected();
       await this.db.collection(COLLECTION).updateOne(
-        { _id: channel as unknown as Document['_id'] },
+        { _id: channel },
         {
           $set: {
             enabled: input.enabled !== false,

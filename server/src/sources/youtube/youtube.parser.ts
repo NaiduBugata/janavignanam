@@ -69,25 +69,44 @@ const NEWS_INDICATORS = [
   'ప్రదర్శన',
 ];
 
-const TV_FILLER = [/మా\s*ప్రతినిధి/g, /మరిన్ని\s*వివరాలు/g, /subscribe/gi, /like\s+and\s+share/gi];
+const TV_FILLER = [
+  /మా\s*ప్రతినిధి/g,
+  /మరిన్ని\s*వివరాలు/g,
+  /subscribe/gi,
+  /like\s+and\s+share/gi,
+];
 
 export interface CleanResult {
   is_news: boolean;
   clean_text: string;
 }
 
-export function isNewsContent(title: string, channel: string, transcript: string): boolean {
+export function isNewsContent(
+  title: string,
+  channel: string,
+  transcript: string,
+): boolean {
   const titleLower = (title || '').toLowerCase();
   const channelLower = (channel || '').toLowerCase();
-  const isNewsChannel = NEWS_CHANNELS.some((name) => channelLower.includes(name));
-  const hasNonNews = NON_NEWS_KEYWORDS.some((word) => titleLower.includes(word));
+  const isNewsChannel = NEWS_CHANNELS.some((name) =>
+    channelLower.includes(name),
+  );
+  const hasNonNews = NON_NEWS_KEYWORDS.some((word) =>
+    titleLower.includes(word),
+  );
   if (isReligionStory(title, transcript)) return false;
-  const hasIndicators = NEWS_INDICATORS.some((word) => transcript.includes(word));
+  const hasIndicators = NEWS_INDICATORS.some((word) =>
+    transcript.includes(word),
+  );
   if (isNewsChannel && !hasNonNews) return true;
   return hasIndicators && !hasNonNews;
 }
 
-export function cleanTranscript(transcript: string, title: string, channel: string): CleanResult {
+export function cleanTranscript(
+  transcript: string,
+  title: string,
+  channel: string,
+): CleanResult {
   const raw = transcript || '';
   const isNews = isNewsContent(title, channel, raw);
   if (!isNews) return { is_news: false, clean_text: '' };
@@ -141,7 +160,9 @@ export function extractCaptionTracks(html: string): CaptionTrack[] {
 
 function decodeXml(value: string): string {
   return value
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#(\d+);/g, (_, code: string) =>
+      String.fromCodePoint(Number(code)),
+    )
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -169,18 +190,23 @@ export function parseCaptionText(payload: string): string {
       return '';
     }
   }
-  const textTags = [...trimmed.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)].map((match) =>
-    decodeXml(match[1].replace(/<[^>]+>/g, '')),
+  const textTags = [...trimmed.matchAll(/<text[^>]*>([\s\S]*?)<\/text>/g)].map(
+    (match) => decodeXml(match[1].replace(/<[^>]+>/g, '')),
   );
   if (textTags.length) return textTags.join(' ').replace(/\s+/g, ' ').trim();
-  const spoken = [...trimmed.matchAll(/<s[^>]*>([\s\S]*?)<\/s>/g)].map((match) =>
-    decodeXml(match[1].replace(/<[^>]+>/g, '')),
+  const spoken = [...trimmed.matchAll(/<s[^>]*>([\s\S]*?)<\/s>/g)].map(
+    (match) => decodeXml(match[1].replace(/<[^>]+>/g, '')),
   );
   return spoken.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 export function pickTeluguTrack(tracks: CaptionTrack[]): CaptionTrack | null {
-  const exact = tracks.find((track) => track.languageCode.toLowerCase() === 'te');
+  const exact = tracks.find(
+    (track) => track.languageCode.toLowerCase() === 'te',
+  );
   if (exact) return exact;
-  return tracks.find((track) => track.languageCode.toLowerCase().startsWith('te')) || null;
+  return (
+    tracks.find((track) => track.languageCode.toLowerCase().startsWith('te')) ||
+    null
+  );
 }

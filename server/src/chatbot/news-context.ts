@@ -12,19 +12,60 @@ export interface NewsBrief {
 }
 
 const STOP_WORDS = new Set([
-  'a', 'an', 'and', 'any', 'are', 'about', 'at', 'can', 'do', 'for', 'from', 'give', 'i', 'in',
-  'is', 'it', 'latest', 'me', 'my', 'news', 'new', 'of', 'on', 'or', 'please', 'recent', 'show',
-  'tell', 'the', 'there', 'to', 'today', 'update', 'updates', 'what', 'whats', 'with', 'you',
+  'a',
+  'an',
+  'and',
+  'any',
+  'are',
+  'about',
+  'at',
+  'can',
+  'do',
+  'for',
+  'from',
+  'give',
+  'i',
+  'in',
+  'is',
+  'it',
+  'latest',
+  'me',
+  'my',
+  'news',
+  'new',
+  'of',
+  'on',
+  'or',
+  'please',
+  'recent',
+  'show',
+  'tell',
+  'the',
+  'there',
+  'to',
+  'today',
+  'update',
+  'updates',
+  'what',
+  'whats',
+  'with',
+  'you',
 ]);
 
 export function toBrief(doc: Record<string, unknown>): NewsBrief | null {
   const title = text(doc.title);
   const summary = text(doc.summary);
   if (!title && !summary) return null;
-  const location = doc.location && typeof doc.location === 'object'
-    ? doc.location as Record<string, unknown>
-    : {};
-  const place = [location.village, location.town, location.mandal, location.district]
+  const location =
+    doc.location && typeof doc.location === 'object'
+      ? (doc.location as Record<string, unknown>)
+      : {};
+  const place = [
+    location.village,
+    location.town,
+    location.mandal,
+    location.district,
+  ]
     .map(text)
     .filter((value, index, all) => value && all.indexOf(value) === index)
     .join(', ');
@@ -54,7 +95,9 @@ export function selectNews(
 ): NewsBrief[] {
   const sorted = newestFirst([...briefs]);
   const picked = sorted.slice(0, options.recent ?? 15);
-  const tokens = tokenize(question).filter((token) => token.length > 2 && !STOP_WORDS.has(token));
+  const tokens = tokenize(question).filter(
+    (token) => token.length > 2 && !STOP_WORDS.has(token),
+  );
   if (!tokens.length) return picked;
   const matched = sorted
     .slice(picked.length)
@@ -66,10 +109,18 @@ export function selectNews(
   return [...picked, ...matched];
 }
 
-export function formatNews(briefs: readonly NewsBrief[], total: number): string {
+export function formatNews(
+  briefs: readonly NewsBrief[],
+  total: number,
+): string {
   if (!briefs.length) return 'No news articles are stored yet.';
   const lines = briefs.map((brief, index) => {
-    const tags = [shortDate(brief.publishedAt || brief.collectedAt), brief.category, brief.severity && `severity ${brief.severity}`, brief.sentiment]
+    const tags = [
+      shortDate(brief.publishedAt || brief.collectedAt),
+      brief.category,
+      brief.severity && `severity ${brief.severity}`,
+      brief.sentiment,
+    ]
       .filter(Boolean)
       .join(', ');
     return [
@@ -77,13 +128,19 @@ export function formatNews(briefs: readonly NewsBrief[], total: number): string 
       brief.summary ? `   Summary: ${clip(brief.summary, 360)}` : '',
       brief.place ? `   Place: ${brief.place}` : '',
       `   Source: ${brief.source}${brief.url ? ` ${brief.url}` : ''}`,
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
   });
   return [`${total} articles are stored. Newest first:`, ...lines].join('\n');
 }
 
 function score(brief: NewsBrief, tokens: string[]): number {
-  const haystack = new Set(tokenize(`${brief.title} ${brief.summary} ${brief.category} ${brief.place} ${brief.source}`));
+  const haystack = new Set(
+    tokenize(
+      `${brief.title} ${brief.summary} ${brief.category} ${brief.place} ${brief.source}`,
+    ),
+  );
   return tokens.filter((token) => haystack.has(token)).length;
 }
 
@@ -98,11 +155,24 @@ function timeOf(brief: NewsBrief): number {
 function shortDate(value: string): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return '';
-  return new Date(parsed).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  return new Date(parsed).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
 }
 
 function tokenize(value: string): string[] {
-  return [...new Set(value.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean))];
+  return [
+    ...new Set(
+      value
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function clip(value: string, max: number): string {

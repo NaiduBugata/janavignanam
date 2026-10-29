@@ -1,8 +1,21 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { applyContactDirectory } from '../../birthdays/birthdays.service';
 import { normalizeContactPhone } from '../../birthdays/birthdays';
-import { demoProjectDocs, isDemoDataEnabled, isDemoDoc, setDemoDataEnabled } from '../demo-data';
+import {
+  demoProjectDocs,
+  isDemoDataEnabled,
+  isDemoDoc,
+  setDemoDataEnabled,
+} from '../demo-data';
 
 const CONTACTS = 'birthday_contacts';
 const RECORDS = 'jv_records';
@@ -19,10 +32,15 @@ export class AdminDeskService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     try {
       if (!(await this.db.ensureConnected())) return;
-      const saved = await this.db.collection(SETTINGS).findOne({ key: DEMO_KEY });
-      if (typeof saved?.enabled === 'boolean') setDemoDataEnabled(saved.enabled);
+      const saved = await this.db
+        .collection(SETTINGS)
+        .findOne({ key: DEMO_KEY });
+      if (typeof saved?.enabled === 'boolean')
+        setDemoDataEnabled(saved.enabled);
     } catch (err) {
-      this.logger.warn(`Demo data setting was not loaded: ${err instanceof Error ? err.message : 'database error'}`);
+      this.logger.warn(
+        `Demo data setting was not loaded: ${err instanceof Error ? err.message : 'database error'}`,
+      );
     }
   }
 
@@ -37,7 +55,11 @@ export class AdminDeskService implements OnModuleInit {
     await this.ready();
     const stored = await this.db.collection(RECORDS).find({}).toArray();
     const docs = [...(Array.isArray(stored) ? stored : [])];
-    if (!docs.some((row) => String(row.section || '') === 'projects' && isDemoDoc(row))) {
+    if (
+      !docs.some(
+        (row) => String(row.section || '') === 'projects' && isDemoDoc(row),
+      )
+    ) {
       docs.push(...demoProjectDocs());
     }
     const rows = docs.filter((row) => isDemoDoc(row)).map(toDemoRow);
@@ -47,11 +69,13 @@ export class AdminDeskService implements OnModuleInit {
   async setDemo(enabled: boolean): Promise<{ enabled: boolean }> {
     await this.ready();
     setDemoDataEnabled(enabled);
-    await this.db.collection(SETTINGS).updateOne(
-      { key: DEMO_KEY },
-      { $set: { key: DEMO_KEY, enabled } },
-      { upsert: true },
-    );
+    await this.db
+      .collection(SETTINGS)
+      .updateOne(
+        { key: DEMO_KEY },
+        { $set: { key: DEMO_KEY, enabled } },
+        { upsert: true },
+      );
     return { enabled };
   }
 
@@ -69,12 +93,21 @@ export class AdminDeskService implements OnModuleInit {
     const rows = await this.contacts();
     const existing = rows.find((row) => digits(row.phone) === digits(phone));
     if (existing && existing.mpAccess !== true && existing.role !== 'user') {
-      throw new ConflictException('This number is already saved for someone else.');
+      throw new ConflictException(
+        'This number is already saved for someone else.',
+      );
     }
     if (existing) {
       await this.db.collection(CONTACTS).updateOne(
         { _id: existing._id },
-        { $set: { name: MP_NAME, role: 'mp', allowReplies: true, mpAccess: true } },
+        {
+          $set: {
+            name: MP_NAME,
+            role: 'mp',
+            allowReplies: true,
+            mpAccess: true,
+          },
+        },
       );
     } else {
       await this.db.collection(CONTACTS).insertOne({
@@ -95,7 +128,9 @@ export class AdminDeskService implements OnModuleInit {
       });
     }
     await this.reloadDirectory();
-    const saved = (await this.contacts()).find((row) => digits(row.phone) === digits(phone));
+    const saved = (await this.contacts()).find(
+      (row) => digits(row.phone) === digits(phone),
+    );
     if (!saved) throw new BadRequestException('The number was not saved.');
     this.logger.log(`MP access saved for ${mask(phone)}.`);
     return { id: String(saved._id), phone: String(saved.phone || '') };
@@ -103,7 +138,9 @@ export class AdminDeskService implements OnModuleInit {
 
   async revokeMp(id: string): Promise<void> {
     await this.ready();
-    const row = (await this.contacts()).find((item) => String(item._id) === id && item.mpAccess === true);
+    const row = (await this.contacts()).find(
+      (item) => String(item._id) === id && item.mpAccess === true,
+    );
     if (!row) throw new NotFoundException('That MP number was not found.');
     await this.db.collection(CONTACTS).deleteOne({ _id: row._id });
     await this.reloadDirectory();
@@ -119,7 +156,8 @@ export class AdminDeskService implements OnModuleInit {
   }
 
   private async ready(): Promise<void> {
-    if (!(await this.db.ensureConnected())) throw new ServiceUnavailableException('Database is not connected');
+    if (!(await this.db.ensureConnected()))
+      throw new ServiceUnavailableException('Database is not connected');
   }
 }
 

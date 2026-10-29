@@ -2,7 +2,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 function escapePdf(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
 }
 
 function ascii(value: string): string {
@@ -13,7 +16,8 @@ function ascii(value: string): string {
 export function writeTextPdf(filePath: string, lines: string[]): void {
   const clean = lines.map(ascii);
   const pages: string[][] = [];
-  for (let index = 0; index < clean.length; index += 42) pages.push(clean.slice(index, index + 42));
+  for (let index = 0; index < clean.length; index += 42)
+    pages.push(clean.slice(index, index + 42));
   if (!pages.length) pages.push(['MediaSphere Daily Report']);
 
   const objects = new Map<number, string>();
@@ -33,13 +37,19 @@ export function writeTextPdf(filePath: string, lines: string[]): void {
     });
     commands.push('ET');
     const body = commands.join('\n');
-    objects.set(contentId, `<< /Length ${Buffer.byteLength(body)} >>\nstream\n${body}\nendstream`);
+    objects.set(
+      contentId,
+      `<< /Length ${Buffer.byteLength(body)} >>\nstream\n${body}\nendstream`,
+    );
     objects.set(
       pageId,
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents ${contentId} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`,
     );
   }
-  objects.set(2, `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] >>`);
+  objects.set(
+    2,
+    `<< /Type /Pages /Count ${pageIds.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] >>`,
+  );
 
   let pdf = '%PDF-1.4\n';
   const offsets: number[] = [];
@@ -49,7 +59,8 @@ export function writeTextPdf(filePath: string, lines: string[]): void {
   }
   const xref = Buffer.byteLength(pdf);
   pdf += `xref\n0 ${nextId}\n0000000000 65535 f \n`;
-  for (let id = 1; id < nextId; id += 1) pdf += `${String(offsets[id]).padStart(10, '0')} 00000 n \n`;
+  for (let id = 1; id < nextId; id += 1)
+    pdf += `${String(offsets[id]).padStart(10, '0')} 00000 n \n`;
   pdf += `trailer << /Size ${nextId} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, pdf);

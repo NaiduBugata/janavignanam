@@ -1,7 +1,21 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-type RawContact = [string, string, string, string, string, string, string, string, string, string, string, string, string];
+type RawContact = [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
 
 export type DirectoryContact = {
   name: string;
@@ -28,8 +42,22 @@ type Loaded = {
 
 let loaded: Loaded | null = null;
 
-const ASSEMBLY_ORDER = ['Pedakurapadu', 'Chilakaluripet', 'Narasaraopet', 'Sattenapalli', 'Vinukonda', 'Gurazala', 'Macherla', 'Unassigned'];
-const DIVISION_ORDER = ['Narasaraopet', 'Sattenapalli', 'Gurazala', 'No division'];
+const ASSEMBLY_ORDER = [
+  'Pedakurapadu',
+  'Chilakaluripet',
+  'Narasaraopet',
+  'Sattenapalli',
+  'Vinukonda',
+  'Gurazala',
+  'Macherla',
+  'Unassigned',
+];
+const DIVISION_ORDER = [
+  'Narasaraopet',
+  'Sattenapalli',
+  'Gurazala',
+  'No division',
+];
 
 function load(): Loaded {
   if (loaded) return loaded;
@@ -58,7 +86,21 @@ function load(): Loaded {
   loaded = {
     rows,
     search: rows.map((row) =>
-      [row.name, row.phone, row.designation, row.party, row.important, row.assembly, row.mandal, row.village, row.division, row.membershipId, row.sources, row.variants, row.notes]
+      [
+        row.name,
+        row.phone,
+        row.designation,
+        row.party,
+        row.important,
+        row.assembly,
+        row.mandal,
+        row.village,
+        row.division,
+        row.membershipId,
+        row.sources,
+        row.variants,
+        row.notes,
+      ]
         .join(' ')
         .toLowerCase(),
     ),
@@ -66,7 +108,11 @@ function load(): Loaded {
   return loaded;
 }
 
-function counts(rows: DirectoryContact[], pick: (row: DirectoryContact) => string, order: string[]): ContactFacet[] {
+function counts(
+  rows: DirectoryContact[],
+  pick: (row: DirectoryContact) => string,
+  order: string[],
+): ContactFacet[] {
   const map = new Map<string, number>();
   for (const row of rows) {
     const name = pick(row) || '';
@@ -78,12 +124,19 @@ function counts(rows: DirectoryContact[], pick: (row: DirectoryContact) => strin
     .sort((a, b) => {
       const ai = order.indexOf(a.name);
       const bi = order.indexOf(b.name);
-      if (ai !== -1 || bi !== -1) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      if (ai !== -1 || bi !== -1)
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
       return b.count - a.count || a.name.localeCompare(b.name);
     });
 }
 
-export function queryContacts(input: { q?: string; division?: string; assembly?: string; role?: string; page?: number }): {
+export function queryContacts(input: {
+  q?: string;
+  division?: string;
+  assembly?: string;
+  role?: string;
+  page?: number;
+}): {
   total: number;
   page: number;
   pageSize: number;
@@ -101,7 +154,8 @@ export function queryContacts(input: { q?: string; division?: string; assembly?:
   const role = (input.role || '').trim().toLowerCase();
   const matchesQuery = (index: number, row: DirectoryContact) => {
     if (!q) return true;
-    if (digits.length >= 3 && row.phone.replace(/\D/g, '').includes(digits)) return true;
+    if (digits.length >= 3 && row.phone.replace(/\D/g, '').includes(digits))
+      return true;
     return search[index].includes(q);
   };
   const matchesRole = (row: DirectoryContact) => {
@@ -110,18 +164,41 @@ export function queryContacts(input: { q?: string; division?: string; assembly?:
     return row.designation.toLowerCase().includes(role);
   };
   const searched = rows.filter((row, index) => matchesQuery(index, row));
-  const inDivision = division ? searched.filter((row) => row.division === division) : searched;
-  const inAssembly = assembly ? inDivision.filter((row) => row.assembly === assembly) : inDivision;
+  const inDivision = division
+    ? searched.filter((row) => row.division === division)
+    : searched;
+  const inAssembly = assembly
+    ? inDivision.filter((row) => row.assembly === assembly)
+    : inDivision;
   const matched = inAssembly.filter(matchesRole);
-  const page = Math.min(Math.max(1, Number(input.page) || 1), Math.max(1, Math.ceil(matched.length / pageSize)));
+  const page = Math.min(
+    Math.max(1, Number(input.page) || 1),
+    Math.max(1, Math.ceil(matched.length / pageSize)),
+  );
   const start = (page - 1) * pageSize;
   return {
     total: matched.length,
     page,
     pageSize,
-    divisions: counts(searched.filter((row) => (!assembly || row.assembly === assembly) && matchesRole(row)), (row) => row.division, DIVISION_ORDER),
-    assemblies: counts(searched.filter((row) => (!division || row.division === division) && matchesRole(row)), (row) => row.assembly, ASSEMBLY_ORDER),
-    roles: counts(inAssembly, (row) => row.designation || 'No designation', []).slice(0, 400),
+    divisions: counts(
+      searched.filter(
+        (row) => (!assembly || row.assembly === assembly) && matchesRole(row),
+      ),
+      (row) => row.division,
+      DIVISION_ORDER,
+    ),
+    assemblies: counts(
+      searched.filter(
+        (row) => (!division || row.division === division) && matchesRole(row),
+      ),
+      (row) => row.assembly,
+      ASSEMBLY_ORDER,
+    ),
+    roles: counts(
+      inAssembly,
+      (row) => row.designation || 'No designation',
+      [],
+    ).slice(0, 400),
     rows: matched.slice(start, start + pageSize),
   };
 }

@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
-import { ASSEMBLY_SEGMENTS, constituencyKeywords } from '../../pipeline/native/constituency';
+import {
+  ASSEMBLY_SEGMENTS,
+  constituencyKeywords,
+} from '../../pipeline/native/constituency';
 import {
   SAKSHI_NON_LOCAL_PATH_MARKERS,
   SAKSHI_SKIP_URL_SUBSTRINGS,
@@ -28,19 +31,36 @@ export function isArticleUrl(url: string): boolean {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
   if (!parsed.hostname.toLowerCase().includes('sakshi.com')) return false;
   const path = parsed.pathname || '';
-  if (path.includes('/tags/') || path.includes('/category/') || path.replace(/\/+$/, '') === '') {
+  if (
+    path.includes('/tags/') ||
+    path.includes('/category/') ||
+    path.replace(/\/+$/, '') === ''
+  ) {
     return false;
   }
   const lowered = path.toLowerCase();
   if (
-    ['/news/', '/telugu-news/', '/andhra-pradesh/', '/ap/', '/guntur/', '/article/', '/politics/', '/crime/'].some(
-      (token) => lowered.includes(token),
-    )
+    [
+      '/news/',
+      '/telugu-news/',
+      '/andhra-pradesh/',
+      '/ap/',
+      '/guntur/',
+      '/article/',
+      '/politics/',
+      '/crime/',
+    ].some((token) => lowered.includes(token))
   ) {
     return true;
   }
-  const slug = path.replace(/^\/+|\/+$/g, '').split('/').pop() || '';
-  return Boolean(slug) && slug.length > 12 && !/\.(jpg|png|gif|mp4)$/i.test(slug);
+  const slug =
+    path
+      .replace(/^\/+|\/+$/g, '')
+      .split('/')
+      .pop() || '';
+  return (
+    Boolean(slug) && slug.length > 12 && !/\.(jpg|png|gif|mp4)$/i.test(slug)
+  );
 }
 
 export function loadUrlPriorityKeywords(): string[] {
@@ -56,7 +76,11 @@ export function loadUrlPriorityKeywords(): string[] {
  * Match a constituency place in the URL or anchor.
  * Short Latin tokens are ignored so "Ipur" does not match "jaipur".
  */
-export function urlHasLocationKeyword(url: string, anchorText: string, keywords: string[]): boolean {
+export function urlHasLocationKeyword(
+  url: string,
+  anchorText: string,
+  keywords: string[],
+): boolean {
   const combined = `${url} ${anchorText}`;
   const haystack = combined.toLowerCase();
   for (const keyword of keywords) {
@@ -68,7 +92,8 @@ export function urlHasLocationKeyword(url: string, anchorText: string, keywords:
     const token = keyword.toLowerCase().trim();
     const compact = token.replace(/[\s_-]+/g, '');
     if (compact.length < 5) continue;
-    const bounded = (value: string) => new RegExp(`(?<![a-z0-9])${escapeRegExp(value)}(?![a-z0-9])`);
+    const bounded = (value: string) =>
+      new RegExp(`(?<![a-z0-9])${escapeRegExp(value)}(?![a-z0-9])`);
     if (bounded(token).test(haystack)) return true;
     const squashed = haystack.replace(/[-_]/g, '');
     if (compact && bounded(compact).test(squashed)) return true;
@@ -92,7 +117,11 @@ export function isSectionHubUrl(url: string): boolean {
 }
 
 /** Higher score is fetched earlier. Only 100 (a constituency place name) is kept. */
-export function linkPriority(url: string, anchorText = '', keywords?: string[]): number {
+export function linkPriority(
+  url: string,
+  anchorText = '',
+  keywords?: string[],
+): number {
   const terms = keywords || loadUrlPriorityKeywords();
   const path = (() => {
     try {
@@ -102,8 +131,13 @@ export function linkPriority(url: string, anchorText = '', keywords?: string[]):
     }
   })();
   if (urlHasLocationKeyword(url, anchorText, terms)) return 100;
-  if (SAKSHI_NON_LOCAL_PATH_MARKERS.some((marker) => path.includes(marker))) return 0;
-  if (['/andhra-pradesh/', '/politics/', '/crime/', '/guntur/', '/palnadu/'].some((token) => path.includes(token))) {
+  if (SAKSHI_NON_LOCAL_PATH_MARKERS.some((marker) => path.includes(marker)))
+    return 0;
+  if (
+    ['/andhra-pradesh/', '/politics/', '/crime/', '/guntur/', '/palnadu/'].some(
+      (token) => path.includes(token),
+    )
+  ) {
     return 40;
   }
   if (path.includes('/telugu-news/') || path.includes('/news/')) return 20;
@@ -118,16 +152,25 @@ export function stableArticleId(url: string): string {
     path = '';
   }
   const slug = path ? path.replaceAll('/', '_') : 'unknown';
-  const digest = createHash('sha1').update(url, 'utf8').digest('hex').slice(0, 10);
-  const cleaned = slug.replace(/[^a-zA-Z0-9_-]+/g, '').slice(0, 80) || 'article';
+  const digest = createHash('sha1')
+    .update(url, 'utf8')
+    .digest('hex')
+    .slice(0, 10);
+  const cleaned =
+    slug.replace(/[^a-zA-Z0-9_-]+/g, '').slice(0, 80) || 'article';
   return `${cleaned}_${digest}`;
 }
 
-export function parseSakshiDatetime(value: string | null | undefined): string | null {
+export function parseSakshiDatetime(
+  value: string | null | undefined,
+): string | null {
   if (!value) return null;
   const text = value.trim();
   if (!text) return null;
-  if (!Number.isNaN(Date.parse(text)) && (text.includes('T') || /^\d{4}-\d{2}-\d{2}/.test(text))) {
+  if (
+    !Number.isNaN(Date.parse(text)) &&
+    (text.includes('T') || /^\d{4}-\d{2}-\d{2}/.test(text))
+  ) {
     return text;
   }
   return null;

@@ -22,7 +22,16 @@ export function sakshiEnabled(): boolean {
 }
 
 /** Tag pages for the seven assembly segments. Sattenapalle and Sattenapalli are two spellings Sakshi tags separately. */
-const SEGMENT_TAGS = ['narasaraopet', 'chilakaluripet', 'sattenapalle', 'sattenapalli', 'vinukonda', 'gurazala', 'macherla', 'pedakurapadu'];
+const SEGMENT_TAGS = [
+  'narasaraopet',
+  'chilakaluripet',
+  'sattenapalle',
+  'sattenapalli',
+  'vinukonda',
+  'gurazala',
+  'macherla',
+  'pedakurapadu',
+];
 
 /** First tag page, kept for the envelope `source` field. */
 export function sakshiTagUrl(): string {
@@ -35,11 +44,16 @@ export function sakshiTagUrls(): string[] {
     .split(',')
     .map((url) => url.trim())
     .filter(Boolean);
-  return list.length ? list : SEGMENT_TAGS.map((tag) => `https://www.sakshi.com/tags/${tag}`);
+  return list.length
+    ? list
+    : SEGMENT_TAGS.map((tag) => `https://www.sakshi.com/tags/${tag}`);
 }
 
 export function sakshiBaseUrl(): string {
-  return (process.env.SAKSHI_BASE_URL || 'https://www.sakshi.com').replace(/\/+$/, '');
+  return (process.env.SAKSHI_BASE_URL || 'https://www.sakshi.com').replace(
+    /\/+$/,
+    '',
+  );
 }
 
 export function sakshiRequestDelayMs(): number {
@@ -65,7 +79,8 @@ export const SAKSHI_USER_AGENT =
 
 export const SAKSHI_HEADERS: Record<string, string> = {
   'User-Agent': SAKSHI_USER_AGENT,
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  Accept:
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   'Accept-Language': 'te-IN,te;q=0.9,en-US;q=0.8,en;q=0.7',
   Referer: 'https://www.sakshi.com/',
   'Upgrade-Insecure-Requests': '1',
@@ -83,7 +98,10 @@ export function sakshiBodySelector(): string {
 }
 
 export function sakshiTitleSelector(): string {
-  return process.env.SAKSHI_TITLE_SELECTOR || 'h1.story-title, h1.article-title, h1.title, h1';
+  return (
+    process.env.SAKSHI_TITLE_SELECTOR ||
+    'h1.story-title, h1.article-title, h1.title, h1'
+  );
 }
 
 export function sakshiNoiseSelector(): string {

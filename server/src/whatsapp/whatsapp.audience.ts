@@ -17,7 +17,12 @@ function digits(value: string): string {
 }
 
 export function contactRole(value: unknown): ContactRole {
-  return value === 'superadmin' || value === 'admin' || value === 'person' || value === 'mp' ? value : 'user';
+  return value === 'superadmin' ||
+    value === 'admin' ||
+    value === 'person' ||
+    value === 'mp'
+    ? value
+    : 'user';
 }
 
 /** Admins stay admins. A person or the MP is not given a staff rank here. */
@@ -28,7 +33,9 @@ export function staffRole(value: unknown): StaffRole {
 }
 
 /** The highest staff role wins when the same number is stored more than once. */
-export function setStaffDirectory(entries: Array<{ phone: string; role: ContactRole; name?: string }>): void {
+export function setStaffDirectory(
+  entries: Array<{ phone: string; role: ContactRole; name?: string }>,
+): void {
   const best = new Map<string, StaffRole>();
   const people = new Map<string, string>();
   const names = new Map<string, string>();
@@ -50,8 +57,14 @@ export function setStaffDirectory(entries: Array<{ phone: string; role: ContactR
     const current = best.get(phone);
     if (!current || rank[role] > rank[current]) best.set(phone, role);
   }
-  superAdmins = new Set([...best].filter(([, role]) => role === 'superadmin').map(([phone]) => phone));
-  staff = new Set([...best].filter(([, role]) => role !== 'user').map(([phone]) => phone));
+  superAdmins = new Set(
+    [...best]
+      .filter(([, role]) => role === 'superadmin')
+      .map(([phone]) => phone),
+  );
+  staff = new Set(
+    [...best].filter(([, role]) => role !== 'user').map(([phone]) => phone),
+  );
   persons = people;
   staffNames = names;
   loaded = true;

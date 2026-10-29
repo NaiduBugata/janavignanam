@@ -28,7 +28,10 @@ function makeScheduler(
     pingDiagnostics: jest.fn().mockResolvedValue({ ok: true }),
   };
   const history = { ensureIndexes: jest.fn().mockResolvedValue(undefined) };
-  const lock = { ensureIndexes: jest.fn().mockResolvedValue(undefined) };
+  const lock = {
+    ensureIndexes: jest.fn().mockResolvedValue(undefined),
+    releaseLocalOrphan: jest.fn().mockResolvedValue(false),
+  };
 
   const scheduler = new PipelineSchedulerService(
     config,
@@ -99,7 +102,9 @@ describe('PipelineSchedulerService', () => {
     });
     const selfTest = await scheduler.selfTest();
     expect(selfTest.config_ok).toBe(false);
-    expect(selfTest.errors.join(' ')).toContain('NEON_DATABASE_URL is required');
+    expect(selfTest.errors.join(' ')).toContain(
+      'NEON_DATABASE_URL is required',
+    );
 
     await scheduler.onModuleInit();
     expect(scheduler.isRunning()).toBe(false);

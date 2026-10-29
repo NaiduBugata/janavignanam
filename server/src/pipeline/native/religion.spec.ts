@@ -8,7 +8,9 @@ describe('religion filter', () => {
   });
 
   it('keeps a civic story that only mentions a place of worship', () => {
-    expect(isReligionStory('Theft reported near the Vinukonda temple')).toBe(false);
+    expect(isReligionStory('Theft reported near the Vinukonda temple')).toBe(
+      false,
+    );
     expect(isReligionStory('పూజ్యులు సభకు హాజరయ్యారు')).toBe(false);
     expect(isReligionStory('Road repair in Narasaraopet')).toBe(false);
   });

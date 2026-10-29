@@ -66,5 +66,7 @@ export async function fetchSakshiHtml(
       if (delay > 0) await sleep(delay);
     }
   }
-  throw lastError instanceof Error ? lastError : new Error('sakshi_fetch_failed');
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('sakshi_fetch_failed');
 }

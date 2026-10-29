@@ -7,7 +7,8 @@ export function buildArticleUrl(post: Record<string, unknown>): string {
   if (customLink) return String(customLink);
   const slug = String(post.slug || '').trim();
   const postId = post.id;
-  if (slug && postId != null) return `${LOKAL_WEBSITE_BASE_URL}/${slug}-${postId}`;
+  if (slug && postId != null)
+    return `${LOKAL_WEBSITE_BASE_URL}/${slug}-${postId}`;
   if (postId != null) return `${LOKAL_WEBSITE_BASE_URL}/post/${postId}`;
   return '';
 }
@@ -28,7 +29,9 @@ export function normalizeArticle(post: unknown): LokalArticle | null {
 }
 
 /** Keep the newest created_on for each id. Returns [articles, duplicatesRemoved]. */
-export function removeDuplicates(articles: LokalArticle[]): [LokalArticle[], number] {
+export function removeDuplicates(
+  articles: LokalArticle[],
+): [LokalArticle[], number] {
   const newest = new Map<string, LokalArticle>();
   for (const article of articles) {
     const key = String(article.id);
@@ -39,7 +42,10 @@ export function removeDuplicates(articles: LokalArticle[]): [LokalArticle[], num
     }
     const existingDt = parsePostDate(existing.created_on);
     const currentDt = parsePostDate(article.created_on);
-    if (currentDt && (!existingDt || currentDt.getTime() >= existingDt.getTime())) {
+    if (
+      currentDt &&
+      (!existingDt || currentDt.getTime() >= existingDt.getTime())
+    ) {
       newest.set(key, article);
     }
   }

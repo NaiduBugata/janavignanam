@@ -30,7 +30,10 @@ export function segmentFromTagUrl(url: string): string {
 export function googleNewsSearchUrl(tagUrl: string): string {
   const tag = (() => {
     try {
-      return new URL(tagUrl).pathname.split('/').filter(Boolean).pop() || 'narasaraopet';
+      return (
+        new URL(tagUrl).pathname.split('/').filter(Boolean).pop() ||
+        'narasaraopet'
+      );
     } catch {
       return 'narasaraopet';
     }
@@ -51,21 +54,35 @@ function decodeXml(value: string): string {
 }
 
 /** Headlines from the public news feed. Used when Sakshi's own site refuses the server. */
-export function parseGoogleNewsItems(xml: string, segment: string): FeedHeadline[] {
+export function parseGoogleNewsItems(
+  xml: string,
+  segment: string,
+): FeedHeadline[] {
   const headlines: FeedHeadline[] = [];
   for (const block of xml.split('<item>').slice(1)) {
-    const title = decodeXml((block.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '')
-      .replace(/\s+-\s+sakshi\.com\s*$/i, '');
-    const link = decodeXml((block.match(/<link>([\s\S]*?)<\/link>/) || [])[1] || '');
-    const pub = decodeXml((block.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1] || '');
-    const published = pub && !Number.isNaN(Date.parse(pub)) ? new Date(pub).toISOString() : null;
+    const title = decodeXml(
+      (block.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '',
+    ).replace(/\s+-\s+sakshi\.com\s*$/i, '');
+    const link = decodeXml(
+      (block.match(/<link>([\s\S]*?)<\/link>/) || [])[1] || '',
+    );
+    const pub = decodeXml(
+      (block.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1] || '',
+    );
+    const published =
+      pub && !Number.isNaN(Date.parse(pub))
+        ? new Date(pub).toISOString()
+        : null;
     if (!title || !link) continue;
     headlines.push({ title, link, published, segment });
   }
   return headlines;
 }
 
-export async function fetchSegmentHeadlines(tagUrl: string, fetchImpl: typeof fetch): Promise<FeedHeadline[]> {
+export async function fetchSegmentHeadlines(
+  tagUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<FeedHeadline[]> {
   const segment = segmentFromTagUrl(tagUrl);
   if (!segment) return [];
   const response = await fetchImpl(googleNewsSearchUrl(tagUrl), {

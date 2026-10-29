@@ -207,7 +207,8 @@ export class PipelineRunnerService {
         parent_run_id: parentRunId,
         // Option B provenance so history rows are self-describing.
         executor:
-          (this.config.get<string>('pipeline.executor') || 'native') === 'python'
+          (this.config.get<string>('pipeline.executor') || 'native') ===
+          'python'
             ? 'python_subprocess'
             : 'nestjs',
         executor_command: result.command,
@@ -215,7 +216,9 @@ export class PipelineRunnerService {
       });
 
       const sourceErrors = (name: string) =>
-        errors.filter((e) => e.startsWith(`${name}_`) || e.startsWith(`${name}:`)).slice(0, 10);
+        errors
+          .filter((e) => e.startsWith(`${name}_`) || e.startsWith(`${name}:`))
+          .slice(0, 10);
       await this.state.updateState({
         last_sakshi_run: finishedIso,
         last_sakshi_articles: stats.sakshi_processed,
@@ -279,7 +282,9 @@ export class PipelineRunnerService {
         );
       }
       try {
-        await this.nativePipeline.alertFailure([`pipeline_crashed: ${message.slice(0, 200)}`]);
+        await this.nativePipeline.alertFailure([
+          `pipeline_crashed: ${message.slice(0, 200)}`,
+        ]);
       } catch (alertErr) {
         this.logger.error(
           'Failed to send pipeline crash alert: ' +

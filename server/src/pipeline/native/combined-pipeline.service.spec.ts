@@ -1,4 +1,8 @@
-import { CombinedPipelineService, decide, resolveSegment } from './combined-pipeline.service';
+import {
+  CombinedPipelineService,
+  decide,
+  resolveSegment,
+} from './combined-pipeline.service';
 import { problemId } from './problem-id';
 import { repairJson } from './json-repair';
 import { DatabaseService } from '../../database/database.service';
@@ -33,16 +37,47 @@ describe('problem id and json repair', () => {
 });
 
 describe('segment gate', () => {
-  const base = { source: 'lokal', post_id: '1', created_on: '', source_url: '' };
+  const base = {
+    source: 'lokal',
+    post_id: '1',
+    created_on: '',
+    source_url: '',
+  };
 
   it('keeps an article already mapped to one of the seven segments', () => {
-    expect(resolveSegment({ ...base, title: 'x', content: 'y', assembly_segment: 'Vinukonda' } as never)).toBe('Vinukonda');
+    expect(
+      resolveSegment({
+        ...base,
+        title: 'x',
+        content: 'y',
+        assembly_segment: 'Vinukonda',
+      } as never),
+    ).toBe('Vinukonda');
   });
 
   it('maps an unlabelled article from its text and rejects unknown labels', () => {
-    expect(resolveSegment({ ...base, title: 'Macherla bus stand', content: 'repairs' } as never)).toBe('Macherla');
-    expect(resolveSegment({ ...base, title: 'Guntur bus stand', content: 'repairs', assembly_segment: 'Guntur' } as never)).toBeNull();
-    expect(resolveSegment({ ...base, title: 'Palnadu district review', content: 'collector meeting' } as never)).toBeNull();
+    expect(
+      resolveSegment({
+        ...base,
+        title: 'Macherla bus stand',
+        content: 'repairs',
+      } as never),
+    ).toBe('Macherla');
+    expect(
+      resolveSegment({
+        ...base,
+        title: 'Guntur bus stand',
+        content: 'repairs',
+        assembly_segment: 'Guntur',
+      } as never),
+    ).toBeNull();
+    expect(
+      resolveSegment({
+        ...base,
+        title: 'Palnadu district review',
+        content: 'collector meeting',
+      } as never),
+    ).toBeNull();
   });
 });
 
@@ -70,14 +105,19 @@ describe('CombinedPipelineService', () => {
       ensureConnected: async () => true,
       articlesCollectionName: 'articles',
       collection: () => ({
-        updateOne: async (filter: { post_id: string }, update: { $set: Record<string, unknown> }) => {
+        updateOne: async (
+          filter: { post_id: string },
+          update: { $set: Record<string, unknown> },
+        ) => {
           updates.push({ post_id: filter.post_id, ...update.$set });
           return { upsertedCount: 1, matchedCount: 0 };
         },
       }),
     };
 
-    const service = new CombinedPipelineService(db as unknown as DatabaseService);
+    const service = new CombinedPipelineService(
+      db as unknown as DatabaseService,
+    );
     let groqCalls = 0;
     const fetchImpl = (async (url: string) => {
       const target = String(url);
@@ -88,7 +128,8 @@ describe('CombinedPipelineService', () => {
             {
               id: 42,
               title: 'నరసరావుపేట రోడ్డు',
-              content: 'నరసరావుపేట పట్టణంలో రోడ్లపై గుంతలు ఏర్పడి వాహనదారులు ఇబ్బంది పడుతున్నారు',
+              content:
+                'నరసరావుపేట పట్టణంలో రోడ్లపై గుంతలు ఏర్పడి వాహనదారులు ఇబ్బంది పడుతున్నారు',
               created_on: new Date().toISOString(),
             },
           ],
@@ -121,11 +162,25 @@ describe('CombinedPipelineService', () => {
         const stage = groqCalls % 3;
         const payload =
           stage === 1
-            ? { sentiment: 'Problem', category: 'roads', subcategory: 'civic', problem: 'potholes', severity: 'high', authority: 'municipality' }
+            ? {
+                sentiment: 'Problem',
+                category: 'roads',
+                subcategory: 'civic',
+                problem: 'potholes',
+                severity: 'high',
+                authority: 'municipality',
+              }
             : stage === 2
-              ? { location: { district: 'Palnadu', state: 'Andhra Pradesh' }, people: [], entities: [], keywords: ['road'] }
+              ? {
+                  location: { district: 'Palnadu', state: 'Andhra Pradesh' },
+                  people: [],
+                  entities: [],
+                  keywords: ['road'],
+                }
               : { summary: 'రోడ్డు దెబ్బతింది' };
-        return jsonResponse({ choices: [{ message: { content: JSON.stringify(payload) } }] });
+        return jsonResponse({
+          choices: [{ message: { content: JSON.stringify(payload) } }],
+        });
       }
       return jsonResponse({}, 404);
     }) as typeof fetch;
@@ -134,11 +189,21 @@ describe('CombinedPipelineService', () => {
     expect(groqCalls).toBeGreaterThanOrEqual(3);
     expect(result.stats.lokal_processed).toBe(1);
     expect(result.stats.inserted).toBeGreaterThanOrEqual(1);
-    expect(result.stats.errors.some((e) => e.startsWith('youtube_http_'))).toBe(true);
+    expect(result.stats.errors.some((e) => e.startsWith('youtube_http_'))).toBe(
+      true,
+    );
     expect(updates.some((row) => row.post_id === '42')).toBe(true);
-    expect(updates.some((row) => String(row.post_id).startsWith('sakshi_'))).toBe(true);
+    expect(
+      updates.some((row) => String(row.post_id).startsWith('sakshi_')),
+    ).toBe(true);
     expect(updates[0].problem_id).toEqual(expect.stringMatching(/^PROB-/));
-    expect(updates.every((row) => row.assembly_segment === 'Narasaraopet' && row.constituency === 'Narasaraopet')).toBe(true);
+    expect(
+      updates.every(
+        (row) =>
+          row.assembly_segment === 'Narasaraopet' &&
+          row.constituency === 'Narasaraopet',
+      ),
+    ).toBe(true);
     const again = await service.runCombinedOnce({ fetchImpl });
     expect(again.stats.inserted).toBeGreaterThanOrEqual(1);
   });
@@ -168,7 +233,9 @@ describe('CombinedPipelineService', () => {
         updateOne: async () => ({ upsertedCount: 1, matchedCount: 0 }),
       }),
     };
-    const service = new CombinedPipelineService(db as unknown as DatabaseService);
+    const service = new CombinedPipelineService(
+      db as unknown as DatabaseService,
+    );
     const emails: Array<{ subject: string; html: string }> = [];
     let whatsappCalls = 0;
     const fetchImpl = (async (url: string, init?: RequestInit) => {
@@ -177,7 +244,14 @@ describe('CombinedPipelineService', () => {
         if (!target.includes('page=1')) return jsonResponse({ results: [] });
         postId += 1;
         return jsonResponse({
-          results: [{ id: postId, title: `Narasaraopet road ${postId}`, content: 'Narasaraopet town roads need repair after rain', created_on: new Date().toISOString() }],
+          results: [
+            {
+              id: postId,
+              title: `Narasaraopet road ${postId}`,
+              content: 'Narasaraopet town roads need repair after rain',
+              created_on: new Date().toISOString(),
+            },
+          ],
         });
       }
       if (target.includes('sakshi.com')) return jsonResponse({}, 403);
@@ -190,11 +264,24 @@ describe('CombinedPipelineService', () => {
         return jsonResponse({ id: 'mail' });
       }
       return jsonResponse({
-        choices: [{ message: { content: '{"sentiment":"Problem","category":"roads","problem":"potholes","severity":"high","summary":"s","location":{"district":"Palnadu"},"people":[],"entities":[],"keywords":[]}' } }],
+        choices: [
+          {
+            message: {
+              content:
+                '{"sentiment":"Problem","category":"roads","problem":"potholes","severity":"high","summary":"s","location":{"district":"Palnadu"},"people":[],"entities":[],"keywords":[]}',
+            },
+          },
+        ],
       });
     }) as typeof fetch;
-    const failures = () => emails.filter((mail) => mail.subject.startsWith('MediaSphere pipeline FAILED'));
-    const news = () => emails.filter((mail) => /^MediaSphere: 1 new article, 1 critical \|/.test(mail.subject));
+    const failures = () =>
+      emails.filter((mail) =>
+        mail.subject.startsWith('MediaSphere pipeline FAILED'),
+      );
+    const news = () =>
+      emails.filter((mail) =>
+        /^MediaSphere: 1 new article, 1 critical \|/.test(mail.subject),
+      );
 
     const failed = await service.runCombinedOnce({ fetchImpl });
     expect(failed.exitCode).toBe(0);
@@ -241,7 +328,8 @@ describe('CombinedPipelineService', () => {
       articlesCollectionName: 'articles',
       query: async (sql: string, params: unknown[]) => {
         if (sql.includes('INSERT')) remembered.push(params[1] as string[]);
-        if (sql.includes("doc->>'post_id'")) return [{ post_id: '1', source_url: null }];
+        if (sql.includes("doc->>'post_id'"))
+          return [{ post_id: '1', source_url: null }];
         if (sql.includes('SELECT doc_id')) return [{ doc_id: 'post:2' }];
         return [];
       },
@@ -253,17 +341,32 @@ describe('CombinedPipelineService', () => {
         },
       }),
     };
-    const service = new CombinedPipelineService(db as unknown as DatabaseService);
+    const service = new CombinedPipelineService(
+      db as unknown as DatabaseService,
+    );
     const fetchImpl = (async (url: string) => {
       if (String(url).includes('getlokalapp.com')) {
-        if (!String(url).includes('page=1')) return jsonResponse({ results: [] });
+        if (!String(url).includes('page=1'))
+          return jsonResponse({ results: [] });
         const now = new Date().toISOString();
         return jsonResponse({
-          results: [1, 2, 3].map((id) => ({ id, title: `Narasaraopet road ${id}`, content: `Narasaraopet town road number ${id} needs repair after rain`, created_on: now })),
+          results: [1, 2, 3].map((id) => ({
+            id,
+            title: `Narasaraopet road ${id}`,
+            content: `Narasaraopet town road number ${id} needs repair after rain`,
+            created_on: now,
+          })),
         });
       }
       return jsonResponse({
-        choices: [{ message: { content: '{"sentiment":"Statement","category":"c","problem":"p","summary":"s","location":{"district":"d"},"people":[],"entities":[],"keywords":[]}' } }],
+        choices: [
+          {
+            message: {
+              content:
+                '{"sentiment":"Statement","category":"c","problem":"p","summary":"s","location":{"district":"d"},"people":[],"entities":[],"keywords":[]}',
+            },
+          },
+        ],
       });
     }) as typeof fetch;
 
@@ -287,7 +390,8 @@ describe('CombinedPipelineService', () => {
       articlesCollectionName: 'articles',
       query: async (sql: string, params: unknown[]) => {
         if (sql.includes('INSERT')) remembered.push(params[1] as string[]);
-        if (sql.includes("doc->>'post_id'")) return [{ post_id: '1', source_url: null }];
+        if (sql.includes("doc->>'post_id'"))
+          return [{ post_id: '1', source_url: null }];
         if (sql.includes('SELECT doc_id')) return [{ doc_id: 'post:2' }];
         return [];
       },
@@ -299,17 +403,32 @@ describe('CombinedPipelineService', () => {
         },
       }),
     };
-    const service = new CombinedPipelineService(db as unknown as DatabaseService);
+    const service = new CombinedPipelineService(
+      db as unknown as DatabaseService,
+    );
     const fetchImpl = (async (url: string) => {
       if (String(url).includes('getlokalapp.com')) {
-        if (!String(url).includes('page=1')) return jsonResponse({ results: [] });
+        if (!String(url).includes('page=1'))
+          return jsonResponse({ results: [] });
         const now = new Date().toISOString();
         return jsonResponse({
-          results: [1, 2, 3].map((id) => ({ id, title: `Narasaraopet road ${id}`, content: `Narasaraopet town road number ${id} needs repair after rain`, created_on: now })),
+          results: [1, 2, 3].map((id) => ({
+            id,
+            title: `Narasaraopet road ${id}`,
+            content: `Narasaraopet town road number ${id} needs repair after rain`,
+            created_on: now,
+          })),
         });
       }
       return jsonResponse({
-        choices: [{ message: { content: '{"sentiment":"Statement","category":"c","problem":"p","summary":"s","location":{"district":"d"},"people":[],"entities":[],"keywords":[]}' } }],
+        choices: [
+          {
+            message: {
+              content:
+                '{"sentiment":"Statement","category":"c","problem":"p","summary":"s","location":{"district":"d"},"people":[],"entities":[],"keywords":[]}',
+            },
+          },
+        ],
       });
     }) as typeof fetch;
 
@@ -339,16 +458,34 @@ describe('CombinedPipelineService', () => {
         },
       }),
     };
-    const service = new CombinedPipelineService(db as unknown as DatabaseService);
+    const service = new CombinedPipelineService(
+      db as unknown as DatabaseService,
+    );
     const fetchImpl = (async (url: string) => {
       if (String(url).includes('getlokalapp.com')) {
-        if (!String(url).includes('page=1')) return jsonResponse({ results: [] });
+        if (!String(url).includes('page=1'))
+          return jsonResponse({ results: [] });
         return jsonResponse({
-          results: [{ id: 7, title: 'Narasaraopet road', content: 'Narasaraopet civic update about the town roads and water supply today', created_on: new Date().toISOString() }],
+          results: [
+            {
+              id: 7,
+              title: 'Narasaraopet road',
+              content:
+                'Narasaraopet civic update about the town roads and water supply today',
+              created_on: new Date().toISOString(),
+            },
+          ],
         });
       }
       return jsonResponse({
-        choices: [{ message: { content: '{"sentiment":"Statement","category":"c","problem":"p","summary":"s","location":{"district":"d"},"people":[],"entities":[],"keywords":[]}' } }],
+        choices: [
+          {
+            message: {
+              content:
+                '{"sentiment":"Statement","category":"c","problem":"p","summary":"s","location":{"district":"d"},"people":[],"entities":[],"keywords":[]}',
+            },
+          },
+        ],
       });
     }) as typeof fetch;
     const first = await service.runCombinedOnce({ fetchImpl });

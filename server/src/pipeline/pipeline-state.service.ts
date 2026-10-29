@@ -33,7 +33,7 @@ export class PipelineStateService {
   async getState(): Promise<Document> {
     await this.db.ensureConnected();
     const doc = await this.collection().findOne({
-      _id: this.stateId as unknown as Document['_id'],
+      _id: this.stateId,
     });
     return doc ? { ...doc } : { _id: this.stateId };
   }
@@ -42,7 +42,7 @@ export class PipelineStateService {
     await this.db.ensureConnected();
     const now = pythonUtcIso();
     await this.collection().updateOne(
-      { _id: this.stateId as unknown as Document['_id'] },
+      { _id: this.stateId },
       {
         $set: { ...fields, updated_at: now },
         $setOnInsert: { created_at: now },

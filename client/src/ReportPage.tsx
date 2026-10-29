@@ -4,6 +4,13 @@ import { api } from "@/lib/api.ts";
 import { apiUrl } from "@/lib/apiBase.ts";
 
 type Stage = { name: string; status: string; note: string };
+type ProgressHistoryEntry = {
+  status: string;
+  remarks?: string;
+  department?: string;
+  updatedAt: string;
+  stages?: Stage[];
+};
 type Report = {
   id: string;
   title: string;
@@ -18,6 +25,9 @@ type Report = {
   department?: string;
   leader?: string;
   progressStages?: Stage[];
+  progressRemarks?: string;
+  remarks?: string;
+  progressHistory?: ProgressHistoryEntry[];
   progressUpdatedAt?: string;
   srNumber?: string;
   actionToBeTaken?: string;
@@ -131,6 +141,12 @@ export default function ReportPage() {
               {report.categories?.length ? <p className="mt-2 leading-7 text-[#3d3832]">{report.categories.join(", ")}</p> : <p className="mt-2 leading-7 text-[#3d3832]">{report.detail || "—"}</p>}
               {report.actionToBeTaken ? <p className="mt-3 text-sm">Action to be taken: {report.actionToBeTaken}</p> : null}
               {report.deadline ? <p className="mt-1 text-sm">Deadline: {report.deadline}</p> : null}
+              {(report.progressRemarks || report.remarks) ? (
+                <div className="mt-4 rounded-xl border border-[#e4dccb] bg-[#faf8f5] p-4">
+                  <p className="text-xs uppercase tracking-wider text-[#8a8174]">Latest Department Remarks</p>
+                  <p className="mt-1 text-sm leading-6 text-[#1c1915]">{report.progressRemarks || report.remarks}</p>
+                </div>
+              ) : null}
             </div>
             <div className="border-t border-[#e4dccb] px-8 py-8">
               <div className="flex items-end justify-between">
@@ -152,6 +168,24 @@ export default function ReportPage() {
                 ))}
               </ol>
               {report.progressUpdatedAt ? <p className="mt-4 text-xs text-[#6b6256]">Last update {new Date(report.progressUpdatedAt).toLocaleString()}</p> : null}
+
+              {report.progressHistory && report.progressHistory.length > 0 && (
+                <div className="mt-8 border-t border-[#e4dccb] pt-6">
+                  <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-[#8a8174]">Progress Audit Trail</h3>
+                  <div className="mt-4 space-y-3">
+                    {report.progressHistory.slice(-5).reverse().map((entry, idx) => (
+                      <div key={idx} className="rounded-xl border border-[#efe8da] bg-[#faf8f5] p-3 text-xs">
+                        <div className="flex items-center justify-between text-[#6b6256]">
+                          <span className="font-medium text-[#1c1915]">{entry.department || report.department || "Department"}</span>
+                          <span>{new Date(entry.updatedAt).toLocaleString()}</span>
+                        </div>
+                        <p className="mt-1.5 font-semibold text-[#1f4d3a]">Status: {entry.status}</p>
+                        {entry.remarks && <p className="mt-1 text-[#3d3832]">{entry.remarks}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </article>
         )}

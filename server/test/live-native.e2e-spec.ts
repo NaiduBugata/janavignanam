@@ -24,7 +24,9 @@ const live = process.env.LIVE_PIPELINE === '1';
     process.env.YOUTUBE_MAX_NEW_PER_RUN = '1';
     process.env.SAKSHI_MAX_ARTICLES_PER_RUN = '1';
 
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
     const state = app.get(PipelineStateService);
@@ -35,7 +37,14 @@ const live = process.env.LIVE_PIPELINE === '1';
     if (!app) return;
     const state = app.get(PipelineStateService);
     const restore: Record<string, unknown> = {};
-    for (const key of ['status', 'last_run', 'last_success', 'last_failure', 'pending_run_id', 'current_run_id']) {
+    for (const key of [
+      'status',
+      'last_run',
+      'last_success',
+      'last_failure',
+      'pending_run_id',
+      'current_run_id',
+    ]) {
       if (key in snapshot) restore[key] = snapshot[key];
     }
     if (Object.keys(restore).length) await state.updateState(restore);
@@ -44,10 +53,14 @@ const live = process.env.LIVE_PIPELINE === '1';
 
   it('collects, analyzes at most one article, and upserts', async () => {
     const db = app.get(DatabaseService);
-    const before = await db.collection(db.articlesCollectionName).countDocuments();
+    const before = await db
+      .collection(db.articlesCollectionName)
+      .countDocuments();
     const cycle = app.get(CombinedPipelineService);
     const result = await cycle.runCombinedOnce();
-    const after = await db.collection(db.articlesCollectionName).countDocuments();
+    const after = await db
+      .collection(db.articlesCollectionName)
+      .countDocuments();
     expect(result.stats).toBeDefined();
     expect(after).toBeGreaterThanOrEqual(before);
     expect(result.command).toBe('nestjs:combined-pipeline');

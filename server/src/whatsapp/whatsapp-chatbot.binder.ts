@@ -10,7 +10,9 @@ export class WhatsAppChatbotBinder implements OnModuleInit {
   constructor(private readonly moduleRef: ModuleRef) {}
 
   onModuleInit(): void {
-    const controller = this.moduleRef.get(WhatsAppController, { strict: false });
+    const controller = this.moduleRef.get(WhatsAppController, {
+      strict: false,
+    });
     const chatbot = this.moduleRef.get(ChatbotService, { strict: false });
     controller.useChatbot(chatbot);
     this.logger.log('WhatsApp chatbot attached.');

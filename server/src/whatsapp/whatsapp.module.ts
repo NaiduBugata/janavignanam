@@ -8,7 +8,11 @@ import { WhatsAppWebhookRepository } from './whatsapp.repository';
 @Module({
   imports: [ChatbotModule],
   controllers: [WhatsAppController],
-  providers: [WhatsAppWebhookRepository, WhatsAppLifecycleService, WhatsAppChatbotBinder],
+  providers: [
+    WhatsAppWebhookRepository,
+    WhatsAppLifecycleService,
+    WhatsAppChatbotBinder,
+  ],
   exports: [WhatsAppWebhookRepository],
 })
 export class WhatsAppModule {}

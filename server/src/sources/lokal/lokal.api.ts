@@ -7,7 +7,7 @@ import {
   LOKAL_POST_TYPES,
   LOKAL_TAG_ID,
   LOKAL_TIMEOUT_MS,
-} from "./lokal.constants";
+} from './lokal.constants';
 
 export function buildLokalPageUrl(page: number): string {
   return (
@@ -34,7 +34,8 @@ export async function fetchLokalPage(
       }
       try {
         const payload = (await response.json()) as unknown;
-        if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+          return null;
         return payload as Record<string, unknown>;
       } catch {
         return null;

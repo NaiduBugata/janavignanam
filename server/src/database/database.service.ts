@@ -145,6 +145,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private pool: (SqlPool & { end: () => Promise<void> }) | null = null;
   private connected = false;
   private connectPromise: Promise<void> | null = null;
+  private reconnectPromise: Promise<boolean> | null = null;
   private readonly gates = new Map<string, Promise<unknown>>();
 
   constructor(private readonly config: ConfigService) {}
@@ -220,8 +221,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const tcp = new Pool({
       connectionString: uri,
       ssl: { rejectUnauthorized: true },
-      max: 5,
-      connectionTimeoutMillis: 8000,
+      max: 10,
+      connectionTimeoutMillis: 30000,
+      idleTimeoutMillis: 30000,
       // pg connects by hostname, and Node 24 races AAAA records. Railway has
       // no IPv6 route, so that race reports ENETUNREACH plus IPv4 timeouts.
       stream: () => createNeonSocket(),
@@ -243,24 +245,30 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private async openWebSocketPool(uri: string) {
     // wss provides the TLS session. Do not disable certificate checks.
     neonConfig.useSecureWebSocket = true;
-    const pool = new NeonWsPool({ connectionString: uri, max: 5 });
+    const pool = new NeonWsPool({
+      connectionString: uri,
+      max: 10,
+      connectionTimeoutMillis: 30000,
+    });
     await pool.query('SELECT 1');
     this.logger.log('Neon connected over TLS websocket');
     return asSqlPool(pool);
   }
 
   async close(): Promise<void> {
-    if (!this.pool) return;
+    const current = this.pool;
+    this.pool = null;
+    this.connected = false;
+    if (!current) return;
     try {
-      await this.pool.end();
+      await current.end();
     } catch (err) {
       this.logger.warn('Neon close error: ' + safeError(err));
     }
-    this.pool = null;
-    this.connected = false;
   }
 
   async ensureConnected(): Promise<boolean> {
+    if (this.reconnectPromise) return this.reconnectPromise;
     try {
       if (!this.pool) await this.connect();
       else await this.pool.query('SELECT 1');
@@ -268,20 +276,31 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       return this.connected;
     } catch {
       this.connected = false;
-      try {
-        await this.close();
-        await this.connect();
-        return this.connected;
-      } catch {
-        this.connected = false;
-        return false;
-      }
+      this.reconnectPromise = (async () => {
+        try {
+          await this.close();
+          await this.connect();
+          return this.connected;
+        } catch {
+          this.connected = false;
+          return false;
+        } finally {
+          this.reconnectPromise = null;
+        }
+      })();
+      return this.reconnectPromise;
     }
   }
 
   collection(name: string): PgDocumentCollection {
-    if (!this.pool) throw new Error('Neon database is not initialized');
-    return new PgDocumentCollection(this.pool, name, (fn) =>
+    const delegatingPool: SqlPool = {
+      query: async (sql, params) => {
+        await this.ensureConnected();
+        if (!this.pool) throw new Error('Neon database is not initialized');
+        return this.pool.query(sql, params);
+      },
+    };
+    return new PgDocumentCollection(delegatingPool, name, (fn) =>
       this.exclusive(name, fn),
     );
   }
@@ -291,6 +310,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     sql: string,
     params: unknown[] = [],
   ): Promise<T[]> {
+    await this.ensureConnected();
     if (!this.pool) throw new Error('Neon database is not initialized');
     const result = await this.pool.query(sql, params);
     return result.rows as T[];

@@ -1,6 +1,25 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Res, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Response } from 'express';
-import { CreateRecordDto, LoginDto, RegisterDto, UpdateProgressDto, WORKSPACE_SECTIONS, type WorkspaceSection } from './workspace.dto';
+import {
+  CreateRecordDto,
+  LoginDto,
+  RegisterDto,
+  UpdateProgressDto,
+  WORKSPACE_SECTIONS,
+  type WorkspaceSection,
+} from './workspace.dto';
 import { queryContacts } from './contacts-directory';
 import { WorkspaceService } from './workspace.service';
 
@@ -39,11 +58,20 @@ export class WorkspaceController {
     @Headers('authorization') authorization?: string,
   ) {
     this.workspace.verify(bearer(authorization));
-    return queryContacts({ q, division, assembly, role, page: Number(page) || 1 });
+    return queryContacts({
+      q,
+      division,
+      assembly,
+      role,
+      page: Number(page) || 1,
+    });
   }
 
   @Get('records')
-  records(@Query('section') section: string, @Headers('authorization') authorization?: string) {
+  records(
+    @Query('section') section: string,
+    @Headers('authorization') authorization?: string,
+  ) {
     this.workspace.verify(bearer(authorization));
     if (!WORKSPACE_SECTIONS.includes(section as WorkspaceSection)) {
       throw new UnauthorizedException('Unknown section');
@@ -59,27 +87,39 @@ export class WorkspaceController {
     @Res() res: Response,
   ) {
     this.workspace.verify(bearer(authorization));
-    if (section !== 'grievances' && section !== 'projects') throw new UnauthorizedException('Unknown section');
-    if (format !== 'pdf' && format !== 'xlsx') throw new UnauthorizedException('Use pdf or xlsx');
+    if (section !== 'grievances' && section !== 'projects')
+      throw new UnauthorizedException('Unknown section');
+    if (format !== 'pdf' && format !== 'xlsx')
+      throw new UnauthorizedException('Use pdf or xlsx');
     const file = await this.workspace.reportBundle(section, format);
     sendFile(res, file.name, file.type, file.bytes);
   }
 
   @Get('records/:id/pdf')
-  async pdf(@Param('id') id: string, @Headers('authorization') authorization: string | undefined, @Res() res: Response) {
+  async pdf(
+    @Param('id') id: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
     this.workspace.verify(bearer(authorization));
     const file = await this.workspace.reportFile(id);
     sendFile(res, file.name, 'application/pdf', file.bytes);
   }
 
   @Get('records/:id')
-  one(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+  one(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
     this.workspace.verify(bearer(authorization));
     return this.workspace.get(id);
   }
 
   @Post('records')
-  async create(@Body() body: CreateRecordDto, @Headers('authorization') authorization?: string) {
+  async create(
+    @Body() body: CreateRecordDto,
+    @Headers('authorization') authorization?: string,
+  ) {
     const user = await this.workspace.me(bearer(authorization));
     return this.workspace.create({
       section: body.section,
@@ -114,19 +154,29 @@ export class WorkspaceController {
   }
 
   @Post('records/:id/approve')
-  async approve(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+  async approve(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
     await this.workspace.me(bearer(authorization));
     return this.workspace.approve(id);
   }
 
   @Patch('records/:id')
-  async update(@Param('id') id: string, @Body() body: CreateRecordDto, @Headers('authorization') authorization?: string) {
+  async update(
+    @Param('id') id: string,
+    @Body() body: CreateRecordDto,
+    @Headers('authorization') authorization?: string,
+  ) {
     await this.workspace.me(bearer(authorization));
     return this.workspace.update(id, body);
   }
 
   @Delete('records/:id')
-  async remove(@Param('id') id: string, @Headers('authorization') authorization?: string) {
+  async remove(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
     await this.workspace.me(bearer(authorization));
     return this.workspace.remove(id);
   }
@@ -143,11 +193,17 @@ export class ProgressController {
 
   @Patch(':token')
   async save(@Param('token') token: string, @Body() body: UpdateProgressDto) {
-    await this.workspace.saveProgress(token, body.stages.map((stage) => ({
+    const stages = body.stages?.map((stage) => ({
       name: stage.name,
       status: stage.status,
       note: stage.note || '',
-    })));
+    }));
+    await this.workspace.saveProgress(token, {
+      stages,
+      status: body.status,
+      remarks: body.remarks,
+      department: body.department,
+    });
     return this.workspace.progressByToken(token);
   }
 }
@@ -155,7 +211,10 @@ export class ProgressController {
 function sendFile(res: Response, name: string, type: string, bytes: Buffer) {
   res.setHeader('Content-Type', type);
   res.setHeader('Content-Length', String(bytes.length));
-  res.setHeader('Content-Disposition', `attachment; filename="${name.replace(/"/g, '')}"`);
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${name.replace(/"/g, '')}"`,
+  );
   res.end(bytes);
 }
 

@@ -1,4 +1,8 @@
-import { buildArticleUrl, normalizeArticle, removeDuplicates } from './lokal.normalizer';
+import {
+  buildArticleUrl,
+  normalizeArticle,
+  removeDuplicates,
+} from './lokal.normalizer';
 import { parsePostDate } from './lokal.parser';
 import { buildLokalPageUrl } from './lokal.api';
 import { collectLokalNews } from './lokal.collector';
@@ -18,27 +22,48 @@ describe('lokal parser and normalizer', () => {
   it('builds page and article URLs the way Flask does', () => {
     expect(buildLokalPageUrl(3)).toContain('page=3');
     expect(buildLokalPageUrl(3)).toContain('tag_id=374');
-    expect(buildArticleUrl({ custom_link: 'https://example.com/x', id: 5 })).toBe(
-      'https://example.com/x',
+    expect(
+      buildArticleUrl({ custom_link: 'https://example.com/x', id: 5 }),
+    ).toBe('https://example.com/x');
+    expect(buildArticleUrl({ slug: 'my-story', id: 42 })).toMatch(
+      /\/my-story-42$/,
     );
-    expect(buildArticleUrl({ slug: 'my-story', id: 42 })).toMatch(/\/my-story-42$/);
     expect(buildArticleUrl({ id: 42 })).toMatch(/\/post\/42$/);
   });
 
   it('normalizes a post and skips rows missing id or date', () => {
-    const post = { id: 1, title: 'T', content: 'C', created_on: '2026-07-10T08:30:00Z' };
+    const post = {
+      id: 1,
+      title: 'T',
+      content: 'C',
+      created_on: '2026-07-10T08:30:00Z',
+    };
     const article = normalizeArticle(post);
     expect(article?.id).toBe(1);
     expect(article?.title).toBe('T');
     expect(article?.raw).toEqual(post);
-    expect(normalizeArticle({ title: 'no id', created_on: '2026-07-10' })).toBeNull();
+    expect(
+      normalizeArticle({ title: 'no id', created_on: '2026-07-10' }),
+    ).toBeNull();
     expect(normalizeArticle({ id: 1, title: 'no date' })).toBeNull();
   });
 
   it('keeps the newest article for a repeated id', () => {
-    const older = normalizeArticle({ id: 1, title: 'old', created_on: '2026-07-09T00:00:00Z' });
-    const newer = normalizeArticle({ id: 1, title: 'new', created_on: '2026-07-10T00:00:00Z' });
-    const unique = normalizeArticle({ id: 2, title: 'other', created_on: '2026-07-10T00:00:00Z' });
+    const older = normalizeArticle({
+      id: 1,
+      title: 'old',
+      created_on: '2026-07-09T00:00:00Z',
+    });
+    const newer = normalizeArticle({
+      id: 1,
+      title: 'new',
+      created_on: '2026-07-10T00:00:00Z',
+    });
+    const unique = normalizeArticle({
+      id: 2,
+      title: 'other',
+      created_on: '2026-07-10T00:00:00Z',
+    });
     const [deduped, removed] = removeDuplicates([older!, newer!, unique!]);
     expect(removed).toBe(1);
     expect(deduped).toHaveLength(2);

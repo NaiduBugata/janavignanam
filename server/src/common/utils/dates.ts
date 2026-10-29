@@ -5,7 +5,13 @@
 
 export function falsyToEmptyString(value: unknown): string {
   // Python: value or ""
-  if (value === null || value === undefined || value === false || value === 0 || value === '') {
+  if (
+    value === null ||
+    value === undefined ||
+    value === false ||
+    value === 0 ||
+    value === ''
+  ) {
     return '';
   }
   return String(value);
@@ -13,7 +19,13 @@ export function falsyToEmptyString(value: unknown): string {
 
 export function falsyToDefault(value: unknown, fallback: string): string {
   // Python: value or fallback  (empty string is falsy)
-  if (value === null || value === undefined || value === false || value === 0 || value === '') {
+  if (
+    value === null ||
+    value === undefined ||
+    value === false ||
+    value === 0 ||
+    value === ''
+  ) {
     return fallback;
   }
   return String(value);
@@ -53,7 +65,11 @@ export function utcTodayIso(): string {
 
 export function utcDaysBackIso(daysBack: number): string {
   const d = new Date();
-  const utc = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - daysBack);
+  const utc = Date.UTC(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate() - daysBack,
+  );
   return new Date(utc).toISOString().slice(0, 10);
 }
 

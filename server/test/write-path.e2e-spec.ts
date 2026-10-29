@@ -33,8 +33,10 @@ async function sleep(ms: number) {
 
 async function forceClearLock(db: DatabaseService) {
   await db.collection('pipeline_lock').updateOne(
-    { _id: 'pipeline' as never },
-    { $set: { owner: null, updated_at: new Date(), expires_at: new Date(0) } },
+    { _id: 'pipeline' },
+    {
+      $set: { owner: null, updated_at: new Date(), expires_at: new Date(0) },
+    },
     { upsert: true },
   );
 }
@@ -67,7 +69,7 @@ describe('Phase 3 write-path orchestration (e2e)', () => {
   let originalConfigGet: ConfigService['get'];
 
   const pointBridge = (script: string) => {
-    config.get = ((key: string, defaultValue?: unknown) => {
+    config.get = (key: string, defaultValue?: unknown) => {
       if (key === 'pipeline.python.script') return script;
       if (key === 'pipeline.python.cwd') return FIXTURES;
       if (key === 'pipeline.python.args') return [];
@@ -76,7 +78,7 @@ describe('Phase 3 write-path orchestration (e2e)', () => {
       }
       if (key === 'pipeline.python.timeoutMs') return 60000;
       return originalConfigGet.call(config, key, defaultValue);
-    }) as ConfigService['get'];
+    };
   };
 
   const restoreBridge = () => {
@@ -177,10 +179,12 @@ describe('Phase 3 write-path orchestration (e2e)', () => {
 
       const s = await lock.summary();
       if (s.held) {
-        await db.collection('pipeline_lock').updateOne(
-          { _id: 'pipeline' as never },
-          { $set: { owner: null, updated_at: new Date() } },
-        );
+        await db
+          .collection('pipeline_lock')
+          .updateOne(
+            { _id: 'pipeline' },
+            { $set: { owner: null, updated_at: new Date() } },
+          );
       }
 
       const articlesAfter = await db
@@ -350,7 +354,7 @@ describe('Phase 3 write-path orchestration (e2e)', () => {
       while (Date.now() < deadline) {
         const doc = await rawHistory(second.body.run_id);
         if (doc && doc.status && doc.status !== 'running') {
-          other = doc as Record<string, unknown>;
+          other = doc;
           break;
         }
         await sleep(250);
@@ -369,7 +373,9 @@ describe('Phase 3 write-path orchestration (e2e)', () => {
       expect(hist.length).toBeLessThanOrEqual(2);
       const nonSkipSuccess = hist.filter(
         (h) =>
-          !(Array.isArray(h.errors) && h.errors.includes('skipped_lock_held')) &&
+          !(
+            Array.isArray(h.errors) && h.errors.includes('skipped_lock_held')
+          ) &&
           !(Array.isArray(h.errors) && h.errors.includes('skipped_local_gate')),
       );
       expect(nonSkipSuccess.length).toBeGreaterThanOrEqual(1);
@@ -392,7 +398,9 @@ describe('Phase 3 write-path orchestration (e2e)', () => {
     const scheduler = app.get(PipelineSchedulerService);
     const spy = jest.spyOn(scheduler, 'isRunning').mockReturnValue(true);
     try {
-      const historyBefore = await db.collection('pipeline_history').countDocuments();
+      const historyBefore = await db
+        .collection('pipeline_history')
+        .countDocuments();
       const res = await server()
         .post('/api/pipeline/run-now')
         .set('X-Pipeline-Admin-Token', pipelineToken);
@@ -419,7 +427,7 @@ describe('Phase 3 write-path orchestration (e2e)', () => {
             !createdRunIds.includes(String(d.run_id)),
         );
         if (hit) {
-          found = hit as Record<string, unknown>;
+          found = hit;
           break;
         }
         // Also accept any new success after our count
@@ -432,7 +440,7 @@ describe('Phase 3 write-path orchestration (e2e)', () => {
             .limit(1)
             .toArray();
           if (newest[0]?.status === 'success') {
-            found = newest[0] as Record<string, unknown>;
+            found = newest[0];
             break;
           }
         }

@@ -36,12 +36,18 @@ export class DailyReportRepository {
     return doc?.status === 'sent';
   }
 
-  async upsert(reportDate: string, fields: Record<string, unknown>): Promise<Document | null> {
+  async upsert(
+    reportDate: string,
+    fields: Record<string, unknown>,
+  ): Promise<Document | null> {
     await this.db.ensureConnected();
     const now = new Date().toISOString();
     await this.collection().updateOne(
       { report_date: reportDate },
-      { $set: { ...fields, updated_at: now }, $setOnInsert: { created_at: now } },
+      {
+        $set: { ...fields, updated_at: now },
+        $setOnInsert: { created_at: now },
+      },
       { upsert: true },
     );
     return this.collection().findOne({ report_date: reportDate });
@@ -49,7 +55,13 @@ export class DailyReportRepository {
 
   async recordGeneration(
     reportDate: string,
-    stats: { total?: number; problems?: number; positive?: number; negative?: number; high_priority_problems?: number },
+    stats: {
+      total?: number;
+      problems?: number;
+      positive?: number;
+      negative?: number;
+      high_priority_problems?: number;
+    },
     recipients: string[],
     pdfPath: string,
   ): Promise<Document | null> {
@@ -66,7 +78,10 @@ export class DailyReportRepository {
     });
   }
 
-  async recordSent(reportDate: string, retryCount: number): Promise<Document | null> {
+  async recordSent(
+    reportDate: string,
+    retryCount: number,
+  ): Promise<Document | null> {
     return this.upsert(reportDate, {
       status: 'sent',
       sent_time: new Date().toISOString(),
@@ -75,13 +90,25 @@ export class DailyReportRepository {
     });
   }
 
-  async recordFailed(reportDate: string, retryCount: number, error: string): Promise<Document | null> {
-    return this.upsert(reportDate, { status: 'failed', retry_count: retryCount, error });
+  async recordFailed(
+    reportDate: string,
+    retryCount: number,
+    error: string,
+  ): Promise<Document | null> {
+    return this.upsert(reportDate, {
+      status: 'failed',
+      retry_count: retryCount,
+      error,
+    });
   }
 
   async history(limit = 60): Promise<Document[]> {
     await this.db.ensureConnected();
-    const rows = await this.collection().find({}).sort({ report_date: -1 }).limit(limit).toArray();
+    const rows = await this.collection()
+      .find({})
+      .sort({ report_date: -1 })
+      .limit(limit)
+      .toArray();
     return rows.map(serializeReport);
   }
 

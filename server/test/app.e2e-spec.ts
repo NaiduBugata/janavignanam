@@ -22,7 +22,9 @@ describe('Read-path (e2e)', () => {
   });
 
   it('GET /api/health returns status ok and mongo boolean', async () => {
-    const res = await request(app.getHttpServer()).get('/api/health').expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/health')
+      .expect(200);
     expect(res.body.status).toBe('ok');
     expect(typeof res.body.mongo).toBe('boolean');
   });

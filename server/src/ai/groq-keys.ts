@@ -16,14 +16,14 @@ export function discoverGroqApiKeys(
   numbered.sort((a, b) => a[0] - b[0]);
   const discovered = numbered.map(([, v]) => v);
 
-  const explicit = (env.GROQ_API_KEYS || "").trim();
+  const explicit = (env.GROQ_API_KEYS || '').trim();
   if (explicit) {
     for (const part of explicit.split(/[,;\s]+/)) {
       if (part.trim()) discovered.push(part.trim());
     }
   }
 
-  const single = (env.GROQ_API_KEY || "").trim();
+  const single = (env.GROQ_API_KEY || '').trim();
   if (single) discovered.push(single);
 
   const unique: string[] = [];
@@ -52,7 +52,7 @@ export class GroqKeyRotator {
   constructor(keys: string[], cooldownSeconds: number) {
     if (!keys.length) {
       throw new Error(
-        "No Groq API keys found. Set GROQ_API_KEY, GROQ_API_KEYS, or GROQ_API_KEY_1 ... GROQ_API_KEY_N.",
+        'No Groq API keys found. Set GROQ_API_KEY, GROQ_API_KEYS, or GROQ_API_KEY_1 ... GROQ_API_KEY_N.',
       );
     }
     this.cooldownMs = cooldownSeconds * 1000;

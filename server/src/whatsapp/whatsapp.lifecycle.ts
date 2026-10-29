@@ -1,7 +1,15 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { NotificationStatusRepository } from '../database/repositories/notification-status.repository';
 import { truthy } from '../common/utils/truthy';
-import { notifyShutdownWhatsApp, notifyStartupWhatsApp } from './whatsapp.notify';
+import {
+  notifyShutdownWhatsApp,
+  notifyStartupWhatsApp,
+} from './whatsapp.notify';
 import { setWhatsAppStatusRecorder } from './whatsapp.send';
 
 /**
@@ -13,13 +21,15 @@ export class WhatsAppLifecycleService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WhatsAppLifecycleService.name);
 
   constructor(status: NotificationStatusRepository) {
-    setWhatsAppStatusRecorder((update) => status.record('whatsapp', {
-      status: update.status,
-      enabled: update.enabled,
-      error: update.error,
-      notificationType: update.notificationType,
-      httpCode: update.httpCode,
-    }));
+    setWhatsAppStatusRecorder((update) =>
+      status.record('whatsapp', {
+        status: update.status,
+        enabled: update.enabled,
+        error: update.error,
+        notificationType: update.notificationType,
+        httpCode: update.httpCode,
+      }),
+    );
   }
 
   onModuleInit(): void {

@@ -54,7 +54,11 @@ export default () => ({
     .map((s) => s.trim())
     .filter(Boolean),
   database: {
-    uri: process.env.NEON_DATABASE_URL || '',
+    uri:
+      process.env.NEON_DATABASE_URL ||
+      process.env.DATABASE_URL ||
+      process.env.ERP_DATABASE_URL ||
+      '',
     name: 'neondb',
     articlesCollection: process.env.MONGODB_COLLECTION || 'articles',
   },
@@ -117,7 +121,8 @@ export default () => ({
     hour: intEnv('REPORT_HOUR', 7),
     minute: intEnv('REPORT_MINUTE', 0),
     constituency: process.env.REPORT_CONSTITUENCY || 'Narasaraopet',
-    outputDir: process.env.REPORT_OUTPUT_DIR || join(tmpdir(), 'mediasphere_reports'),
+    outputDir:
+      process.env.REPORT_OUTPUT_DIR || join(tmpdir(), 'mediasphere_reports'),
   },
   email: {
     enabled: process.env.EMAIL_ENABLED,

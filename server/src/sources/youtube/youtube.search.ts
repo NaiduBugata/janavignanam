@@ -1,4 +1,7 @@
-import { youtubeApiKey, youtubeMaxResultsPerKeyword } from './youtube.constants';
+import {
+  youtubeApiKey,
+  youtubeMaxResultsPerKeyword,
+} from './youtube.constants';
 import type { YoutubeVideo } from './youtube.models';
 
 export function buildYoutubeSearchUrl(
@@ -21,7 +24,9 @@ export function buildYoutubeSearchUrl(
   return `https://www.googleapis.com/youtube/v3/search?${params.toString()}`;
 }
 
-export function parseSearchItems(body: { items?: Array<Record<string, unknown>> }): YoutubeVideo[] {
+export function parseSearchItems(body: {
+  items?: Array<Record<string, unknown>>;
+}): YoutubeVideo[] {
   const videos: YoutubeVideo[] = [];
   for (const item of body.items || []) {
     const id = item.id as { videoId?: string } | undefined;
@@ -57,7 +62,10 @@ export async function searchYoutubeKeyword(
     await new Promise((resolve) => setTimeout(resolve, 250));
     response = await fetchImpl(url);
   }
-  if (!response.ok) return { videos: [], error: `youtube_http_${response.status}` };
-  const body = (await response.json()) as { items?: Array<Record<string, unknown>> };
+  if (!response.ok)
+    return { videos: [], error: `youtube_http_${response.status}` };
+  const body = (await response.json()) as {
+    items?: Array<Record<string, unknown>>;
+  };
   return { videos: parseSearchItems(body) };
 }

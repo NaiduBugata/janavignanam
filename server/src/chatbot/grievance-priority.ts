@@ -1,10 +1,37 @@
 export type GrievancePriority = 'high' | 'normal';
 
 const HIGH = [
-  'urgent', 'emergency', 'accident', 'died', 'death', 'flood', 'fire', 'no water', 'drinking water',
-  'electricity', 'power cut', 'current cut', 'attack', 'blood', 'ambulance', 'hospital', 'danger',
-  'suicide', 'protest', 'riot', 'collapse', 'injury', 'injured', 'not working',
-  'అత్యవసర', 'ప్రమాద', 'మరణ', 'వరద', 'అగ్ని', 'నీళ్లు', 'కరెంట్',
+  'urgent',
+  'emergency',
+  'accident',
+  'died',
+  'death',
+  'flood',
+  'fire',
+  'no water',
+  'drinking water',
+  'electricity',
+  'power cut',
+  'current cut',
+  'attack',
+  'blood',
+  'ambulance',
+  'hospital',
+  'danger',
+  'suicide',
+  'protest',
+  'riot',
+  'collapse',
+  'injury',
+  'injured',
+  'not working',
+  'అత్యవసర',
+  'ప్రమాద',
+  'మరణ',
+  'వరద',
+  'అగ్ని',
+  'నీళ్లు',
+  'కరెంట్',
 ];
 
 /** Roman Telugu is read only to judge priority and the department. The typed words stay unchanged. */
@@ -20,20 +47,30 @@ const ROMAN_TELUGU: Array<[RegExp, string]> = [
   [/\b(roadu|roddu|rodhdu)\b/g, ' road '],
   [/\b(lightlu|laitlu)\b/g, ' light '],
   [/\b(penshan|penshanu)\b/g, ' pension '],
-  [/\b(levu|ledu|leru|ledhu|bagaledu|baagaledu|padipoyindi)\b/g, ' not working '],
+  [
+    /\b(levu|ledu|leru|ledhu|bagaledu|baagaledu|padipoyindi)\b/g,
+    ' not working ',
+  ],
 ];
 
 function understood(value: string): string {
   let text = ` ${value.toLowerCase()} `;
-  for (const [pattern, meaning] of ROMAN_TELUGU) text = text.replace(pattern, meaning);
+  for (const [pattern, meaning] of ROMAN_TELUGU)
+    text = text.replace(pattern, meaning);
   return text;
 }
 
 /** High when the words describe an urgent problem. Otherwise normal. */
-export function classifyGrievance(value: string): { priority: GrievancePriority; sentiment: 'negative' | 'neutral' } {
+export function classifyGrievance(value: string): {
+  priority: GrievancePriority;
+  sentiment: 'negative' | 'neutral';
+} {
   const hay = understood(value);
   const high = HIGH.some((word) => hay.includes(word));
-  return { priority: high ? 'high' : 'normal', sentiment: high ? 'negative' : 'neutral' };
+  return {
+    priority: high ? 'high' : 'normal',
+    sentiment: high ? 'negative' : 'neutral',
+  };
 }
 
 export function priorityLabel(priority: GrievancePriority): string {
@@ -42,17 +79,66 @@ export function priorityLabel(priority: GrievancePriority): string {
 
 export type GrievanceLanguage = 'en' | 'te';
 
-const PLACES = ['Narasaraopet', 'Chilakaluripet', 'Sattenapalle', 'Vinukonda', 'Gurazala', 'Macherla', 'Pedakurapadu'];
-
-const DESKS: Array<{ words: string[]; name: string; nameTe: string; leader: string; place: string }> = [
-  { words: ['water', 'drinking', 'నీళ', 'నీరు'], name: 'Water supply', nameTe: 'నీటి సరఫరా', leader: 'Ramesh', place: 'Narasaraopet' },
-  { words: ['road', 'రోడ్డు', 'drain'], name: 'Roads and buildings', nameTe: 'రోడ్లు మరియు భవనాలు', leader: 'Lakshmi', place: 'Narasaraopet' },
-  { words: ['light', 'electric', 'power', 'current', 'కరెంట్', 'లైట్'], name: 'Electricity', nameTe: 'విద్యుత్', leader: 'Srinivas', place: 'Chilakaluripet' },
-  { words: ['hospital', 'health', 'ambulance', 'ఆసుపత్రి', 'వైద్య'], name: 'Medical and health', nameTe: 'వైద్యం మరియు ఆరోగ్యం', leader: 'Padma', place: 'Vinukonda' },
-  { words: ['pension', 'ration', 'పెన్షన్'], name: 'Revenue', nameTe: 'రెవెన్యూ', leader: 'Koteswara Rao', place: 'Sattenapalle' },
+const PLACES = [
+  'Narasaraopet',
+  'Chilakaluripet',
+  'Sattenapalle',
+  'Vinukonda',
+  'Gurazala',
+  'Macherla',
+  'Pedakurapadu',
 ];
 
-const GENERAL_DESK = { name: 'General administration', nameTe: 'సాధారణ పరిపాలన', leader: 'Suresh', place: 'Narasaraopet' };
+const DESKS: Array<{
+  words: string[];
+  name: string;
+  nameTe: string;
+  leader: string;
+  place: string;
+}> = [
+  {
+    words: ['water', 'drinking', 'నీళ', 'నీరు'],
+    name: 'Water supply',
+    nameTe: 'నీటి సరఫరా',
+    leader: 'Ramesh',
+    place: 'Narasaraopet',
+  },
+  {
+    words: ['road', 'రోడ్డు', 'drain'],
+    name: 'Roads and buildings',
+    nameTe: 'రోడ్లు మరియు భవనాలు',
+    leader: 'Lakshmi',
+    place: 'Narasaraopet',
+  },
+  {
+    words: ['light', 'electric', 'power', 'current', 'కరెంట్', 'లైట్'],
+    name: 'Electricity',
+    nameTe: 'విద్యుత్',
+    leader: 'Srinivas',
+    place: 'Chilakaluripet',
+  },
+  {
+    words: ['hospital', 'health', 'ambulance', 'ఆసుపత్రి', 'వైద్య'],
+    name: 'Medical and health',
+    nameTe: 'వైద్యం మరియు ఆరోగ్యం',
+    leader: 'Padma',
+    place: 'Vinukonda',
+  },
+  {
+    words: ['pension', 'ration', 'పెన్షన్'],
+    name: 'Revenue',
+    nameTe: 'రెవెన్యూ',
+    leader: 'Koteswara Rao',
+    place: 'Sattenapalle',
+  },
+];
+
+const GENERAL_DESK = {
+  name: 'General administration',
+  nameTe: 'సాధారణ పరిపాలన',
+  leader: 'Suresh',
+  place: 'Narasaraopet',
+};
 
 export function messageLanguage(value: string): GrievanceLanguage {
   return /[\u0C00-\u0C7F]/.test(value) ? 'te' : 'en';
@@ -75,7 +161,10 @@ export function raiserApproval(language: GrievanceLanguage): string {
 
 /** Sent to the named leader when the grievance is approved. */
 export function leaderApproval(issue: string, desk: GrievanceDesk): string {
-  const text = issue.replace(/\+?\d[\d\s-]{7,}\d/g, ' ').replace(/\s+/g, ' ').trim();
+  const text = issue
+    .replace(/\+?\d[\d\s-]{7,}\d/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (messageLanguage(issue) === 'te') {
     return `ఈ సమస్య ఆమోదించబడింది. దయచేసి త్వరలో పరిష్కరించండి.\n\nశాఖ: ${desk.department}\nప్రాంతం: ${desk.place}\nసమస్య: ${text}\nసంప్రదించాల్సిన నాయకుడు: ${desk.leader}`;
   }
@@ -90,7 +179,10 @@ export function leaderUpdate(language: GrievanceLanguage): string {
 
 /** Sent to the named leader. When that leader has no number, it goes to the department number. */
 export function leaderNotice(issue: string, desk: GrievanceDesk): string {
-  const text = issue.replace(/\+?\d[\d\s-]{7,}\d/g, ' ').replace(/\s+/g, ' ').trim();
+  const text = issue
+    .replace(/\+?\d[\d\s-]{7,}\d/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (messageLanguage(issue) === 'te') {
     return `మీరు ఈ సమస్యకు సంప్రదించాల్సిన నాయకుడు: ${desk.leader}. దీన్ని వీలైనంత త్వరగా పరిష్కరించండి.\n\nశాఖ: ${desk.department}\nప్రాంతం: ${desk.place}\nసమస్య: ${text}`;
   }
@@ -106,7 +198,9 @@ export interface GrievanceDesk {
 /** Sample department and leader for a grievance. Every department is reached on the same follow-up number. */
 export function assignDesk(value: string): GrievanceDesk {
   const hay = understood(value);
-  const desk = DESKS.find((item) => item.words.some((word) => hay.includes(word))) || GENERAL_DESK;
+  const desk =
+    DESKS.find((item) => item.words.some((word) => hay.includes(word))) ||
+    GENERAL_DESK;
   const named = PLACES.find((place) => hay.includes(place.toLowerCase()));
   return {
     department: messageLanguage(value) === 'te' ? desk.nameTe : desk.name,
@@ -115,8 +209,15 @@ export function assignDesk(value: string): GrievanceDesk {
   };
 }
 
-export function departmentOrder(issue: string, desk: GrievanceDesk, progressUrl?: string): string {
-  const text = issue.replace(/\+?\d[\d\s-]{7,}\d/g, ' ').replace(/\s+/g, ' ').trim();
+export function departmentOrder(
+  issue: string,
+  desk: GrievanceDesk,
+  progressUrl?: string,
+): string {
+  const text = issue
+    .replace(/\+?\d[\d\s-]{7,}\d/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const link = progressUrl
     ? messageLanguage(issue) === 'te'
       ? `\n\nపని పురోగతిని ఇక్కడ నవీకరించండి:\n${progressUrl}`
@@ -129,9 +230,34 @@ export function departmentOrder(issue: string, desk: GrievanceDesk, progressUrl?
 }
 
 /** Sample issues. The person who raised each one is split between Bobby and Sravani. */
-export const MOCK_GRIEVANCES: Array<{ title: string; detail: string; priority: GrievancePriority; reporter: string }> = [
-  { title: 'No drinking water', detail: 'Vinukonda colony has had no water for two days.', priority: 'high', reporter: 'Bobby' },
-  { title: 'Road damage', detail: 'The main road near Narasaraopet bus stand is broken.', priority: 'high', reporter: 'Sravani' },
-  { title: 'Street lights', detail: 'Lights are out on the Chilakaluripet market road.', priority: 'normal', reporter: 'Bobby' },
-  { title: 'Pension delay', detail: 'A pension has not arrived in Sattenapalle this month.', priority: 'normal', reporter: 'Sravani' },
+export const MOCK_GRIEVANCES: Array<{
+  title: string;
+  detail: string;
+  priority: GrievancePriority;
+  reporter: string;
+}> = [
+  {
+    title: 'No drinking water',
+    detail: 'Vinukonda colony has had no water for two days.',
+    priority: 'high',
+    reporter: 'Bobby',
+  },
+  {
+    title: 'Road damage',
+    detail: 'The main road near Narasaraopet bus stand is broken.',
+    priority: 'high',
+    reporter: 'Sravani',
+  },
+  {
+    title: 'Street lights',
+    detail: 'Lights are out on the Chilakaluripet market road.',
+    priority: 'normal',
+    reporter: 'Bobby',
+  },
+  {
+    title: 'Pension delay',
+    detail: 'A pension has not arrived in Sattenapalle this month.',
+    priority: 'normal',
+    reporter: 'Sravani',
+  },
 ];

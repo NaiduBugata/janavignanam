@@ -85,7 +85,7 @@ export class PipelineLockService {
 
     const doc = await this.collection().findOneAndUpdate(
       {
-        _id: this.stateId as unknown as Document['_id'],
+        _id: this.stateId,
         $or: [
           { owner: { $exists: false } },
           { owner: null },
@@ -100,7 +100,7 @@ export class PipelineLockService {
 
     try {
       await this.collection().insertOne({
-        _id: this.stateId as unknown as Document['_id'],
+        _id: this.stateId,
         ...payload,
       });
       return ownerToken;
@@ -111,12 +111,32 @@ export class PipelineLockService {
     }
   }
 
+  /**
+   * Drop a lock acquired by a previous process on this computer. A watch restart
+   * kills the fetch but leaves the database lock until its 45-minute expiry,
+   * which blocks every new fetch with "already running".
+   */
+  async releaseLocalOrphan(): Promise<boolean> {
+    await this.db.ensureConnected();
+    const doc = await this.collection().findOne({
+      _id: this.stateId,
+    });
+    const owner = typeof doc?.owner === 'string' ? doc.owner : '';
+    const host = hostname() || 'host';
+    if (!owner.startsWith(`${host}:`)) return false;
+    const released = await this.release(owner);
+    if (released) {
+      this.logger.warn(`Released orphaned pipeline lock held by ${owner}`);
+    }
+    return released;
+  }
+
   /** Release only if `owner` still holds the lock. */
   async release(owner: string): Promise<boolean> {
     await this.db.ensureConnected();
     const now = new Date();
     const result = await this.collection().updateOne(
-      { _id: this.stateId as unknown as Document['_id'], owner },
+      { _id: this.stateId, owner },
       { $set: { owner: null, released_at: now, updated_at: now } },
     );
     return result.modifiedCount > 0;
@@ -126,7 +146,7 @@ export class PipelineLockService {
     await this.ensureIndexes();
     const doc: Document =
       (await this.collection().findOne({
-        _id: this.stateId as unknown as Document['_id'],
+        _id: this.stateId,
       })) || {};
     const expires = doc.expires_at instanceof Date ? doc.expires_at : null;
     const acquired = doc.acquired_at instanceof Date ? doc.acquired_at : null;

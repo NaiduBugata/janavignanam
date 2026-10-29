@@ -1,13 +1,13 @@
-import { buildLokalPageUrl, fetchLokalPage } from "./lokal.api";
+import { buildLokalPageUrl, fetchLokalPage } from './lokal.api';
 
-describe("lokal api", () => {
-  it("builds the Flask page URL", () => {
+describe('lokal api', () => {
+  it('builds the Flask page URL', () => {
     expect(buildLokalPageUrl(2)).toBe(
-      "https://telugu.getlokalapp.com/api/posts?tag_id=374&post_type=1,2&page_size=100&page=2",
+      'https://telugu.getlokalapp.com/api/posts?tag_id=374&post_type=1,2&page_size=100&page=2',
     );
   });
 
-  it("retries 429 then returns JSON", async () => {
+  it('retries 429 then returns JSON', async () => {
     let calls = 0;
     const fetchImpl = (async () => {
       calls += 1;

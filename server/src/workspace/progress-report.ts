@@ -1,6 +1,11 @@
 import ExcelJS from 'exceljs';
 
-export const STAGE_NAMES = ['Work started', 'Inspection', 'Work in progress', 'Closing and handover'] as const;
+export const STAGE_NAMES = [
+  'Work started',
+  'Inspection',
+  'Work in progress',
+  'Closing and handover',
+] as const;
 export type StageStatus = 'Pending' | 'In progress' | 'Completed';
 
 export interface ProgressStage {
@@ -27,7 +32,11 @@ export function defaultStages(): ProgressStage[] {
   return STAGE_NAMES.map((name) => ({ name, status: 'Pending', note: '' }));
 }
 
-export function stageCounts(stages: ProgressStage[]): { completed: number; pending: number; active: number } {
+export function stageCounts(stages: ProgressStage[]): {
+  completed: number;
+  pending: number;
+  active: number;
+} {
   return {
     completed: stages.filter((stage) => stage.status === 'Completed').length,
     pending: stages.filter((stage) => stage.status === 'Pending').length,
@@ -57,7 +66,9 @@ export function reportLines(row: ReportRow): string[] {
     if (stage.note) lines.push(`   ${stage.note}`);
   });
   if (!row.stages.length) lines.push('No stages yet.');
-  return lines.filter((line, index, all) => line !== '' || all[index - 1] !== '');
+  return lines.filter(
+    (line, index, all) => line !== '' || all[index - 1] !== '',
+  );
 }
 
 const GREEN: Rgb = [0.122, 0.302, 0.227];
@@ -149,7 +160,9 @@ class ReportDocument {
     this.rect(0, PAGE_H - height, PAGE_W, height, GREEN);
     this.text(LEFT, PAGE_H - 28, 9, true, 'JANAVIGNANAM', [0.78, 0.88, 0.82]);
     this.text(LEFT, PAGE_H - 46, 10, false, kicker, [0.86, 0.92, 0.88]);
-    lines.forEach((line, index) => this.text(LEFT, PAGE_H - 76 - index * 24, 18, true, line, WHITE));
+    lines.forEach((line, index) =>
+      this.text(LEFT, PAGE_H - 76 - index * 24, 18, true, line, WHITE),
+    );
     this.y = PAGE_H - height - 22;
   }
 
@@ -165,27 +178,56 @@ class ReportDocument {
         this.rect(x, bottom, colW, rowH, WHITE);
         this.stroke(x, bottom, colW, rowH, LINE);
         this.text(x + 12, bottom + 32, 8, true, pair[0].toUpperCase(), MUTED);
-        this.text(x + 12, bottom + 14, 11, true, wrap(pair[1] || '—', 11, colW - 24, true)[0] || '—', INK);
+        this.text(
+          x + 12,
+          bottom + 14,
+          11,
+          true,
+          wrap(pair[1] || '—', 11, colW - 24, true)[0] || '—',
+          INK,
+        );
       });
       this.y -= rowH + 10;
     }
   }
 
-  progress(counts: { completed: number; pending: number; active: number }): void {
+  progress(counts: {
+    completed: number;
+    pending: number;
+    active: number;
+  }): void {
     this.ensure(78);
-    const total = Math.max(counts.completed + counts.active + counts.pending, 1);
+    const total = Math.max(
+      counts.completed + counts.active + counts.pending,
+      1,
+    );
     this.text(LEFT, this.y - 2, 13, true, 'Work progress', INK);
     const summary = `${counts.completed} of ${total} complete`;
-    this.text(RIGHT - widthOf(summary, 9, true), this.y - 2, 9, true, summary, MUTED);
+    this.text(
+      RIGHT - widthOf(summary, 9, true),
+      this.y - 2,
+      9,
+      true,
+      summary,
+      MUTED,
+    );
     this.y -= 18;
     const barW = RIGHT - LEFT;
     this.rect(LEFT, this.y - 8, barW, 8, LINE);
     const doneW = barW * (counts.completed / total);
     const activeW = barW * (counts.active / total);
     if (doneW > 0) this.rect(LEFT, this.y - 8, Math.max(doneW, 6), 8, GREEN);
-    if (activeW > 0) this.rect(LEFT + doneW, this.y - 8, Math.max(activeW, 6), 8, AMBER);
+    if (activeW > 0)
+      this.rect(LEFT + doneW, this.y - 8, Math.max(activeW, 6), 8, AMBER);
     this.y -= 26;
-    this.text(LEFT, this.y, 9, false, `${counts.completed} completed  |  ${counts.active} in progress  |  ${counts.pending} pending`, MUTED);
+    this.text(
+      LEFT,
+      this.y,
+      9,
+      false,
+      `${counts.completed} completed  |  ${counts.active} in progress  |  ${counts.pending} pending`,
+      MUTED,
+    );
     this.y -= 26;
   }
 
@@ -202,7 +244,16 @@ class ReportDocument {
       const bottom = this.y - boxH;
       this.rect(LEFT, bottom, RIGHT - LEFT, boxH, WHITE);
       this.stroke(LEFT, bottom, RIGHT - LEFT, boxH, LINE);
-      chunk.forEach((line, index) => this.text(LEFT + 14, bottom + boxH - 20 - index * 16, 11, false, line, INK));
+      chunk.forEach((line, index) =>
+        this.text(
+          LEFT + 14,
+          bottom + boxH - 20 - index * 16,
+          11,
+          false,
+          line,
+          INK,
+        ),
+      );
       this.y = bottom - 14;
       start += chunk.length;
     }
@@ -223,14 +274,37 @@ class ReportDocument {
     this.stroke(LEFT, bottom, RIGHT - LEFT, boxH, LINE);
     this.rect(LEFT, bottom, 4, boxH, stageTone(stage.status).bar);
     this.text(LEFT + 16, bottom + boxH - 22, 11, true, String(index), GREEN);
-    this.text(LEFT + 36, bottom + boxH - 22, 11, true, wrap(stage.name, 11, 320, true)[0] || 'Stage', INK);
+    this.text(
+      LEFT + 36,
+      bottom + boxH - 22,
+      11,
+      true,
+      wrap(stage.name, 11, 320, true)[0] || 'Stage',
+      INK,
+    );
     const label = stage.status;
     const pillW = widthOf(label, 8, true) + 16;
     const pillX = RIGHT - 14 - pillW;
     const pillY = bottom + boxH - 26;
     this.rect(pillX, pillY, pillW, 16, stageTone(stage.status).bg);
-    this.text(pillX + 8, pillY + 4, 8, true, label, stageTone(stage.status).ink);
-    noteLines.forEach((line, lineIndex) => this.text(LEFT + 36, bottom + boxH - 40 - lineIndex * 13, 9, false, line, MUTED));
+    this.text(
+      pillX + 8,
+      pillY + 4,
+      8,
+      true,
+      label,
+      stageTone(stage.status).ink,
+    );
+    noteLines.forEach((line, lineIndex) =>
+      this.text(
+        LEFT + 36,
+        bottom + boxH - 40 - lineIndex * 13,
+        9,
+        false,
+        line,
+        MUTED,
+      ),
+    );
     this.y = bottom - 8;
   }
 
@@ -246,7 +320,9 @@ class ReportDocument {
     const total = this.pages.length;
     this.pages.forEach((ops, index) => {
       const label = `Page ${index + 1} of ${total}`;
-      ops.push(textOp(RIGHT - widthOf(label, 8, false), 28, 8, false, label, MUTED));
+      ops.push(
+        textOp(RIGHT - widthOf(label, 8, false), 28, 8, false, label, MUTED),
+      );
     });
     return compilePdf(this.pages.map((ops) => ops.join('\n')));
   }
@@ -259,7 +335,14 @@ class ReportDocument {
     this.rect(0, 0, PAGE_W, PAGE_H, PAPER);
     this.rect(0, PAGE_H - 58, PAGE_W, 58, GREEN);
     this.text(LEFT, PAGE_H - 22, 8, true, 'JANAVIGNANAM', [0.78, 0.88, 0.82]);
-    this.text(LEFT, PAGE_H - 40, 11, true, wrap(this.title, 11, RIGHT - LEFT, true)[0] || 'Report', WHITE);
+    this.text(
+      LEFT,
+      PAGE_H - 40,
+      11,
+      true,
+      wrap(this.title, 11, RIGHT - LEFT, true)[0] || 'Report',
+      WHITE,
+    );
     this.y = PAGE_H - 80;
   }
 
@@ -273,10 +356,19 @@ class ReportDocument {
   }
 
   private stroke(x: number, y: number, w: number, h: number, color: Rgb): void {
-    this.ops.push(`${rgb(color).replace(' rg', ' RG')} 0.6 w ${num(x)} ${num(y)} ${num(w)} ${num(h)} re S`);
+    this.ops.push(
+      `${rgb(color).replace(' rg', ' RG')} 0.6 w ${num(x)} ${num(y)} ${num(w)} ${num(h)} re S`,
+    );
   }
 
-  private text(x: number, y: number, size: number, bold: boolean, value: string, color: Rgb): void {
+  private text(
+    x: number,
+    y: number,
+    size: number,
+    bold: boolean,
+    value: string,
+    color: Rgb,
+  ): void {
     this.ops.push(textOp(x, y, size, bold, value, color));
   }
 }
@@ -287,7 +379,14 @@ function stageTone(status: StageStatus): { bg: Rgb; ink: Rgb; bar: Rgb } {
   return { bg: CREAM, ink: MUTED, bar: LINE };
 }
 
-function textOp(x: number, y: number, size: number, bold: boolean, value: string, color: Rgb): string {
+function textOp(
+  x: number,
+  y: number,
+  size: number,
+  bold: boolean,
+  value: string,
+  color: Rgb,
+): string {
   return `BT ${rgb(color)} /${bold ? 'F2' : 'F1'} ${size} Tf 1 0 0 1 ${num(x)} ${num(y)} Tm (${pdfText(latin(value))}) Tj ET`;
 }
 
@@ -301,11 +400,19 @@ function compilePdf(pages: string[]): Buffer {
   pages.forEach((stream, index) => {
     const pageId = 3 + index * 2;
     const contentId = pageId + 1;
-    objects.push(`${pageId} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${regular} 0 R /F2 ${bold} 0 R >> >> >> endobj\n`);
-    objects.push(`${contentId} 0 obj << /Length ${Buffer.byteLength(stream)} >> stream\n${stream}\nendstream endobj\n`);
+    objects.push(
+      `${pageId} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${regular} 0 R /F2 ${bold} 0 R >> >> >> endobj\n`,
+    );
+    objects.push(
+      `${contentId} 0 obj << /Length ${Buffer.byteLength(stream)} >> stream\n${stream}\nendstream endobj\n`,
+    );
   });
-  objects.push(`${regular} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n`);
-  objects.push(`${bold} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj\n`);
+  objects.push(
+    `${regular} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n`,
+  );
+  objects.push(
+    `${bold} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj\n`,
+  );
   let body = '%PDF-1.4\n';
   const offsets = [0];
   for (const object of objects) {
@@ -314,7 +421,8 @@ function compilePdf(pages: string[]): Buffer {
   }
   const xrefAt = Buffer.byteLength(body);
   let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let index = 1; index < offsets.length; index += 1) xref += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+  for (let index = 1; index < offsets.length; index += 1)
+    xref += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
   body += `${xref}trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF`;
   return Buffer.from(body);
 }
@@ -322,11 +430,23 @@ function compilePdf(pages: string[]): Buffer {
 function formatWhen(value: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return new Date(year, month - 1, day).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+  return date.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  });
 }
 
 export async function recordsWorkbook(rows: ReportRow[]): Promise<Buffer> {
@@ -358,7 +478,12 @@ export async function recordsWorkbook(rows: ReportRow[]): Promise<Buffer> {
       active: counts.active,
       pending: counts.pending,
       detail: row.detail,
-      stages: row.stages.map((stage) => `${stage.name}: ${stage.status}${stage.note ? ` (${stage.note})` : ''}`).join('; '),
+      stages: row.stages
+        .map(
+          (stage) =>
+            `${stage.name}: ${stage.status}${stage.note ? ` (${stage.note})` : ''}`,
+        )
+        .join('; '),
       updatedAt: row.updatedAt,
     });
   }
@@ -367,7 +492,10 @@ export async function recordsWorkbook(rows: ReportRow[]): Promise<Buffer> {
 }
 
 function latin(value: string): string {
-  return value.replace(/[^\x09\x20-\x7E]/g, ' ').replace(/[ \t]+/g, ' ').trim();
+  return value
+    .replace(/[^\x09\x20-\x7E]/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
 }
 
 function rgb(color: Rgb): string {
@@ -382,7 +510,12 @@ function widthOf(value: string, size: number, bold: boolean): number {
   return latin(value).length * size * (bold ? 0.52 : 0.48);
 }
 
-function wrap(value: string, size: number, maxWidth: number, bold = false): string[] {
+function wrap(
+  value: string,
+  size: number,
+  maxWidth: number,
+  bold = false,
+): string[] {
   const words = latin(value).split(' ').filter(Boolean);
   if (!words.length) return [];
   const lines: string[] = [];
@@ -403,10 +536,14 @@ function clip(lines: string[], max: number): string[] {
   if (lines.length <= max) return lines;
   const kept = lines.slice(0, max);
   const last = kept[max - 1];
-  kept[max - 1] = last.length > 3 ? `${last.slice(0, last.length - 3)}...` : `${last}...`;
+  kept[max - 1] =
+    last.length > 3 ? `${last.slice(0, last.length - 3)}...` : `${last}...`;
   return kept;
 }
 
 function pdfText(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
 }

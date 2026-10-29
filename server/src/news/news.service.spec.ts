@@ -6,22 +6,16 @@ describe('NewsService normalization + stats (Flask parity)', () => {
   const service = new NewsService({} as never, {} as never);
 
   it('normalizes empty/null/missing source to lokal', () => {
-    expect(service.normalizeArticle({ source: '' } as Document).source).toBe(
-      'lokal',
+    expect(service.normalizeArticle({ source: '' }).source).toBe('lokal');
+    expect(service.normalizeArticle({ source: null }).source).toBe('lokal');
+    expect(service.normalizeArticle({}).source).toBe('lokal');
+    expect(service.normalizeArticle({ source: 'youtube' }).source).toBe(
+      'youtube',
     );
-    expect(service.normalizeArticle({ source: null } as Document).source).toBe(
-      'lokal',
+    expect(service.normalizeArticle({ source: 'sakshi' }).source).toBe(
+      'sakshi',
     );
-    expect(service.normalizeArticle({} as Document).source).toBe('lokal');
-    expect(
-      service.normalizeArticle({ source: 'youtube' } as Document).source,
-    ).toBe('youtube');
-    expect(
-      service.normalizeArticle({ source: 'sakshi' } as Document).source,
-    ).toBe('sakshi');
-    expect(
-      service.normalizeArticle({ source: 'lokal' } as Document).source,
-    ).toBe('lokal');
+    expect(service.normalizeArticle({ source: 'lokal' }).source).toBe('lokal');
   });
 
   it('daily_trend uses offset calendar date at IST midnight boundary', () => {
@@ -34,7 +28,7 @@ describe('NewsService normalization + stats (Flask parity)', () => {
       source: 'lokal',
       first_seen_at: today + 'T00:30:00+05:30',
       location: {},
-    } as Document);
+    });
 
     const stats = service.computeStats([article]);
     const map = Object.fromEntries(
@@ -48,11 +42,14 @@ describe('NewsService normalization + stats (Flask parity)', () => {
 
   it('computeStats source counts use lokal for empty sources', () => {
     const articles = [
-      service.normalizeArticle({ source: '', sentiment: 'Positive' } as Document),
+      service.normalizeArticle({
+        source: '',
+        sentiment: 'Positive',
+      }),
       service.normalizeArticle({
         source: 'youtube',
         sentiment: 'Negative',
-      } as Document),
+      }),
     ];
     const stats = service.computeStats(articles);
     expect(stats.by_source.lokal).toBe(1);

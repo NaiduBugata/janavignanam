@@ -13,13 +13,17 @@ describe('follow-up contacts', () => {
     expect(followupContactsIn('frequent')).toHaveLength(25);
     expect(followupContactsIn('pending').length).toBeGreaterThanOrEqual(5);
     expect(followupContactsIn('pending').length).toBeLessThanOrEqual(10);
-    expect(followupContactsIn('pending').every((row) => row.phone.endsWith('7879'))).toBe(true);
+    expect(
+      followupContactsIn('pending').every((row) => row.phone.endsWith('7879')),
+    ).toBe(true);
   });
 
   it('moves a pending contact to recent, then to frequent after another follow-up', () => {
     const pending = followupContactsIn('pending')[0];
     expect(followupBucket(recordFollowup(pending.id)!)).toBe('recent');
     expect(followupBucket(recordFollowup(pending.id)!)).toBe('frequent');
-    expect(followupContactsIn('pending').some((row) => row.id === pending.id)).toBe(false);
+    expect(
+      followupContactsIn('pending').some((row) => row.id === pending.id),
+    ).toBe(false);
   });
 });

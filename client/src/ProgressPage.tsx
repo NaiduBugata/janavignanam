@@ -4,6 +4,12 @@ import { api } from "@/lib/api.ts";
 
 type StageStatus = "Pending" | "In progress" | "Completed";
 type Stage = { name: string; status: StageStatus; note: string };
+type ProgressHistory = {
+  status: string;
+  remarks?: string;
+  updatedAt: string;
+  department?: string;
+};
 type Progress = {
   title: string;
   detail: string;
@@ -11,16 +17,21 @@ type Progress = {
   place: string;
   leader: string;
   status: string;
+  remarks?: string;
   stages: Stage[];
   updatedAt: string;
+  history?: ProgressHistory[];
 };
 
-const STATUSES: StageStatus[] = ["Pending", "In progress", "Completed"];
+const STAGE_STATUSES: StageStatus[] = ["Pending", "In progress", "Completed"];
+const RECORD_STATUSES = ["Pending", "In progress", "Completed", "Resolved"];
 
 export default function ProgressPage() {
   const { token = "" } = useParams();
   const [progress, setProgress] = useState<Progress | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
+  const [recordStatus, setRecordStatus] = useState<string>("In progress");
+  const [remarks, setRemarks] = useState<string>("");
   const [nextName, setNextName] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -32,7 +43,9 @@ export default function ProgressPage() {
       .then((row) => {
         if (cancelled) return;
         setProgress(row);
-        setStages(row.stages);
+        setStages(row.stages || []);
+        setRecordStatus(row.status || "In progress");
+        setRemarks(row.remarks || "");
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "This progress link is not available");
@@ -49,11 +62,18 @@ export default function ProgressPage() {
     try {
       const row = await api<Progress>(`/api/progress/${encodeURIComponent(token)}`, {
         method: "PATCH",
-        body: { stages },
+        body: {
+          stages,
+          status: recordStatus,
+          remarks,
+          department: progress?.department,
+        },
       });
       setProgress(row);
-      setStages(row.stages);
-      setNotice("Progress saved.");
+      setStages(row.stages || []);
+      setRecordStatus(row.status);
+      setRemarks(row.remarks || "");
+      setNotice("Progress saved successfully.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the progress");
     } finally {
@@ -67,9 +87,9 @@ export default function ProgressPage() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-primary/10 via-background to-background px-4 py-10 text-foreground">
       <main className="mx-auto max-w-3xl">
-        <p className="text-sm font-medium uppercase tracking-wider text-primary">Department progress</p>
-        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Update the work.</h1>
-        <p className="mt-3 text-muted-foreground">Mark what has started, what is underway, and what is still pending. This page belongs to this record only.</p>
+        <p className="text-sm font-medium uppercase tracking-wider text-primary">Department progress portal</p>
+        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Update record status & progress</h1>
+        <p className="mt-3 text-muted-foreground">Authorized department update link. Changes are verified and saved directly to the live database.</p>
         {error && <p className="mt-6 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         {progress && (
           <section className="mt-8 overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -80,9 +100,46 @@ export default function ProgressPage() {
             <div className="grid gap-4 px-6 py-5 sm:grid-cols-3">
               <Info label="Location" value={progress.place} />
               <Info label="Leader to contact" value={progress.leader} />
-              <Info label="Record status" value={progress.status} />
+              <Info label="Current Status" value={progress.status} />
             </div>
             <p className="px-6 pb-6 text-sm leading-6">{progress.detail}</p>
+
+            <div className="border-t bg-muted/20 px-6 py-5">
+              <h3 className="font-medium text-sm text-foreground">Update Status & Department Remarks</h3>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground">Progress Status</label>
+                  <select
+                    value={recordStatus}
+                    onChange={(e) => setRecordStatus(e.target.value)}
+                    className="mt-1 h-10 w-full rounded-lg border bg-background px-3 text-sm font-medium"
+                  >
+                    {RECORD_STATUSES.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted-foreground">Department / Team</label>
+                  <input
+                    value={progress.department}
+                    disabled
+                    className="mt-1 h-10 w-full rounded-lg border bg-muted px-3 text-sm text-muted-foreground"
+                  />
+                </div>
+              </div>
+              <div className="mt-4">
+                <label className="text-xs uppercase tracking-wider text-muted-foreground">Department Remarks / Action Taken</label>
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Enter details about actions taken, inspection reports, or resolution notes..."
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border bg-background p-3 text-sm"
+                />
+              </div>
+            </div>
+
             <div className="border-t px-6 py-5">
               <div className="mb-2 flex items-center justify-between text-sm">
                 <span className="font-medium">{completed} of {stages.length} stages completed</span>
@@ -102,7 +159,7 @@ export default function ProgressPage() {
                       onChange={(event) => setStages((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, status: event.target.value as StageStatus } : item))}
                       className="h-10 rounded-lg border bg-background px-3 text-sm"
                     >
-                      {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                      {STAGE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                     </select>
                   </div>
                   <input
@@ -128,7 +185,26 @@ export default function ProgressPage() {
                   Add
                 </button>
               </div>
-              {notice && <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">{notice}</p>}
+
+              {progress.history && progress.history.length > 0 && (
+                <div className="mt-6 border-t pt-4">
+                  <h4 className="text-xs uppercase tracking-wider text-muted-foreground">Update Audit History</h4>
+                  <div className="mt-3 space-y-2">
+                    {progress.history.slice(-4).reverse().map((entry, idx) => (
+                      <div key={idx} className="rounded-lg bg-muted/30 p-2.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold">{entry.department || progress.department}</span>
+                          <span className="text-muted-foreground">{new Date(entry.updatedAt).toLocaleString()}</span>
+                        </div>
+                        <p className="mt-1 font-medium text-primary">Status: {entry.status}</p>
+                        {entry.remarks && <p className="mt-0.5 text-muted-foreground">{entry.remarks}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {notice && <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary font-medium">{notice}</p>}
               <button disabled={saving} onClick={() => void save()} className="h-11 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground disabled:opacity-60">
                 {saving ? "Saving…" : "Save progress"}
               </button>

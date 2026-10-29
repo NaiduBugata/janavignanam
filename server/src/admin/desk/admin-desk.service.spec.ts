@@ -1,4 +1,7 @@
-import { clearStaffDirectory, isMpPhone } from '../../whatsapp/whatsapp.audience';
+import {
+  clearStaffDirectory,
+  isMpPhone,
+} from '../../whatsapp/whatsapp.audience';
 import { isDemoDataEnabled, setDemoDataEnabled } from '../demo-data';
 import { AdminDeskService } from './admin-desk.service';
 
@@ -11,16 +14,28 @@ function memoryDb() {
   const collection = (name: string) => ({
     find: () => ({ toArray: async () => docs[name] }),
     findOne: async (filter: Record<string, unknown>) =>
-      docs[name].find((row) => Object.entries(filter).every(([key, value]) => row[key] === value)) || null,
+      docs[name].find((row) =>
+        Object.entries(filter).every(([key, value]) => row[key] === value),
+      ) || null,
     insertOne: async (doc: Record<string, unknown>) => {
       const _id = `${name}-${docs[name].length + 1}`;
       docs[name].push({ ...doc, _id });
       return { insertedId: _id };
     },
-    updateOne: async (filter: Record<string, unknown>, update: { $set?: Record<string, unknown> }) => {
-      const hit = docs[name].find((row) => Object.entries(filter).every(([key, value]) => row[key] === value));
+    updateOne: async (
+      filter: Record<string, unknown>,
+      update: { $set?: Record<string, unknown> },
+    ) => {
+      const hit = docs[name].find((row) =>
+        Object.entries(filter).every(([key, value]) => row[key] === value),
+      );
       if (hit) Object.assign(hit, update.$set || {});
-      else docs[name].push({ ...filter, ...(update.$set || {}), _id: `${name}-new` });
+      else
+        docs[name].push({
+          ...filter,
+          ...(update.$set || {}),
+          _id: `${name}-new`,
+        });
       return { matchedCount: hit ? 1 : 0 };
     },
     deleteOne: async (filter: { _id?: unknown }) => {
@@ -54,7 +69,13 @@ describe('AdminDeskService', () => {
 
   it('does not replace a number that already belongs to someone else', async () => {
     const { docs, db } = memoryDb();
-    docs.birthday_contacts.push({ _id: 'admin-1', name: 'Akshay Guptha', phone: '919876543210', role: 'admin', allowReplies: true });
+    docs.birthday_contacts.push({
+      _id: 'admin-1',
+      name: 'Akshay Guptha',
+      phone: '919876543210',
+      role: 'admin',
+      allowReplies: true,
+    });
     const desk = new AdminDeskService(db as never);
     await expect(desk.grantMp('919876543210')).rejects.toThrow('already saved');
     expect(isMpPhone('919876543210')).toBe(false);
@@ -72,8 +93,21 @@ describe('AdminDeskService', () => {
   it('lists sample rows while the switch is on and none while it is off', async () => {
     const { docs, db } = memoryDb();
     docs.jv_records.push(
-      { _id: 'mock-visit', section: 'visits', title: 'MOCK Morning review', detail: 'MOCK-VISIT', source: 'manual', visitDate: '2026-10-12' },
-      { _id: 'real-visit', section: 'visits', title: 'Narasaraopet visit', detail: '', source: 'manual' },
+      {
+        _id: 'mock-visit',
+        section: 'visits',
+        title: 'MOCK Morning review',
+        detail: 'MOCK-VISIT',
+        source: 'manual',
+        visitDate: '2026-10-12',
+      },
+      {
+        _id: 'real-visit',
+        section: 'visits',
+        title: 'Narasaraopet visit',
+        detail: '',
+        source: 'manual',
+      },
     );
     const desk = new AdminDeskService(db as never);
     const on = await desk.snapshot();
@@ -81,7 +115,12 @@ describe('AdminDeskService', () => {
     expect(on.enabled).toBe(true);
     expect(titles).toContain('MOCK Morning review');
     expect(titles).not.toContain('Narasaraopet visit');
-    expect(on.rows.some((row) => row.section === 'projects' && row.title === 'Drinking water supply')).toBe(true);
+    expect(
+      on.rows.some(
+        (row) =>
+          row.section === 'projects' && row.title === 'Drinking water supply',
+      ),
+    ).toBe(true);
     await desk.setDemo(false);
     expect((await desk.snapshot()).rows).toEqual([]);
   });

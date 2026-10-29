@@ -36,6 +36,39 @@ const ACTION_MAP = {
   Other: 'Review the matter and assign to the appropriate department for follow-up.',
 };
 
+export function isGrievanceOrProblem(article) {
+  if (!article) return false;
+  if (article.sentiment === 'Problem' || article.problem || article.problem_id) {
+    return true;
+  }
+  if (article.sentiment === 'Negative') {
+    const civicCategories = new Set([
+      'Crime',
+      'Roads',
+      'Transport',
+      'Water',
+      'Health',
+      'Infrastructure',
+      'Social Welfare',
+      'Employment',
+      'Agriculture',
+      'Education',
+      'Environment',
+      'Civic',
+    ]);
+    if (civicCategories.has(article.category)) return true;
+    const txt = `${article.title || ''} ${article.summary || ''}`.toLowerCase();
+    if (
+      /సమస్య|ఫిర్యాదు|ఇబ్బంది|మరమ్మతు|మురుగు|వరద|కొరత|రోడ్డు|problem|issue|grievance|complaint|repair|drainage|damage/iu.test(
+        txt,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function isProblem(article) {
   const sentiment = article?.sentiment || '';
   return sentiment === 'Negative' || sentiment === 'Problem';

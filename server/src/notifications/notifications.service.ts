@@ -21,10 +21,13 @@ export class NotificationsService {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-    const provider = String(this.config.get('email.provider') || 'auto').toLowerCase();
+    const provider = String(
+      this.config.get('email.provider') || 'auto',
+    ).toLowerCase();
     const hasResend = Boolean(this.config.get('email.resendApiKey'));
     const hasSmtp = Boolean(
-      this.config.get('email.smtpUsername') && this.config.get('email.smtpPassword'),
+      this.config.get('email.smtpUsername') &&
+      this.config.get('email.smtpPassword'),
     );
     let configured = recipients.length > 0 && (hasResend || hasSmtp);
     if (provider === 'resend') {
@@ -37,8 +40,8 @@ export class NotificationsService {
     const enabled = truthy(this.config.get('whatsapp.enabled'));
     const configured = Boolean(
       this.config.get('whatsapp.accessToken') &&
-        this.config.get('whatsapp.phoneNumberId') &&
-        String(this.config.get('whatsapp.recipients') || '').trim(),
+      this.config.get('whatsapp.phoneNumberId') &&
+      String(this.config.get('whatsapp.recipients') || '').trim(),
     );
     return { enabled, configured };
   }
@@ -64,7 +67,8 @@ export class NotificationsService {
     const emailPending = 0;
     let waPending = 0;
     try {
-      if (whatsappAlertsEnabled()) waPending = await this.articles.countWhatsappPending();
+      if (whatsappAlertsEnabled())
+        waPending = await this.articles.countWhatsappPending();
     } catch {
       waPending = 0;
     }
@@ -87,7 +91,11 @@ export class NotificationsService {
         : null;
     }
 
-    const waStatus = this.publicStatus(waCfg.enabled, waCfg.configured, waStored);
+    const waStatus = this.publicStatus(
+      waCfg.enabled,
+      waCfg.configured,
+      waStored,
+    );
     let waError: string | null = null;
     if (waCfg.enabled && !waCfg.configured) {
       waError = 'missing_token_phone_id_or_recipients';

@@ -26,11 +26,23 @@ const EXAMPLE_CELLS = [
 export async function excelTemplate(): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'JanaVignanam';
-  const sheet = workbook.addWorksheet('Visits', { views: [{ state: 'frozen', ySplit: 1 }] });
+  const sheet = workbook.addWorksheet('Visits', {
+    views: [{ state: 'frozen', ySplit: 1 }],
+  });
   sheet.columns = [
     { header: TEMPLATE_HEADERS[0], key: 'sno', width: 7 },
-    { header: TEMPLATE_HEADERS[1], key: 'date', width: 18, style: { numFmt: 'dd-mm-yyyy' } },
-    { header: TEMPLATE_HEADERS[2], key: 'time', width: 16, style: { numFmt: 'h:mm AM/PM' } },
+    {
+      header: TEMPLATE_HEADERS[1],
+      key: 'date',
+      width: 18,
+      style: { numFmt: 'dd-mm-yyyy' },
+    },
+    {
+      header: TEMPLATE_HEADERS[2],
+      key: 'time',
+      width: 16,
+      style: { numFmt: 'h:mm AM/PM' },
+    },
     { header: TEMPLATE_HEADERS[3], key: 'place', width: 22 },
     { header: TEMPLATE_HEADERS[4], key: 'title', width: 42 },
     { header: TEMPLATE_HEADERS[5], key: 'detail', width: 48 },
@@ -38,7 +50,11 @@ export async function excelTemplate(): Promise<Buffer> {
   ];
   const header = sheet.getRow(1);
   header.font = { bold: true, color: { argb: 'FF1F2937' } };
-  header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2A33A' } };
+  header.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFF2A33A' },
+  };
   header.alignment = { vertical: 'middle' };
   header.height = 22;
   const [day, month, year] = TEMPLATE_EXAMPLE.date.split('-').map(Number);
@@ -64,7 +80,11 @@ export async function excelTemplate(): Promise<Buffer> {
 }
 
 function escapeXml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function run(text: string, props = ''): string {
@@ -78,9 +98,20 @@ function paragraph(text: string, props = ''): string {
 const WIDTHS = [700, 1600, 1400, 2000, 3200, 3600, 1800];
 
 function row(cells: string[], kind: 'header' | 'example' | 'empty'): string {
-  const rowProps = kind === 'header' ? '<w:trPr><w:tblHeader/><w:trHeight w:val="420"/></w:trPr>' : '<w:trPr><w:trHeight w:val="420"/></w:trPr>';
-  const runProps = kind === 'header' ? '<w:b/>' : kind === 'example' ? '<w:i/><w:color w:val="6B7280"/>' : '';
-  const shade = kind === 'header' ? '<w:shd w:val="clear" w:color="auto" w:fill="F2A33A"/>' : '';
+  const rowProps =
+    kind === 'header'
+      ? '<w:trPr><w:tblHeader/><w:trHeight w:val="420"/></w:trPr>'
+      : '<w:trPr><w:trHeight w:val="420"/></w:trPr>';
+  const runProps =
+    kind === 'header'
+      ? '<w:b/>'
+      : kind === 'example'
+        ? '<w:i/><w:color w:val="6B7280"/>'
+        : '';
+  const shade =
+    kind === 'header'
+      ? '<w:shd w:val="clear" w:color="auto" w:fill="F2A33A"/>'
+      : '';
   const tcs = cells
     .map(
       (text, index) =>
@@ -91,16 +122,21 @@ function row(cells: string[], kind: 'header' | 'example' | 'empty'): string {
 }
 
 export async function wordTemplate(): Promise<Buffer> {
-  const border = (side: string) => `<w:${side} w:val="single" w:sz="6" w:space="0" w:color="9CA3AF"/>`;
+  const border = (side: string) =>
+    `<w:${side} w:val="single" w:sz="6" w:space="0" w:color="9CA3AF"/>`;
   const table = [
     '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>',
-    ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(border).join(''),
+    ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']
+      .map(border)
+      .join(''),
     '</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>',
     WIDTHS.map((width) => `<w:gridCol w:w="${width}"/>`).join(''),
     '</w:tblGrid>',
     row(TEMPLATE_HEADERS, 'header'),
     row(EXAMPLE_CELLS, 'example'),
-    ...Array.from({ length: 15 }, (_, index) => row([String(index + 2), '', '', '', '', '', ''], 'empty')),
+    ...Array.from({ length: 15 }, (_, index) =>
+      row([String(index + 2), '', '', '', '', '', ''], 'empty'),
+    ),
     '</w:tbl>',
   ].join('');
 
@@ -108,7 +144,9 @@ export async function wordTemplate(): Promise<Buffer> {
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>',
     paragraph('Visits', '<w:b/><w:sz w:val="36"/>'),
-    ...TEMPLATE_INSTRUCTIONS.map((line) => paragraph(`• ${line}`, '<w:color w:val="4B5563"/><w:sz w:val="20"/>')),
+    ...TEMPLATE_INSTRUCTIONS.map((line) =>
+      paragraph(`• ${line}`, '<w:color w:val="4B5563"/><w:sz w:val="20"/>'),
+    ),
     table,
     '<w:p/>',
     '<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>',

@@ -3,7 +3,8 @@ export function titleSimilarity(a: string, b: string): number {
   const left = a.trim().toLowerCase();
   const right = b.trim().toLowerCase();
   if (!left || !right) return 0;
-  if (left === right || left.includes(right) || right.includes(left)) return 0.93;
+  if (left === right || left.includes(right) || right.includes(left))
+    return 0.93;
   const bigrams = (s: string) => {
     const out = new Map<string, number>();
     for (let i = 0; i < s.length - 1; i++) {

@@ -9,21 +9,57 @@ export function setDemoDataEnabled(value: boolean): void {
   enabled = value;
 }
 
-export function isDemoDoc(row: { source?: unknown; title?: unknown; detail?: unknown }): boolean {
+export function isDemoDoc(row: {
+  source?: unknown;
+  title?: unknown;
+  detail?: unknown;
+}): boolean {
   const source = String(row.source || '');
   const title = String(row.title || '');
   const detail = String(row.detail || '');
-  return source === 'mock' || title.startsWith('MOCK') || detail.includes('MOCK-VISIT');
+  return (
+    source === 'mock' ||
+    title.startsWith('MOCK') ||
+    detail.includes('MOCK-VISIT')
+  );
 }
 
 /** Shown for Projects when the switch is on and that section has no stored rows. */
-export const DEMO_PROJECTS: Array<{ title: string; detail: string; status: string }> = [
-  { title: 'Drinking water supply', detail: 'Narasaraopet municipal pipeline replacement in ward 12.', status: 'In progress' },
-  { title: 'Chilakaluripet road', detail: 'Widening the market road inside Chilakaluripet.', status: 'Open' },
-  { title: 'Vinukonda hospital', detail: 'New ward block at the Vinukonda area hospital.', status: 'In progress' },
-  { title: 'Sattenapalle classrooms', detail: 'Extra classrooms at the government high school.', status: 'Open' },
-  { title: 'Gurazala canal', detail: 'Repair of the irrigation channel before the crop season.', status: 'Open' },
-  { title: 'Macherla health camp report', detail: 'Weekly camp report for Macherla mandal.', status: 'Open' },
+export const DEMO_PROJECTS: Array<{
+  title: string;
+  detail: string;
+  status: string;
+}> = [
+  {
+    title: 'Drinking water supply',
+    detail: 'Narasaraopet municipal pipeline replacement in ward 12.',
+    status: 'In progress',
+  },
+  {
+    title: 'Chilakaluripet road',
+    detail: 'Widening the market road inside Chilakaluripet.',
+    status: 'Open',
+  },
+  {
+    title: 'Vinukonda hospital',
+    detail: 'New ward block at the Vinukonda area hospital.',
+    status: 'In progress',
+  },
+  {
+    title: 'Sattenapalle classrooms',
+    detail: 'Extra classrooms at the government high school.',
+    status: 'Open',
+  },
+  {
+    title: 'Gurazala canal',
+    detail: 'Repair of the irrigation channel before the crop season.',
+    status: 'Open',
+  },
+  {
+    title: 'Macherla health camp report',
+    detail: 'Weekly camp report for Macherla mandal.',
+    status: 'Open',
+  },
 ];
 
 export function demoProjectDocs(): Array<Record<string, unknown>> {

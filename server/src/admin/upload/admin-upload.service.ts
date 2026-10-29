@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { applyContactDirectory } from '../../birthdays/birthdays.service';
 import { DatabaseService } from '../../database/database.service';
@@ -19,26 +23,42 @@ export class AdminUploadService {
   constructor(private readonly db: DatabaseService) {}
 
   template(kind: string): { filename: string; body: string } {
-    if (!isUploadKind(kind)) throw new BadRequestException('Unknown upload. Use the listed formats.');
+    if (!isUploadKind(kind))
+      throw new BadRequestException('Unknown upload. Use the listed formats.');
     return { filename: `${kind}-template.csv`, body: templateCsv(kind) };
   }
 
-  async save(kind: string, file: { originalname?: string; buffer?: Buffer } | undefined): Promise<{ status: 'success'; kind: UploadKind; inserted: number }> {
-    if (!isUploadKind(kind)) throw new BadRequestException('Unknown upload. Use the listed formats.');
-    if (!file?.buffer?.length) throw new BadRequestException('Choose a .csv or .xlsx file.');
+  async save(
+    kind: string,
+    file: { originalname?: string; buffer?: Buffer } | undefined,
+  ): Promise<{ status: 'success'; kind: UploadKind; inserted: number }> {
+    if (!isUploadKind(kind))
+      throw new BadRequestException('Unknown upload. Use the listed formats.');
+    if (!file?.buffer?.length)
+      throw new BadRequestException('Choose a .csv or .xlsx file.');
     const name = (file.originalname || '').toLowerCase();
     if (!name.endsWith('.csv') && !name.endsWith('.xlsx')) {
-      throw new BadRequestException('Upload a .csv or .xlsx file that uses the template.');
+      throw new BadRequestException(
+        'Upload a .csv or .xlsx file that uses the template.',
+      );
     }
-    const grid = name.endsWith('.xlsx') ? await excelGrid(file.buffer) : parseCsv(file.buffer.toString('utf8'));
+    const grid = name.endsWith('.xlsx')
+      ? await excelGrid(file.buffer)
+      : parseCsv(file.buffer.toString('utf8'));
     const parsed = parseUpload(kind, grid);
-    if (!parsed.ok) throw new BadRequestException({ status: 'failed', errors: parsed.errors });
+    if (!parsed.ok)
+      throw new BadRequestException({
+        status: 'failed',
+        errors: parsed.errors,
+      });
     await this.ready();
     await this.rejectKnownPhones(parsed.rows);
     const createdAt = new Date().toISOString();
     for (const row of parsed.rows) await this.insert(row, createdAt);
     if (parsed.rows.some((row) => row.kind === 'contact')) {
-      applyContactDirectory(await this.db.collection(CONTACTS).find({}).toArray());
+      applyContactDirectory(
+        await this.db.collection(CONTACTS).find({}).toArray(),
+      );
     }
     return { status: 'success', kind, inserted: parsed.rows.length };
   }
@@ -47,12 +67,15 @@ export class AdminUploadService {
     const incoming = rows.filter((row) => row.kind === 'contact');
     if (!incoming.length) return;
     const existing = new Set(
-      (await this.db.collection(CONTACTS).find({}).toArray()).map((doc) => String(doc.phone || '').replace(/\D/g, '')),
+      (await this.db.collection(CONTACTS).find({}).toArray()).map((doc) =>
+        String(doc.phone || '').replace(/\D/g, ''),
+      ),
     );
     const errors = incoming
       .filter((row) => existing.has(row.phone))
       .map((row) => `${row.name} already has this phone in the birthday list.`);
-    if (errors.length) throw new BadRequestException({ status: 'failed', errors });
+    if (errors.length)
+      throw new BadRequestException({ status: 'failed', errors });
   }
 
   private async insert(row: UploadRow, createdAt: string): Promise<void> {
@@ -104,7 +127,8 @@ export class AdminUploadService {
   }
 
   private async ready(): Promise<void> {
-    if (!(await this.db.ensureConnected())) throw new ServiceUnavailableException('Database is not connected');
+    if (!(await this.db.ensureConnected()))
+      throw new ServiceUnavailableException('Database is not connected');
   }
 }
 
@@ -126,6 +150,7 @@ function cellText(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return `${String(value.getDate()).padStart(2, '0')}-${String(value.getMonth() + 1).padStart(2, '0')}-${value.getFullYear()}`;
   }
-  if (typeof value === 'object' && value && 'text' in value) return String((value as { text: unknown }).text).trim();
+  if (typeof value === 'object' && value && 'text' in value)
+    return String(value.text).trim();
   return String(value).trim();
 }

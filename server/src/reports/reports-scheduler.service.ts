@@ -25,12 +25,15 @@ export class ReportsSchedulerService implements OnModuleInit {
     const enabled = this.config.get<boolean>('reports.enabled');
     const onApi = this.config.get<boolean>('reports.schedulerOnApi');
     if (!enabled || !onApi) {
-      this.logger.log('Daily report scheduler is off. Flask remains the report sender.');
+      this.logger.log(
+        'Daily report scheduler is off. Flask remains the report sender.',
+      );
       return;
     }
     const hour = this.config.get<number>('reports.hour') ?? 7;
     const minute = this.config.get<number>('reports.minute') ?? 0;
-    const timezone = this.config.get<string>('reports.timezone') || 'Asia/Kolkata';
+    const timezone =
+      this.config.get<string>('reports.timezone') || 'Asia/Kolkata';
     const job = new CronJob(
       `${minute} ${hour} * * *`,
       () => {
@@ -42,7 +45,9 @@ export class ReportsSchedulerService implements OnModuleInit {
     );
     this.registry.addCronJob('daily_report', job);
     job.start();
-    this.logger.warn(`Daily report scheduler armed for ${hour}:${String(minute).padStart(2, '0')} ${timezone}.`);
+    this.logger.warn(
+      `Daily report scheduler armed for ${hour}:${String(minute).padStart(2, '0')} ${timezone}.`,
+    );
     if (this.config.get<boolean>('reports.catchupOnStart')) void this.catchUp();
   }
 
@@ -74,7 +79,9 @@ export function expectedReportDate(now: Date): string {
   const hour = Number(process.env.REPORT_HOUR || '7');
   const minute = Number(process.env.REPORT_MINUTE || '0');
   const parts = zoneParts(now, timezone);
-  const afterSlot = Number(parts.hour) > hour || (Number(parts.hour) === hour && Number(parts.minute) >= minute);
+  const afterSlot =
+    Number(parts.hour) > hour ||
+    (Number(parts.hour) === hour && Number(parts.minute) >= minute);
   const today = calendarDay(now, timezone);
   const yesterday = previousReportDay(now, timezone);
   if (afterSlot) return yesterday;

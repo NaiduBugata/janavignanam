@@ -2,7 +2,10 @@ import type { SakshiArticle, SakshiRawArticle } from './sakshi.models';
 import { stableArticleId } from './sakshi.parser';
 
 /** Port of sources/sakshi/normalizer.py::normalize_sakshi_article. */
-export function normalizeSakshiArticle(raw: SakshiRawArticle, now: Date = new Date()): SakshiArticle {
+export function normalizeSakshiArticle(
+  raw: SakshiRawArticle,
+  now: Date = new Date(),
+): SakshiArticle {
   const url = (raw.url || '').trim();
   const content = (raw.content || '').trim();
   const published = raw.published_at || now.toISOString();

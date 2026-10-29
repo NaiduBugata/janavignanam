@@ -28,7 +28,10 @@ async function bootstrap() {
     process.env.CORS_ALLOW_VERCEL_PREVIEWS ?? 'true',
   );
   app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin || origins.has(origin)) {
         callback(null, true);
         return;

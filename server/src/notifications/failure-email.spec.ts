@@ -13,7 +13,9 @@ describe('pipeline failure email', () => {
       ['sakshi_http_403', '<script>x</script>'],
       new Date('2026-09-28T13:22:12Z'),
     );
-    expect(subject).toMatch(/^MediaSphere pipeline FAILED \| 28\/9\/2026, 6:52:12 pm IST$/);
+    expect(subject).toMatch(
+      /^MediaSphere pipeline FAILED \| 28\/9\/2026, 6:52:12 pm IST$/,
+    );
     expect(html).toContain('Sakshi website refused the server (HTTP 403)');
     expect(html).toContain('<code>sakshi_http_403</code>');
     expect(html).toContain('&lt;script&gt;');
@@ -25,8 +27,16 @@ describe('pipeline failure email', () => {
     const fetchImpl = (async () => {
       throw new Error('should not send');
     }) as typeof fetch;
-    const result = await sendPipelineFailureEmail({ reason: 'x', errors: ['x'], fetchImpl });
-    expect(result).toMatchObject({ success: false, skipped: true, skip_reason: 'email_disabled' });
+    const result = await sendPipelineFailureEmail({
+      reason: 'x',
+      errors: ['x'],
+      fetchImpl,
+    });
+    expect(result).toMatchObject({
+      success: false,
+      skipped: true,
+      skip_reason: 'email_disabled',
+    });
   });
 
   it('sends one Resend message to REPORT_RECIPIENTS', async () => {
@@ -38,9 +48,18 @@ describe('pipeline failure email', () => {
     const bodies: Array<{ to: string[]; subject: string }> = [];
     const fetchImpl = (async (_url: string, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)));
-      return { ok: true, status: 200, json: async () => ({}), text: async () => '' } as Response;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+        text: async () => '',
+      } as Response;
     }) as typeof fetch;
-    const result = await sendPipelineFailureEmail({ reason: 'YouTube blocked', errors: ['youtube_blocked:8/8(x)'], fetchImpl });
+    const result = await sendPipelineFailureEmail({
+      reason: 'YouTube blocked',
+      errors: ['youtube_blocked:8/8(x)'],
+      fetchImpl,
+    });
     expect(result.success).toBe(true);
     expect(bodies).toHaveLength(1);
     expect(bodies[0].to).toEqual(['desk@example.com']);

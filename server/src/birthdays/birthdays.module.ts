@@ -9,6 +9,10 @@ import { ContactMessagesService } from './messages.service';
 @Module({
   imports: [AdminModule],
   controllers: [BirthdaysController, MessagesController],
-  providers: [BirthdaysService, BirthdaysSchedulerService, ContactMessagesService],
+  providers: [
+    BirthdaysService,
+    BirthdaysSchedulerService,
+    ContactMessagesService,
+  ],
 })
 export class BirthdaysModule {}

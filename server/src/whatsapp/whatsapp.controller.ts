@@ -1,9 +1,17 @@
 import { Controller, Get, Logger, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { contactSenders, noteContactInbound, withoutMutedMessages } from './whatsapp.muted';
+import {
+  contactSenders,
+  noteContactInbound,
+  withoutMutedMessages,
+} from './whatsapp.muted';
 import { WhatsAppWebhookRepository } from './whatsapp.repository';
 import { notifyFailedStatuses } from './whatsapp.notify';
-import { processWebhookPost, verifyWebhook, webhookEnabled } from './whatsapp.webhook';
+import {
+  processWebhookPost,
+  verifyWebhook,
+  webhookEnabled,
+} from './whatsapp.webhook';
 
 export interface ChatbotReply {
   consider(payload: unknown): void;
@@ -39,18 +47,27 @@ export class WhatsAppController {
       return;
     }
     const forwarded = req.header('x-forwarded-for');
-    const clientIp = forwarded ? forwarded.split(',')[0].trim() : req.ip || null;
+    const clientIp = forwarded
+      ? forwarded.split(',')[0].trim()
+      : req.ip || null;
     await noteContactInbound(contactSenders(req.body));
     const { payload, dropped } = withoutMutedMessages(req.body);
-    if (dropped) this.logger.log(`Ignored ${dropped} incoming message(s) from one-way birthday contacts.`);
-    const empty = dropped > 0 && !((payload as { entry?: unknown[] }).entry || []).length;
+    if (dropped)
+      this.logger.log(
+        `Ignored ${dropped} incoming message(s) from one-way birthday contacts.`,
+      );
+    const empty =
+      dropped > 0 && !((payload as { entry?: unknown[] }).entry || []).length;
     if (empty) {
       res.status(200).type('text/plain').send('EVENT_RECEIVED');
       return;
     }
     const result = await processWebhookPost(payload, {
       clientIp,
-      wabaId: process.env.WHATSAPP_WABA_ID || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
+      wabaId:
+        process.env.WHATSAPP_WABA_ID ||
+        process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ||
+        '',
       save: (event, raw) => this.events.saveEvent(event, clientIp, raw),
     });
     res.status(result.status).type('text/plain').send(result.body);
