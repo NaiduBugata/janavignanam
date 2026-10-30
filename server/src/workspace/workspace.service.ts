@@ -721,6 +721,12 @@ async function sendDepartmentLink(
     ],
     urlButton: `progress/${token}`,
   });
+  await sendQuiet(
+    DEPARTMENT_WHATSAPP,
+    `📲 *Native WhatsApp Operations*\n\n` +
+      `You can manage this grievance entirely inside WhatsApp without opening the web link.\n\n` +
+      `👉 *Reply "menu" or "operations"* to access the Department Operations Menu, view assigned grievances, and update progress directly.`,
+  );
 }
 
 function whatsappNumber(value: string): string {

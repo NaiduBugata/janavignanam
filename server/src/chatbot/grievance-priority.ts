@@ -89,7 +89,7 @@ const PLACES = [
   'Pedakurapadu',
 ];
 
-const DESKS: Array<{
+export const DESKS: Array<{
   words: string[];
   name: string;
   nameTe: string;
@@ -133,7 +133,7 @@ const DESKS: Array<{
   },
 ];
 
-const GENERAL_DESK = {
+export const GENERAL_DESK = {
   name: 'General administration',
   nameTe: 'సాధారణ పరిపాలన',
   leader: 'Suresh',

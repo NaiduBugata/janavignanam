@@ -60,6 +60,7 @@ import {
 } from '../workspace/progress-report';
 import { WorkspaceService } from '../workspace/workspace.service';
 import { GrievanceProgressService } from '../whatsapp/grievance-progress.service';
+import { DepartmentOperationsService } from '../whatsapp/department-operations.service';
 import { discoverGroqApiKeys } from '../ai/groq-keys';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
@@ -299,6 +300,7 @@ export class ChatbotService {
   private followUps: Promise<void> = Promise.resolve();
   private newsCache: { at: number; briefs: NewsBrief[] } | null = null;
   private readonly gpmService: GrievanceProgressService;
+  private readonly deptOpsService: DepartmentOperationsService;
 
   constructor(
     @Optional() private readonly articles?: ArticleRepository,
@@ -306,8 +308,11 @@ export class ChatbotService {
     @Optional() private readonly followUp?: VisitFollowupService,
     @Optional() private readonly workspace?: WorkspaceService,
     @Optional() private readonly gpm?: GrievanceProgressService,
+    @Optional() private readonly deptOps?: DepartmentOperationsService,
   ) {
     this.gpmService = gpm || new GrievanceProgressService(workspace, db);
+    this.deptOpsService =
+      deptOps || new DepartmentOperationsService(workspace, db);
   }
 
   /** Starts a reply after the webhook has already been acknowledged. Never throws. */
@@ -340,7 +345,10 @@ export class ChatbotService {
     const filing = messages.some((event) =>
       isPersonPhone(event.sender_wa_id || ''),
     );
-    if (!allowed.length && !filing) {
+    const hasDept = messages.some((event) =>
+      this.deptOpsService.isDepartmentUser(event.sender_wa_id || '', env),
+    );
+    if (!allowed.length && !filing && !hasDept) {
       this.logger.warn(
         staffDirectoryLoaded()
           ? 'Chatbot replies are off because no admin numbers are set.'
@@ -354,7 +362,8 @@ export class ChatbotService {
         await this.enqueue(sender, () => this.fileGrievance(event, env, deps));
         continue;
       }
-      if (!allowed.includes(digits(sender))) {
+      const isDept = this.deptOpsService.isDepartmentUser(sender, env);
+      if (!allowed.includes(digits(sender)) && !isDept) {
         this.logger.warn(`Ignored chatbot message from ${maskPhone(sender)}.`);
         continue;
       }
@@ -462,11 +471,19 @@ export class ChatbotService {
       last === undefined || now.getTime() - last > CONVERSATION_GAP_MS;
     const fetchImpl = replyFetch(deps.fetchImpl || fetch);
     try {
-      if (this.gpmService.isGpmEvent(event, sender)) {
-        await this.gpmService.handleEvent(event, sender, fetchImpl, env, deps);
+      if (this.deptOpsService.isDepartmentEvent(event, sender, env)) {
+        await this.deptOpsService.handleEvent(
+          event,
+          sender,
+          fetchImpl,
+          env,
+          deps,
+        );
         this.answered.add(messageId);
         this.lastReplyAt.set(sender, now.getTime());
-        this.logger.log(`Grievance progress manager replied to ${maskPhone(sender)}.`);
+        this.logger.log(
+          `Department operations replied to ${maskPhone(sender)}.`,
+        );
         return;
       }
 
@@ -497,7 +514,20 @@ export class ChatbotService {
       } else if (choice === 'follow_up') {
         await this.replyFollowUp(sender, fetchImpl, env, deps);
       } else if (choice === 'home' || choice === 'menu') {
-        await this.sendMenu(sender, MAIN_MENU_TEXT, fetchImpl, env);
+        if (
+          this.deptOpsService.isDepartmentUser(sender, env) &&
+          !isMpPhone(sender)
+        ) {
+          await this.deptOpsService.handleEvent(
+            event,
+            sender,
+            fetchImpl,
+            env,
+            deps,
+          );
+        } else {
+          await this.sendMenu(sender, MAIN_MENU_TEXT, fetchImpl, env);
+        }
       } else if (choice) {
         const limit = fullMenu(sender) ? MP_TOP : TOP;
         const body = await this.renderSection(choice, deps, limit, now);
@@ -510,10 +540,23 @@ export class ChatbotService {
           isGreetingOnly(text) ||
           (!this.db && !this.workspace && !deps.records)
         ) {
-          const lead = opening
-            ? `${openingLine(now, env)}\n\n${MENU_PROMPT}`
-            : MAIN_MENU_TEXT;
-          await this.sendMenu(sender, lead, fetchImpl, env);
+          if (
+            this.deptOpsService.isDepartmentUser(sender, env) &&
+            !isMpPhone(sender)
+          ) {
+            await this.deptOpsService.handleEvent(
+              event,
+              sender,
+              fetchImpl,
+              env,
+              deps,
+            );
+          } else {
+            const lead = opening
+              ? `${openingLine(now, env)}\n\n${MENU_PROMPT}`
+              : MAIN_MENU_TEXT;
+            await this.sendMenu(sender, lead, fetchImpl, env);
+          }
         } else {
           await this.answerConstituencyQuery(
             sender,
