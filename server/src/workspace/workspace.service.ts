@@ -29,8 +29,10 @@ import {
 } from '../chatbot/grievance-priority';
 import { phoneForName } from '../whatsapp/whatsapp.audience';
 import {
+  sendReplyButtons,
   sendTemplateMessage,
   sendTextMessage,
+  type ReplyButton,
 } from '../whatsapp/whatsapp.send';
 import {
   CASE_SECTIONS,
@@ -369,7 +371,7 @@ export class WorkspaceService {
     const leaderPhone = phoneForName(desk.leader);
 
     try {
-      await sendDepartmentLink(desk, issue, token);
+      await sendDepartmentActionNotice(desk, issue, String(id), token);
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'send failed';
       throw new BadRequestException(
@@ -409,7 +411,7 @@ export class WorkspaceService {
       leaderSent
         ? `${desk.leader} was messaged.`
         : `${desk.leader} is not in the contact list.`,
-      'The department was sent the progress link.',
+      'The department was sent the WhatsApp operations menu.',
     ].join(' ');
     return {
       record: toRecord({ ...existing, ...(saved || {}), ...patch }),
@@ -693,10 +695,15 @@ function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(next, prev);
 }
 
-/** Approved template, so WhatsApp delivers it after the 24-hour reply window has closed. */
-async function sendDepartmentLink(
+/**
+ * Dispatches action request to the department.
+ * Prioritizes native WhatsApp interactive buttons so the department user can
+ * manage the grievance entirely inside WhatsApp without external links.
+ */
+async function sendDepartmentActionNotice(
   desk: { department: string; place: string; leader: string },
   issue: string,
+  recordId: string,
   token: string,
 ): Promise<void> {
   const clean = (value: string) =>
@@ -711,22 +718,56 @@ async function sendDepartmentLink(
     year: 'numeric',
     timeZone: 'Asia/Kolkata',
   });
-  await sendTemplateMessage(DEPARTMENT_WHATSAPP, 'jv_mp_action_request', {
-    language: 'en',
-    bodyParameters: [
-      clean(desk.department),
-      clean(issue),
-      clean(`${desk.place} - ${desk.leader}`),
-      when,
-    ],
-    urlButton: `progress/${token}`,
-  });
-  await sendQuiet(
-    DEPARTMENT_WHATSAPP,
-    `📲 *Native WhatsApp Operations*\n\n` +
-      `You can manage this grievance entirely inside WhatsApp without opening the web link.\n\n` +
-      `👉 *Reply "menu" or "operations"* to access the Department Operations Menu, view assigned grievances, and update progress directly.`,
-  );
+
+  const bodyText =
+    `🏢 *DEPARTMENT OPERATIONS: ACTION REQUEST*\n\n` +
+    `Hello *${clean(desk.department)}*,\n` +
+    `The MP has requested your attention regarding:\n` +
+    `*${clean(issue)}*\n\n` +
+    `📍 *Location:* ${clean(desk.place)}\n` +
+    `👤 *Reference:* ${clean(desk.place)} - ${clean(desk.leader)}\n` +
+    `📅 *Requested on:* ${when}\n\n` +
+    `Select an option below to manage this grievance in WhatsApp:`;
+
+  const buttons: ReplyButton[] = [
+    { id: `dept:g:up_pick:${recordId}`, title: 'Update Progress' },
+    { id: `dept:g:pick:${recordId}`, title: 'View Details' },
+    { id: 'dept:menu', title: 'Department Menu' },
+  ];
+
+  try {
+    // 1. Primary: Native WhatsApp interactive buttons (No external links)
+    await sendReplyButtons(DEPARTMENT_WHATSAPP, bodyText, buttons);
+    return;
+  } catch {
+    // 2. Fallback if outside 24-hr customer service window:
+    // Meta requires an approved template when the 24-hour window has expired.
+    await sendTemplateMessage(DEPARTMENT_WHATSAPP, 'jv_mp_action_request', {
+      language: 'en',
+      bodyParameters: [
+        clean(desk.department),
+        clean(issue),
+        clean(`${desk.place} - ${desk.leader}`),
+        when,
+      ],
+      urlButton: `progress/${token}`,
+    });
+    await sendQuiet(
+      DEPARTMENT_WHATSAPP,
+      `📲 *Native WhatsApp Operations Menu*\n\n` +
+        `Reply *MENU* or *OPERATIONS* at any time to open the Department Operations Menu directly in WhatsApp.`,
+    );
+  }
+}
+
+/** Backward-compatible alias */
+async function sendDepartmentLink(
+  desk: { department: string; place: string; leader: string },
+  issue: string,
+  token: string,
+  recordId?: string,
+): Promise<void> {
+  await sendDepartmentActionNotice(desk, issue, recordId || '', token);
 }
 
 function whatsappNumber(value: string): string {

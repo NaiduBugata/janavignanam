@@ -9,12 +9,12 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-export async function getNews() {
+export async function getNews(params = {}) {
   // Cache-bust with `_t` only. Do NOT send Cache-Control/Pragma — those are
   // non-simple headers and production CORS currently rejects them in preflight
   // ("Request header field cache-control is not allowed"), which breaks the site.
   const { data } = await api.get('/news', {
-    params: { _t: Date.now() },
+    params: { ...params, _t: Date.now() },
   });
   return {
     articles: data.articles || [],

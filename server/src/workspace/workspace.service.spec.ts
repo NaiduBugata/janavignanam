@@ -1,6 +1,7 @@
 import { WorkspaceService } from './workspace.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../database/database.service';
+import * as waSend from '../whatsapp/whatsapp.send';
 
 describe('WorkspaceService', () => {
   it('registers, logs in, and stores a grievance without a live database', async () => {
@@ -115,5 +116,88 @@ describe('WorkspaceService', () => {
     expect(campaign.title).toBe('Door to door');
     expect(campaign.detail).toBe('Narasaraopet ward visits this week.');
     expect(campaign.progressToken).toBe('');
+  });
+
+  it('approves a grievance and dispatches native WhatsApp interactive buttons instead of external web links', async () => {
+    const spyButtons = jest
+      .spyOn(waSend, 'sendReplyButtons')
+      .mockResolvedValue({ success: true } as any);
+    const spyTemplate = jest
+      .spyOn(waSend, 'sendTemplateMessage')
+      .mockResolvedValue({ success: true } as any);
+    const spyText = jest
+      .spyOn(waSend, 'sendTextMessage')
+      .mockResolvedValue({ success: true } as any);
+
+    const records: Array<Record<string, unknown>> = [
+      {
+        _id: 'gr-water-1',
+        section: 'grievances',
+        title: 'Water supply issue in Chilakaluripet',
+        detail: 'Need water tanker service',
+        village: 'Chilakaluripet',
+        place: 'Chilakaluripet',
+        status: 'Open',
+        contactNumber: '919876543210',
+      },
+    ];
+
+    const db = {
+      ensureConnected: async () => true,
+      articlesCollectionName: 'articles',
+      collection: () => ({
+        findOne: async (filter: { _id?: unknown }) =>
+          records.find((r) => String(r._id) === String(filter._id)) || null,
+        findOneAndUpdate: async (
+          filter: { _id?: unknown },
+          update: { $set?: Record<string, unknown> },
+        ) => {
+          const row = records.find(
+            (item) => String(item._id) === String(filter._id),
+          );
+          if (!row) return null;
+          Object.assign(row, update.$set || {});
+          return row;
+        },
+      }),
+    };
+    const config = { get: () => 'test-secret' } as unknown as ConfigService;
+    const service = new WorkspaceService(
+      db as unknown as DatabaseService,
+      config,
+    );
+
+    const result = await service.approve('gr-water-1');
+
+    expect(result.record.status).toBe('Approved');
+    expect(result.notice).toContain(
+      'The department was sent the WhatsApp operations menu.',
+    );
+
+    // Verify native interactive buttons dispatched
+    expect(spyButtons).toHaveBeenCalledTimes(1);
+    const [recipient, body, buttons] = spyButtons.mock.calls[0];
+    expect(recipient).toContain('8919537879');
+    expect(body).toContain('DEPARTMENT OPERATIONS: ACTION REQUEST');
+    expect(buttons).toHaveLength(3);
+    expect(buttons[0]).toEqual({
+      id: 'dept:g:up_pick:gr-water-1',
+      title: 'Update Progress',
+    });
+    expect(buttons[1]).toEqual({
+      id: 'dept:g:pick:gr-water-1',
+      title: 'View Details',
+    });
+    expect(buttons[2]).toEqual({
+      id: 'dept:menu',
+      title: 'Department Menu',
+    });
+
+    // Verify template with URL button was NOT called because interactive buttons succeeded
+    expect(spyTemplate).not.toHaveBeenCalled();
+
+    spyButtons.mockRestore();
+    spyTemplate.mockRestore();
+    spyText.mockRestore();
   });
 });

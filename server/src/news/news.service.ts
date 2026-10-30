@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { Document } from 'mongodb';
 import { ArticleRepository } from '../database/repositories/article.repository';
 import { PipelineStateRepository } from '../database/repositories/pipeline-state.repository';
@@ -62,6 +62,8 @@ export function isGrievanceOrProblem(article: NormalizedArticle): boolean {
 
 @Injectable()
 export class NewsService implements OnModuleInit {
+  private readonly logger = new Logger(NewsService.name);
+
   constructor(
     private readonly articles: ArticleRepository,
     private readonly pipelineState: PipelineStateRepository,
@@ -129,12 +131,23 @@ export class NewsService implements OnModuleInit {
   }
 
   private async fetchFreshDocs(): Promise<Document[]> {
-    const docs = (await this.articles.findAll()).filter((doc) =>
-      hasAssemblySegment(doc),
-    );
-    // Cache for 10 minutes in memory. Pipeline calls clearCache() whenever new articles are ingested.
-    this.cachedDocs = { docs, expiresAt: Date.now() + 10 * 60_000 };
-    return docs;
+    try {
+      const docs = (await this.articles.findAll()).filter((doc) =>
+        hasAssemblySegment(doc),
+      );
+      // Cache for 10 minutes in memory. Pipeline calls clearCache() whenever new articles are ingested.
+      this.cachedDocs = { docs, expiresAt: Date.now() + 10 * 60_000 };
+      return docs;
+    } catch (err) {
+      this.logger.warn(
+        'Failed to fetch fresh articles from database: ' +
+          (err instanceof Error ? err.message : String(err)),
+      );
+      if (this.cachedDocs && this.cachedDocs.docs.length > 0) {
+        return this.cachedDocs.docs;
+      }
+      return [];
+    }
   }
 
   /** Only articles mapped to one of the seven assembly segments belong to the constituency dataset. */
@@ -146,18 +159,34 @@ export class NewsService implements OnModuleInit {
     // Stale-while-revalidate: if we have cached data, return immediately and refresh in background
     if (!forceFresh && this.cachedDocs && this.cachedDocs.docs.length > 0) {
       if (!this.pendingDocsFetch) {
-        this.pendingDocsFetch = this.fetchFreshDocs().finally(() => {
-          this.pendingDocsFetch = null;
-        });
+        this.pendingDocsFetch = this.fetchFreshDocs()
+          .catch((err) => {
+            this.logger.warn(
+              'Background article refresh failed: ' +
+                (err instanceof Error ? err.message : String(err)),
+            );
+            return this.cachedDocs?.docs || [];
+          })
+          .finally(() => {
+            this.pendingDocsFetch = null;
+          });
       }
       return this.cachedDocs.docs;
     }
     if (!forceFresh && this.pendingDocsFetch) {
       return this.pendingDocsFetch;
     }
-    this.pendingDocsFetch = this.fetchFreshDocs().finally(() => {
-      this.pendingDocsFetch = null;
-    });
+    this.pendingDocsFetch = this.fetchFreshDocs()
+      .catch((err) => {
+        this.logger.warn(
+          'Initial article fetch failed: ' +
+            (err instanceof Error ? err.message : String(err)),
+        );
+        return this.cachedDocs?.docs || [];
+      })
+      .finally(() => {
+        this.pendingDocsFetch = null;
+      });
     return this.pendingDocsFetch;
   }
 
@@ -282,7 +311,10 @@ export class NewsService implements OnModuleInit {
     if (filters.startDate) {
       const start = filters.startDate.slice(0, 10);
       result = result.filter((a) => {
-        const d = (a.created_on || a.first_seen_at || '').slice(0, 10);
+        const d =
+          flaskDateKey(a.created_on || '') ||
+          flaskDateKey(a.first_seen_at || '') ||
+          (a.created_on || a.first_seen_at || '').slice(0, 10);
         return d && d >= start;
       });
     }
@@ -290,7 +322,10 @@ export class NewsService implements OnModuleInit {
     if (filters.endDate) {
       const end = filters.endDate.slice(0, 10);
       result = result.filter((a) => {
-        const d = (a.created_on || a.first_seen_at || '').slice(0, 10);
+        const d =
+          flaskDateKey(a.created_on || '') ||
+          flaskDateKey(a.first_seen_at || '') ||
+          (a.created_on || a.first_seen_at || '').slice(0, 10);
         return d && d <= end;
       });
     }
@@ -469,37 +504,36 @@ export class NewsService implements OnModuleInit {
     };
 
     const todayStr = new Date().toISOString().slice(0, 10);
-    let dateStr = todayStr;
-    if (filters.startDate && filters.endDate) {
-      dateStr =
-        filters.startDate === filters.endDate
-          ? filters.startDate
-          : `${filters.startDate}_to_${filters.endDate}`;
-    } else if (filters.startDate) {
-      dateStr = `from_${filters.startDate}`;
-    } else if (filters.endDate) {
-      dateStr = `to_${filters.endDate}`;
-    }
+    let baseName: string;
 
-    let catPrefix = 'overall';
-    if (filters.sentiment && filters.sentiment !== 'all') {
-      const s = filters.sentiment.toLowerCase();
-      if (s === 'positive') catPrefix = 'positive_news';
-      else if (s === 'negative') catPrefix = 'negative_news';
-      else if (s === 'neutral' || s === 'statement' || s === 'statements')
-        catPrefix = 'neutral_statements';
-      else if (s === 'problem' || s === 'problems')
-        catPrefix = 'problems_report';
-      else catPrefix = s;
-    } else if (filters.category && filters.category !== 'all') {
-      catPrefix = filters.category.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    if (filters.periodType === 'daily' && filters.startDate) {
+      baseName = `Analytics_Daily_${filters.startDate}`;
+    } else if (
+      filters.periodType === 'weekly' &&
+      filters.startDate &&
+      filters.endDate
+    ) {
+      baseName = `Analytics_Weekly_${filters.startDate}_to_${filters.endDate}`;
+    } else if (filters.periodType === 'monthly' && filters.startDate) {
+      baseName = `Analytics_Monthly_${filters.startDate.slice(0, 7)}`;
+    } else if (
+      filters.periodType === 'custom' &&
+      filters.startDate &&
+      filters.endDate
+    ) {
+      baseName = `Analytics_Custom_${filters.startDate}_to_${filters.endDate}`;
+    } else if (filters.periodType === 'all') {
+      baseName = `Analytics_All_Records_${todayStr}`;
+    } else {
+      if (filters.startDate && filters.endDate) {
+        baseName =
+          filters.startDate === filters.endDate
+            ? `Analytics_Daily_${filters.startDate}`
+            : `Analytics_Custom_${filters.startDate}_to_${filters.endDate}`;
+      } else {
+        baseName = `Analytics_All_Records_${todayStr}`;
+      }
     }
-
-    const segPrefix =
-      filters.segment && filters.segment !== 'all'
-        ? `_${filters.segment.toLowerCase()}`
-        : '';
-    const baseName = `janavignanam_${catPrefix}${segPrefix}_${dateStr}`;
 
     if (format === 'xlsx') {
       const bytes = await generateExcelReport(filtered, filters, summary);

@@ -363,14 +363,7 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove }
   }
 
   if (section === "people") {
-    return (
-      <>
-        <div className="mb-8">
-          <SectionHeading meta={meta} />
-        </div>
-        <ConstituencyDirectory token={token} />
-      </>
-    );
+    return <ConstituencyDirectory token={token} />;
   }
 
   if (section === "analytics") {

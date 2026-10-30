@@ -10,11 +10,13 @@ export interface ReportExportParams {
   startDate?: string;
   endDate?: string;
   search?: string;
+  periodType?: 'daily' | 'weekly' | 'monthly' | 'custom' | 'all';
 }
 
 export async function downloadNewsReport(params: ReportExportParams, fallbackName: string): Promise<void> {
   const query = new URLSearchParams();
   query.set('format', params.format);
+  if (params.periodType) query.set('periodType', params.periodType);
   if (params.source && params.source !== 'all') query.set('source', params.source);
   if (params.sentiment && params.sentiment !== 'all') query.set('sentiment', params.sentiment);
   if (params.segment && params.segment !== 'all') query.set('segment', params.segment);

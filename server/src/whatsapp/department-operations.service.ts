@@ -1072,7 +1072,6 @@ export class DepartmentOperationsService {
       `*Stages:*`,
       ...stageLines,
       record.progressRemarks ? `\n*Latest Remarks:* ${record.progressRemarks}` : null,
-      fallbackLink ? `\n*Web Portal Fallback:*\n${fallbackLink}` : null,
     ].filter(Boolean).join('\n');
 
     const buttons: ReplyButton[] = [

@@ -44,6 +44,8 @@ export class NewsController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
+    @Query('periodType')
+    periodType?: 'daily' | 'weekly' | 'monthly' | 'custom' | 'all',
     @Res({ passthrough: true }) res?: Response,
   ) {
     try {
@@ -56,6 +58,7 @@ export class NewsController {
         startDate,
         endDate,
         search,
+        periodType,
       };
       return await this.newsService.listNews(filters);
     } catch (err) {
@@ -120,6 +123,8 @@ export class NewsController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
+    @Query('periodType')
+    periodType?: 'daily' | 'weekly' | 'monthly' | 'custom' | 'all',
     @Res() res?: Response,
   ) {
     try {
@@ -138,6 +143,7 @@ export class NewsController {
         startDate,
         endDate,
         search,
+        periodType,
       };
       const file = await this.newsService.exportReport(filters, validFormat);
       if (res) {
