@@ -19,7 +19,7 @@ import { BirthdaysModule } from './birthdays/birthdays.module';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
-      envFilePath: ['.env'],
+      envFilePath: ['.env', 'server/.env', '../server/.env'],
     }),
     // Phase 3: interval registry for the pipeline scheduler. The scheduler only
     // arms itself when PIPELINE_ON_API=true (single-writer rule).
