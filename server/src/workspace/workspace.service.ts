@@ -446,11 +446,31 @@ export class WorkspaceService {
   }
 
   async saveProgress(
-    token: string,
+    tokenOrId: string,
     input: ProgressStage[] | SaveProgressInput,
-  ): Promise<void> {
+  ): Promise<WorkspaceRecord> {
     await this.ready();
-    const existing = await this.byToken(token);
+    let existing: WorkspaceRecord | null = null;
+    let isToken = false;
+    if (/^[a-f0-9]{18}$/i.test(tokenOrId)) {
+      try {
+        existing = await this.byToken(tokenOrId);
+        isToken = true;
+      } catch {
+        existing = null;
+      }
+    }
+    if (!existing) {
+      try {
+        existing = await this.get(tokenOrId);
+      } catch {
+        existing = null;
+      }
+    }
+    if (!existing) {
+      throw new NotFoundException('This progress link or grievance is no longer available');
+    }
+
     const options: SaveProgressInput = Array.isArray(input)
       ? { stages: input }
       : input || {};
@@ -527,6 +547,7 @@ export class WorkspaceService {
 
     const prevHistory = existing.progressHistory || [];
     const updatedHistory = [...prevHistory, historyEntry];
+    const token = existing.progressToken || randomBytes(9).toString('hex');
 
     const patch: Record<string, unknown> = {
       status: newStatus,
@@ -536,14 +557,21 @@ export class WorkspaceService {
       progressRemarks: remarks,
       remarks,
       progressHistory: updatedHistory,
+      progressToken: token,
       ...(options.department ? { followUpDepartment: dept } : {}),
     };
 
+    const filter = isToken
+      ? { progressToken: tokenOrId }
+      : { _id: asId(existing.id) };
+
     const saved = await this.db
       .collection(RECORDS)
-      .findOneAndUpdate({ progressToken: token }, { $set: patch });
+      .findOneAndUpdate(filter, { $set: patch });
     if (!saved)
       throw new NotFoundException('This progress link is no longer available');
+
+    return await this.get(existing.id);
   }
 
   async reportFile(id: string): Promise<{ name: string; bytes: Buffer }> {

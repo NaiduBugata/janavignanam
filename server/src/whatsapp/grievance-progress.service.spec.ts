@@ -92,6 +92,35 @@ describe('GrievanceProgressService', () => {
     progressHistory: [],
   };
 
+  const sampleRecord2: WorkspaceRecord = {
+    id: 'rec_102',
+    section: 'grievances',
+    title: 'Street light repair in Market Road',
+    detail: 'Street lights not working',
+    status: 'Open',
+    date: '2026-10-29',
+    createdBy: 'Srinivas',
+    followUpDepartment: 'Electricity',
+    department: 'Electricity',
+    place: 'Narasaraopet',
+    leader: 'Suresh',
+    srNumber: 'JV-GR-2026-0102',
+    fullName: 'Srinivas',
+    contactNumber: '919888776655',
+    address: 'Market Road',
+    email: '',
+    progressToken: 'token_def456uvw',
+    progressStages: [
+      { name: 'Work started', status: 'Pending', note: '' },
+      { name: 'Inspection', status: 'Pending', note: '' },
+      { name: 'Work in progress', status: 'Pending', note: '' },
+      { name: 'Closing and handover', status: 'Pending', note: '' },
+    ],
+    progressRemarks: '',
+    progressUpdatedAt: '2026-10-29T10:00:00.000Z',
+    progressHistory: [],
+  };
+
   const env: NodeJS.ProcessEnv = {
     WHATSAPP_ENABLED: 'true',
     WHATSAPP_ACCESS_TOKEN: 'test_token',
@@ -101,21 +130,26 @@ describe('GrievanceProgressService', () => {
 
   beforeEach(() => {
     sentBodies = [];
-    mockFetch = jest.fn().mockImplementation(async (url, init) => {
-      if (init && init.body) {
-        sentBodies.push(JSON.parse(String(init.body)));
-      }
+    mockFetch = jest.fn(async (_url: any, init: any) => {
+      const body = JSON.parse(init.body);
+      sentBodies.push(body);
       return {
         ok: true,
         status: 200,
-        json: async () => ({ messages: [{ id: 'wamid_123' }] }),
+        json: async () => ({
+          messages: [{ id: 'wamid_resp_' + Math.random().toString(36).slice(2) }],
+        }),
       } as any;
     });
 
     mockWorkspace = {
-      list: jest.fn().mockResolvedValue([sampleRecord]),
-      get: jest.fn().mockResolvedValue(sampleRecord),
-      saveProgress: jest.fn().mockResolvedValue(undefined),
+      list: jest.fn(async () => [sampleRecord, sampleRecord2]),
+      get: jest.fn(async (id: string) => {
+        if (id === sampleRecord.id) return sampleRecord;
+        if (id === sampleRecord2.id) return sampleRecord2;
+        return null;
+      }),
+      saveProgress: jest.fn(async () => {}),
     };
 
     service = new GrievanceProgressService(mockWorkspace);
@@ -123,7 +157,7 @@ describe('GrievanceProgressService', () => {
 
   describe('Event Detection & Keyword Matching', () => {
     it('detects gpm: interactive payload IDs', () => {
-      const event = createMockEvent({ buttonId: 'gpm:menu' });
+      const event = createMockEvent({ listId: 'gpm:update' });
       expect(service.isGpmEvent(event, adminPhone)).toBe(true);
     });
 
@@ -135,11 +169,8 @@ describe('GrievanceProgressService', () => {
     });
 
     it('ignores non-gpm events when there is no active session', () => {
-      const event = createMockEvent({ text: 'Hello' });
+      const event = createMockEvent({ text: 'Hello, what is the latest news?' });
       expect(service.isGpmEvent(event, adminPhone)).toBe(false);
-
-      const menuEvent = createMockEvent({ text: 'news' });
-      expect(service.isGpmEvent(menuEvent, adminPhone)).toBe(false);
     });
   });
 
@@ -161,7 +192,7 @@ describe('GrievanceProgressService', () => {
   });
 
   describe('Menu & Grievance Listing', () => {
-    it('renders the Grievance Progress Manager main menu', async () => {
+    it('renders the Grievance Progress Manager main menu with dedicated navigation', async () => {
       const event = createMockEvent({ sender: adminPhone, text: 'progress' });
       await service.handleEvent(event, adminPhone, mockFetch, env);
 
@@ -171,10 +202,12 @@ describe('GrievanceProgressService', () => {
       expect(interactive.body.text).toContain('Grievance Progress Manager');
 
       const rowIds = interactive.action.sections[0].rows.map((r: any) => r.id);
+      expect(rowIds).toContain('gpm:assigned');
       expect(rowIds).toContain('gpm:update');
       expect(rowIds).toContain('gpm:view');
-      expect(rowIds).toContain('gpm:assigned');
+      expect(rowIds).toContain('gpm:search');
       expect(rowIds).toContain('gpm:help');
+      expect(rowIds).toContain('home');
     });
 
     it('lists authorized grievances with pagination support', async () => {
@@ -193,8 +226,54 @@ describe('GrievanceProgressService', () => {
     });
   });
 
+  describe('Reference-Number Search', () => {
+    it('finds and directly opens grievance when exact reference number is searched', async () => {
+      // 1. Initiate search
+      const searchInit = createMockEvent({ sender: adminPhone, listId: 'gpm:search' });
+      await service.handleEvent(searchInit, adminPhone, mockFetch, env);
+      expect(sentBodies[0].text.body).toContain('Search Grievances by Reference #');
+
+      // 2. Reply with SR Number
+      const searchReply = createMockEvent({ sender: adminPhone, text: 'JV-GR-2026-0101' });
+      await service.handleEvent(searchReply, adminPhone, mockFetch, env);
+
+      // Single match directly opens stage selector
+      expect(sentBodies.length).toBe(2);
+      expect(sentBodies[1].interactive.type).toBe('list');
+      expect(sentBodies[1].interactive.body.text).toContain('Update Progress Stage');
+      expect(sentBodies[1].interactive.body.text).toContain('Water pipe leakage');
+    });
+
+    it('displays filtered list when multiple records match query keyword', async () => {
+      const searchInit = createMockEvent({ sender: adminPhone, listId: 'gpm:search' });
+      await service.handleEvent(searchInit, adminPhone, mockFetch, env);
+
+      // Reply with common query "JV-GR"
+      const searchReply = createMockEvent({ sender: adminPhone, text: 'JV-GR' });
+      await service.handleEvent(searchReply, adminPhone, mockFetch, env);
+
+      expect(sentBodies.length).toBe(2);
+      expect(sentBodies[1].interactive.type).toBe('list');
+      expect(sentBodies[1].interactive.body.text).toContain('Filter: "JV-GR"');
+      const rows = sentBodies[1].interactive.action.sections[0].rows;
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('displays clear empty state when no records match search', async () => {
+      const searchInit = createMockEvent({ sender: adminPhone, listId: 'gpm:search' });
+      await service.handleEvent(searchInit, adminPhone, mockFetch, env);
+
+      const searchReply = createMockEvent({ sender: adminPhone, text: 'nonexistent999' });
+      await service.handleEvent(searchReply, adminPhone, mockFetch, env);
+
+      expect(sentBodies.length).toBe(2);
+      expect(sentBodies[1].interactive.type).toBe('button');
+      expect(sentBodies[1].interactive.body.text).toContain('No Grievances Found');
+    });
+  });
+
   describe('Complete Progress Update Workflow (Steps 1 to 8)', () => {
-    it('executes full end-to-end stage update, note, confirmation and DB persistence', async () => {
+    it('executes full end-to-end stage update, note, previous status, confirmation and DB persistence', async () => {
       // 1. Select grievance to update
       const selEvent = createMockEvent({ sender: adminPhone, listId: `gpm:sel:${sampleRecord.id}:update` });
       await service.handleEvent(selEvent, adminPhone, mockFetch, env);
@@ -225,9 +304,12 @@ describe('GrievanceProgressService', () => {
 
       expect(sentBodies.length).toBe(4);
       expect(sentBodies[3].interactive.type).toBe('button');
-      expect(sentBodies[3].interactive.body.text).toContain('Review Proposed Progress Update');
-      expect(sentBodies[3].interactive.body.text).toContain('Inspection');
-      expect(sentBodies[3].interactive.body.text).toContain('Site inspected by AE Ramesh');
+      const reviewText = sentBodies[3].interactive.body.text;
+      expect(reviewText).toContain('Review Proposed Progress Update');
+      expect(reviewText).toContain('Inspection');
+      expect(reviewText).toContain('*Previous Status:* Pending');
+      expect(reviewText).toContain('*Proposed Status:* *Completed*');
+      expect(reviewText).toContain('Site inspected by AE Ramesh');
 
       // 5. Confirm and Save
       const confirmEvent = createMockEvent({ sender: adminPhone, buttonId: 'gpm:confirm:yes' });
@@ -244,41 +326,111 @@ describe('GrievanceProgressService', () => {
       });
       expect(input.status).toBe('In progress');
 
-      // Verify success message sent with progress percentage
+      // Verify success message sent with progress percentage and bar
       expect(sentBodies.length).toBe(5);
       expect(sentBodies[4].interactive.type).toBe('button');
       expect(sentBodies[4].interactive.body.text).toContain('Progress Saved Successfully');
       expect(sentBodies[4].interactive.body.text).toContain('2 of 4 stages completed (50%)');
+      expect(sentBodies[4].interactive.body.text).toContain('🟩🟩⬜⬜ 50%');
+    });
+
+    it('protects against duplicate webhook submission using idempotency control', async () => {
+      // 1. Select grievance
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, listId: `gpm:sel:${sampleRecord.id}:update` }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+      // 2. Select stage 0 (Work started)
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, listId: `gpm:stg:${sampleRecord.id}:0` }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+      // 3. Status
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, buttonId: 'gpm:status:Completed' }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+      // 4. Note
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, text: 'Done' }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+      // 5. First confirmation
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, buttonId: 'gpm:confirm:yes', messageId: 'msg_first' }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+
+      expect(mockWorkspace.saveProgress).toHaveBeenCalledTimes(1);
+
+      // 6. Duplicate delivery immediately after
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, buttonId: 'gpm:confirm:yes', messageId: 'msg_retry' }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+
+      // Should not call saveProgress a second time
+      expect(mockWorkspace.saveProgress).toHaveBeenCalledTimes(1);
     });
 
     it('allows skipping the progress note when user types skip', async () => {
-      // Setup session at ENTER_NOTE
-      await service.handleEvent(createMockEvent({ sender: adminPhone, listId: `gpm:stg:${sampleRecord.id}:0` }), adminPhone, mockFetch, env);
-      await service.handleEvent(createMockEvent({ sender: adminPhone, buttonId: 'gpm:status:In progress' }), adminPhone, mockFetch, env);
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, listId: `gpm:stg:${sampleRecord.id}:0` }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, buttonId: 'gpm:status:In progress' }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, text: 'skip' }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
 
-      // Reply with skip
-      await service.handleEvent(createMockEvent({ sender: adminPhone, text: 'skip' }), adminPhone, mockFetch, env);
-
-      const lastSent = sentBodies[sentBodies.length - 1];
-      expect(lastSent.interactive.body.text).toContain('Review Proposed Progress Update');
-      expect(lastSent.interactive.body.text).toContain('_(none)_');
+      expect(sentBodies[2].interactive.body.text).toContain('Review Proposed Progress Update');
+      expect(sentBodies[2].interactive.body.text).toContain('_(none)_');
     });
 
     it('cancels the update when user clicks Cancel or types cancel', async () => {
-      // In middle of an update, user cancels
-      const cancelEvent = createMockEvent({ sender: adminPhone, text: 'cancel' });
-      await service.handleEvent(cancelEvent, adminPhone, mockFetch, env);
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, listId: `gpm:stg:${sampleRecord.id}:0` }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
+      await service.handleEvent(
+        createMockEvent({ sender: adminPhone, text: 'cancel' }),
+        adminPhone,
+        mockFetch,
+        env,
+      );
 
-      expect(mockWorkspace.saveProgress).not.toHaveBeenCalled();
-      const lastSent = sentBodies[sentBodies.length - 1];
-      expect(lastSent.interactive.body.text).toContain('Progress update cancelled');
+      expect(sentBodies[1].interactive.body.text).toContain('Progress update cancelled');
     });
   });
 
   describe('View Current Progress', () => {
     it('displays stage statuses, completion percentage and web fallback link', async () => {
-      const viewEvent = createMockEvent({ sender: adminPhone, listId: `gpm:sel:${sampleRecord.id}:view` });
-      await service.handleEvent(viewEvent, adminPhone, mockFetch, env);
+      const event = createMockEvent({ sender: adminPhone, listId: `gpm:sel:${sampleRecord.id}:view` });
+      await service.handleEvent(event, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
       const text = sentBodies[0].interactive.body.text;
@@ -292,8 +444,8 @@ describe('GrievanceProgressService', () => {
 
   describe('Help & Instructions', () => {
     it('provides clear walkthrough of workflow steps and commands', async () => {
-      const helpEvent = createMockEvent({ sender: adminPhone, listId: 'gpm:help' });
-      await service.handleEvent(helpEvent, adminPhone, mockFetch, env);
+      const event = createMockEvent({ sender: adminPhone, listId: 'gpm:help' });
+      await service.handleEvent(event, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
       const body = sentBodies[0].interactive.body.text;

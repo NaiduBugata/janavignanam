@@ -218,15 +218,18 @@ export function departmentOrder(
     .replace(/\+?\d[\d\s-]{7,}\d/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  const inChatNotice = messageLanguage(issue) === 'te'
+    ? '\n\n📲 వాట్సాప్‌లోనే పురోగతిని అప్‌డేట్ చేయండి: #progress అని రిప్లై ఇవ్వండి'
+    : '\n\n📲 Update progress natively in WhatsApp: Reply #progress';
   const link = progressUrl
     ? messageLanguage(issue) === 'te'
-      ? `\n\nపని పురోగతిని ఇక్కడ నవీకరించండి:\n${progressUrl}`
+      ? `\n\nUpdate the work progress:\n${progressUrl}`
       : `\n\nUpdate the work progress:\n${progressUrl}`
     : '';
   if (messageLanguage(issue) === 'te') {
-    return `దీన్ని వెంటనే పరిష్కరించాలి.\n\nశాఖ: ${desk.department}\nప్రాంతం: ${desk.place}\nసమస్య: ${text}\nసంప్రదించాల్సిన నాయకుడు: ${desk.leader}${link}`;
+    return `దీన్ని వెంటనే పరిష్కరించాలి.\n\nశాఖ: ${desk.department}\nప్రాంతం: ${desk.place}\nసమస్య: ${text}\nసంప్రదించాల్సిన నాయకుడు: ${desk.leader}${inChatNotice}${link}`;
   }
-  return `Need to solve this immediately.\n\nDepartment: ${desk.department}\nLocation: ${desk.place}\nIssue: ${text}\nLeader to contact: ${desk.leader}${link}`;
+  return `Need to solve this immediately.\n\nDepartment: ${desk.department}\nLocation: ${desk.place}\nIssue: ${text}\nLeader to contact: ${desk.leader}${inChatNotice}${link}`;
 }
 
 /** Sample issues. The person who raised each one is split between Bobby and Sravani. */
