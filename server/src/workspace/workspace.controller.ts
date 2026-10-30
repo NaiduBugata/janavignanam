@@ -53,6 +53,7 @@ export class WorkspaceController {
     @Query('q') q = '',
     @Query('division') division = '',
     @Query('assembly') assembly = '',
+    @Query('mandal') mandal = '',
     @Query('role') role = '',
     @Query('page') page = '1',
     @Headers('authorization') authorization?: string,
@@ -62,6 +63,7 @@ export class WorkspaceController {
       q,
       division,
       assembly,
+      mandal,
       role,
       page: Number(page) || 1,
     });

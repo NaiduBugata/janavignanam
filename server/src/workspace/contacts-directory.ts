@@ -35,6 +35,15 @@ export type DirectoryContact = {
 
 export type ContactFacet = { name: string; count: number };
 
+export type ContactStats = {
+  totalContacts: number;
+  mandalsCount: number;
+  villagesCount: number;
+  importantCount: number;
+  withDesignationCount: number;
+  parties: ContactFacet[];
+};
+
 type Loaded = {
   rows: DirectoryContact[];
   search: string[];
@@ -134,6 +143,7 @@ export function queryContacts(input: {
   q?: string;
   division?: string;
   assembly?: string;
+  mandal?: string;
   role?: string;
   page?: number;
 }): {
@@ -142,7 +152,9 @@ export function queryContacts(input: {
   pageSize: number;
   divisions: ContactFacet[];
   assemblies: ContactFacet[];
+  mandals: ContactFacet[];
   roles: ContactFacet[];
+  stats: ContactStats;
   rows: DirectoryContact[];
 } {
   const { rows, search } = load();
@@ -151,6 +163,7 @@ export function queryContacts(input: {
   const digits = q.replace(/\D/g, '');
   const division = (input.division || '').trim();
   const assembly = (input.assembly || '').trim();
+  const mandal = (input.mandal || '').trim();
   const role = (input.role || '').trim().toLowerCase();
   const matchesQuery = (index: number, row: DirectoryContact) => {
     if (!q) return true;
@@ -170,35 +183,76 @@ export function queryContacts(input: {
   const inAssembly = assembly
     ? inDivision.filter((row) => row.assembly === assembly)
     : inDivision;
-  const matched = inAssembly.filter(matchesRole);
+  const inMandal = mandal
+    ? inAssembly.filter((row) => row.mandal === mandal)
+    : inAssembly;
+  const matched = inMandal.filter(matchesRole);
   const page = Math.min(
     Math.max(1, Number(input.page) || 1),
     Math.max(1, Math.ceil(matched.length / pageSize)),
   );
   const start = (page - 1) * pageSize;
+
+  const mandalSet = new Set<string>();
+  const villageSet = new Set<string>();
+  let importantCount = 0;
+  let withDesignationCount = 0;
+  for (const row of matched) {
+    if (row.mandal) mandalSet.add(row.mandal);
+    if (row.village) villageSet.add(row.village);
+    if (row.important && !/^(n|no|false|0)$/i.test(row.important.trim()))
+      importantCount++;
+    if (row.designation) withDesignationCount++;
+  }
+
+  const stats: ContactStats = {
+    totalContacts: matched.length,
+    mandalsCount: mandalSet.size,
+    villagesCount: villageSet.size,
+    importantCount,
+    withDesignationCount,
+    parties: counts(
+      matched,
+      (row) => row.party || 'Unspecified',
+      [],
+    ).slice(0, 8),
+  };
+
   return {
     total: matched.length,
     page,
     pageSize,
     divisions: counts(
       searched.filter(
-        (row) => (!assembly || row.assembly === assembly) && matchesRole(row),
+        (row) =>
+          (!assembly || row.assembly === assembly) &&
+          (!mandal || row.mandal === mandal) &&
+          matchesRole(row),
       ),
       (row) => row.division,
       DIVISION_ORDER,
     ),
     assemblies: counts(
       searched.filter(
-        (row) => (!division || row.division === division) && matchesRole(row),
+        (row) =>
+          (!division || row.division === division) &&
+          (!mandal || row.mandal === mandal) &&
+          matchesRole(row),
       ),
       (row) => row.assembly,
       ASSEMBLY_ORDER,
     ),
+    mandals: counts(
+      inAssembly.filter(matchesRole),
+      (row) => row.mandal,
+      [],
+    ).slice(0, 50),
     roles: counts(
-      inAssembly,
+      inMandal,
       (row) => row.designation || 'No designation',
       [],
     ).slice(0, 400),
+    stats,
     rows: matched.slice(start, start + pageSize),
   };
 }
