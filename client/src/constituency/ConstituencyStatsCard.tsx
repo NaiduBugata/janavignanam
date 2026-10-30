@@ -56,7 +56,7 @@ export function ConstituencyStatsCard({
             <div className="flex items-center gap-2">
               <span
                 className="inline-block h-3 w-3 rounded-full ring-2 ring-background"
-                style={{ backgroundColor: constituency?.color || "#1E3A8A" }}
+                style={{ backgroundColor: constituency?.activeColor || constituency?.color || "#1E3A8A" }}
               />
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {selectedAssembly ? "Assembly Segment" : "District Overview"}

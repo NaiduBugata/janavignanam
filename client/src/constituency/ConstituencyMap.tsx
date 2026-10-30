@@ -51,6 +51,11 @@ export function ConstituencyMap({
   const activeNormalized = selectedAssembly.trim().toLowerCase();
   const divisionNormalized = selectedDivision.trim().toLowerCase();
 
+  const selectedConstituency = useMemo(() => {
+    if (!activeNormalized) return null;
+    return ASSEMBLY_CONSTITUENCIES.find((c) => c.name.toLowerCase() === activeNormalized) || null;
+  }, [activeNormalized]);
+
   const handleMouseMove = useCallback((e: React.MouseEvent, c: AssemblyConstituency) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -99,13 +104,6 @@ export function ConstituencyMap({
   const handleMouseUp = () => {
     setIsDragging(false);
   };
-
-  const selectedConstituency = useMemo(() => {
-    if (!activeNormalized) return null;
-    return ASSEMBLY_CONSTITUENCIES.find(
-      (c) => c.name.toLowerCase() === activeNormalized
-    ) || null;
-  }, [activeNormalized]);
 
   return (
     <div className="relative flex flex-col rounded-2xl border bg-card p-4 shadow-sm transition-all">
@@ -185,20 +183,41 @@ export function ConstituencyMap({
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`,
             transformOrigin: "center center",
+            outline: "none",
           }}
         >
-          {/* Subtle drop-shadow filters */}
           <defs>
-            <filter id="active-glow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="3" stdDeviation="5" floodColor="#1E3A8A" floodOpacity="0.45" />
-            </filter>
-            <filter id="hover-glow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#EA580C" floodOpacity="0.3" />
-            </filter>
-            {/* Clip path preventing any stroke from bleeding outside the district boundary */}
+            <style>{`
+              path, g, svg {
+                outline: none !important;
+                -webkit-tap-highlight-color: transparent;
+              }
+              path:focus, g:focus, svg:focus {
+                outline: none !important;
+              }
+            `}</style>
+            {/* Clip path preventing any fills from bleeding outside the district boundary */}
             <clipPath id="district-clip">
               <path d={MAP_OUTER_BORDER} />
             </clipPath>
+                      {/* Luminous Diagonal Stripe Pattern for Selected Constituency */}
+            <pattern
+              id="active-stripes"
+              width="16"
+              height="16"
+              patternTransform="rotate(45 0 0)"
+              patternUnits="userSpaceOnUse"
+            >
+              <line
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="16"
+                stroke="#FFFFFF"
+                strokeWidth="4"
+                strokeOpacity="0.45"
+              />
+            </pattern>
           </defs>
 
           {/* Group 1: Regional Fills (Clipped inside the outer boundary with zero stroke) */}
@@ -211,33 +230,59 @@ export function ConstituencyMap({
                 divisionNormalized === "all divisions" ||
                 c.division.toLowerCase() === divisionNormalized;
 
-              // Opacity logic: unselected regions dim gracefully when a filter is active
+              // Opacity logic:
+              // - If this constituency is selected, full opacity (1)
+              // - If another constituency is selected, dim to 0.32
+              // - If division is filtered, non-matching constituencies dim to 0.32
               let opacity = 1;
               if (activeNormalized && !isSelected) {
-                opacity = 0.45;
+                opacity = 0.22;
               } else if (divisionNormalized && !matchesDivision) {
-                opacity = 0.35;
+                opacity = 0.22;
               }
 
               return (
                 <path
                   key={c.id}
                   d={c.svgPath}
-                  fill={c.color}
+                  fill={isSelected ? c.activeColor : c.color}
                   stroke="none"
-                  style={{ opacity }}
-                  className="cursor-pointer transition-opacity duration-200"
+                  style={{
+                    opacity: isHovered && !isSelected ? Math.min(1, opacity + 0.35) : opacity,
+                    filter: isSelected
+                      ? "brightness(1.04)"
+                      : isHovered
+                      ? "brightness(1.08)"
+                      : activeNormalized
+                      ? "saturate(0.4)"
+                      : undefined,
+                    outline: "none",
+                    transition: "fill 180ms ease, opacity 180ms ease, filter 180ms ease",
+                  }}
+                  className="cursor-pointer transition-all duration-150 focus:outline-none"
                   tabIndex={0}
                   role="button"
                   aria-label={`${c.name} Assembly Constituency, #${c.acNo}, ${c.division} Division, ${(assemblyCounts[c.name] || 0).toLocaleString()} contacts`}
+                  onMouseDown={(e) => {
+                    // Prevent default focus ring from appearing around SVG bounding box
+                    e.preventDefault();
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSelectAssembly(c.name);
+                    if (isSelected) {
+                      onClearSelection();
+                    } else {
+                      onSelectAssembly(c.name);
+                    }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      onSelectAssembly(c.name);
+                      if (isSelected) {
+                        onClearSelection();
+                      } else {
+                        onSelectAssembly(c.name);
+                      }
                     }
                   }}
                   onMouseEnter={() => handleMouseEnter(c)}
@@ -247,21 +292,17 @@ export function ConstituencyMap({
               );
             })}
 
-            {/* Selected Constituency Highlight Overlay */}
+                        {/* Luminous Diagonal Stripe Overlay on Selected Constituency */}
             {selectedConstituency && (
               <path
                 d={selectedConstituency.svgPath}
-                fill="#FEF3C7"
-                fillOpacity={0.4}
-                stroke="#1E3A8A"
-                strokeWidth={3.5}
-                strokeLinejoin="round"
-                filter="url(#active-glow)"
+                fill="url(#active-stripes)"
+                stroke="none"
                 className="pointer-events-none"
               />
             )}
 
-            {/* Internal Orange Borders (Single clean path between constituencies, NEVER on outer perimeter) */}
+            {/* Internal Orange Dividing Lines (Drawn once cleanly between constituencies, never on outer perimeter) */}
             <path
               d={MAP_INTERNAL_BORDER}
               fill="#FB6116"
@@ -284,7 +325,7 @@ export function ConstituencyMap({
             className="pointer-events-none"
           />
 
-          {/* Group 3: Text Labels Styled Exactly from Reference Map */}
+          {/* Group 3: Text Labels Styled Directly from Reference Map */}
           {ASSEMBLY_CONSTITUENCIES.map((c) => {
             const isSelected = activeNormalized === c.name.toLowerCase();
             const matchesDivision =
@@ -294,7 +335,7 @@ export function ConstituencyMap({
 
             let opacity = 1;
             if (activeNormalized && !isSelected) {
-              opacity = 0.55;
+              opacity = 0.4;
             } else if (divisionNormalized && !matchesDivision) {
               opacity = 0.4;
             }
@@ -304,27 +345,42 @@ export function ConstituencyMap({
                 key={`label-${c.id}`}
                 transform={`translate(${c.labelPos[0]}, ${c.labelPos[1]})${c.rotation ? ` rotate(${c.rotation})` : ""}`}
                 className="pointer-events-none select-none transition-opacity duration-200"
-                style={{ opacity }}
+                style={{ opacity, outline: "none" }}
               >
-                {/* Active selection badge pill behind text */}
+                {/* Active selection badge pill behind text when selected */}
                 {isSelected && (
-                  <rect
-                    x="-66"
-                    y="-22"
-                    width="132"
-                    height="48"
-                    rx="8"
-                    fill="#1E3A8A"
-                    fillOpacity={0.92}
-                    stroke="#FFFFFF"
-                    strokeWidth={1.5}
-                    className="drop-shadow-md"
-                  />
+                  <g>
+                    {/* Outer ambient glow halo */}
+                    <rect
+                      x="-71"
+                      y="-25"
+                      width="142"
+                      height="54"
+                      rx="12"
+                      fill="#0F172A"
+                      fillOpacity={0.25}
+                    />
+                    {/* Main elevated navy badge */}
+                    <rect
+                      x="-68"
+                      y="-23"
+                      width="136"
+                      height="50"
+                      rx="10"
+                      fill="#1E3A8A"
+                      fillOpacity={0.98}
+                      stroke="#FFFFFF"
+                      strokeWidth={2}
+                      className="drop-shadow-lg"
+                    />
+                    {/* Active green status beacon */}
+                    <circle cx="-52" cy="-2" r="4" fill="#22C55E" />
+                  </g>
                 )}
 
                 {/* Constituency Name */}
                 <text
-                  x="0"
+                  x={isSelected ? "5" : "0"}
                   y="-2"
                   textAnchor="middle"
                   fill={isSelected ? "#FFFFFF" : MAP_COLORS.labelColor}
@@ -338,8 +394,8 @@ export function ConstituencyMap({
 
                 {/* Delimitation Segment Number */}
                 <text
-                  x="0"
-                  y={isSelected ? "17" : "19"}
+                  x={isSelected ? "5" : "0"}
+                  y={isSelected ? "18" : "19"}
                   textAnchor="middle"
                   fill={isSelected ? "#FDE68A" : MAP_COLORS.labelColor}
                   fontSize="16"
@@ -417,7 +473,13 @@ export function ConstituencyMap({
               <button
                 key={c.id}
                 type="button"
-                onClick={() => onSelectAssembly(c.name)}
+                onClick={() => {
+                  if (isSelected) {
+                    onClearSelection();
+                  } else {
+                    onSelectAssembly(c.name);
+                  }
+                }}
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-all ${
                   isSelected
                     ? "border-primary bg-primary text-primary-foreground font-semibold shadow-sm"
@@ -426,7 +488,7 @@ export function ConstituencyMap({
               >
                 <span
                   className="h-2.5 w-2.5 rounded-full ring-1 ring-border"
-                  style={{ backgroundColor: c.color }}
+                  style={{ backgroundColor: isSelected ? c.activeColor : c.color }}
                 />
                 <span className="font-medium">{c.name}</span>
                 <span className="text-[10px] opacity-75 font-serif">({c.acNo})</span>

@@ -9,6 +9,7 @@ export interface AssemblyConstituency {
   acNo: number;
   division: string;
   color: string;
+  activeColor: string;
   mandals: string[];
   labelPos: [number, number];
   rotation?: number;
@@ -39,6 +40,7 @@ export const ASSEMBLY_CONSTITUENCIES: AssemblyConstituency[] = [
     "acNo": 220,
     "division": "Gurazala",
     "color": "#A5D7FC",
+    "activeColor": "#38BDF8",
     "mandals": [
       "Durgi",
       "Karempudi",
@@ -60,6 +62,7 @@ export const ASSEMBLY_CONSTITUENCIES: AssemblyConstituency[] = [
     "acNo": 219,
     "division": "Gurazala",
     "color": "#BFFCC3",
+    "activeColor": "#4ADE80",
     "mandals": [
       "Dachepalli",
       "Gurazala",
@@ -80,6 +83,7 @@ export const ASSEMBLY_CONSTITUENCIES: AssemblyConstituency[] = [
     "acNo": 204,
     "division": "Sattenapalli",
     "color": "#E5C9FD",
+    "activeColor": "#C084FC",
     "mandals": [
       "Amaravathi",
       "Atchampet",
@@ -101,6 +105,7 @@ export const ASSEMBLY_CONSTITUENCIES: AssemblyConstituency[] = [
     "acNo": 217,
     "division": "Sattenapalli",
     "color": "#FEB9AA",
+    "activeColor": "#FB923C",
     "mandals": [
       "Muppalla",
       "Nekarikallu",
@@ -121,6 +126,7 @@ export const ASSEMBLY_CONSTITUENCIES: AssemblyConstituency[] = [
     "acNo": 216,
     "division": "Narasaraopet",
     "color": "#FDFAAB",
+    "activeColor": "#FACC15",
     "mandals": [
       "Narasaraopet",
       "Rompicherla"
@@ -139,6 +145,7 @@ export const ASSEMBLY_CONSTITUENCIES: AssemblyConstituency[] = [
     "acNo": 218,
     "division": "Narasaraopet",
     "color": "#B2FCED",
+    "activeColor": "#2DD4BF",
     "mandals": [
       "Bollapalli",
       "Ipur",
@@ -160,6 +167,7 @@ export const ASSEMBLY_CONSTITUENCIES: AssemblyConstituency[] = [
     "acNo": 215,
     "division": "Narasaraopet",
     "color": "#FED8E5",
+    "activeColor": "#F472B6",
     "mandals": [
       "Chilakaluripet",
       "Edlapadu",
