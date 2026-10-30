@@ -1,0 +1,11 @@
+:root { color: #e7eaf0; background: #10131a; font-family: Inter, system-ui, sans-serif; }
+* { box-sizing: border-box; } body { margin: 0; } main { max-width: 860px; margin: 0 auto; padding: 64px 24px; }
+header { margin-bottom: 32px; } .eyebrow { color: #8d7aff; letter-spacing: .14em; font-size: 12px; font-weight: 700; }
+h1 { font-size: clamp(36px, 7vw, 64px); margin: 12px 0; letter-spacing: -.05em; } h2 { margin: 0; font-size: 18px; }
+p { color: #a7adbd; line-height: 1.6; } .panel { background: #181c25; border: 1px solid #292f3d; border-radius: 18px; padding: 24px; margin-top: 16px; }
+.upload { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; } .upload > div:first-child { flex: 1; min-width: 220px; }
+.button, button { background: #806cff; color: white; border: 0; border-radius: 10px; padding: 11px 16px; font-weight: 700; cursor: pointer; } input { display: none; }
+.doc { width: 100%; padding: 12px; border-top: 1px solid #292f3d; display: flex; justify-content: space-between; } small { color: #8e96a8; }
+.chat { min-height: 360px; } .answer { background: #202633; border-radius: 12px; padding: 18px; margin: 18px 0; } .answer-label { color: #a896ff; font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+textarea { width: 100%; min-height: 90px; resize: vertical; background: #10131a; color: #e7eaf0; border: 1px solid #343b4b; border-radius: 10px; padding: 14px; font: inherit; margin-bottom: 10px; } form button { float: right; }
+details { border-top: 1px solid #343b4b; padding-top: 12px; } summary { cursor: pointer; color: #b7adff; } .source { margin: 14px 0; padding: 12px; border-left: 2px solid #806cff; } .source p { font-size: 14px; margin: 6px 0 0; }.source small { margin-left: 10px; }.error { clear: both; color: #ff9a9a; padding-top: 16px; }

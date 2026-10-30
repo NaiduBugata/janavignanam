@@ -1,0 +1,459 @@
+Folder PATH listing for volume Windows-SSD
+Volume serial number is 50B4-218E
+C:.
+|   .gitignore
+|   DEPLOYMENT.md
+|   existing-project.txt
+|   JanaVignanam-Project-Report.pdf
+|   vercel.json
+|   
++---client
+|   |   .env.example
+|   |   .gitignore
+|   |   .prettierignore
+|   |   eslint.config.mjs
+|   |   index.html
+|   |   package-lock.json
+|   |   package.json
+|   |   prettier.config.js
+|   |   README.md
+|   |   tsconfig.app.json
+|   |   tsconfig.json
+|   |   tsconfig.node.json
+|   |   vercel.json
+|   |   vite.config.ts
+|   |   
+|   +---public
+|   |   |   .git-keep
+|   |   |   offline.html
+|   |   |   site.webmanifest
+|   |   |   sw.js
+|   |   |   
+|   |   \---icon
+|   |           icon-192.png
+|   |           icon-512.png
+|   |           icon-maskable-192.png
+|   |           icon-maskable-512.png
+|   |           
+|   \---src
+|       |   App.tsx
+|       |   CaseRecordForm.tsx
+|       |   ConstituencyDirectory.tsx
+|       |   index.css
+|       |   main.tsx
+|       |   PlaceFilters.tsx
+|       |   places.ts
+|       |   ProgressPage.tsx
+|       |   ReportPage.tsx
+|       |   SimpleRecordForm.tsx
+|       |   UploadPage.tsx
+|       |   vite-env.d.ts
+|       |   
+|       +---constituency
+|       |       constituency-data.ts
+|       |       ConstituencyMap.tsx
+|       |       ConstituencyStatsCard.tsx
+|       |       palnadu-geojson.json
+|       |       
+|       +---lib
+|       |       api.ts
+|       |       apiBase.ts
+|       |       
+|       +---mediasphere
+|       |   |   mediasphere.css
+|       |   |   
+|       |   +---components
+|       |   |   +---analytics
+|       |   |   |       AnalyticsDashboard.tsx
+|       |   |   |       Charts.jsx
+|       |   |   |       KeywordBadges.jsx
+|       |   |   |       PositiveDevelopments.jsx
+|       |   |   |       PositiveSummaryStrip.jsx
+|       |   |   |       
+|       |   |   +---birthdays
+|       |   |   |       AdminBirthdays.jsx
+|       |   |   |       AdminMessages.jsx
+|       |   |   |       
+|       |   |   +---common
+|       |   |   |       CategoryChip.jsx
+|       |   |   |       EmptyState.jsx
+|       |   |   |       ErrorState.jsx
+|       |   |   |       Modal.jsx
+|       |   |   |       PriorityBadge.jsx
+|       |   |   |       SentimentBadge.jsx
+|       |   |   |       Skeleton.jsx
+|       |   |   |       SourceBadge.jsx
+|       |   |   |       Spinner.jsx
+|       |   |   |       StatCard.jsx
+|       |   |   |       
+|       |   |   +---dashboard
+|       |   |   |       ConstituencySlider.jsx
+|       |   |   |       CriticalIssuesSlot.jsx
+|       |   |   |       PriorityProblems.jsx
+|       |   |   |       RecentActivity.jsx
+|       |   |   |       SummaryCards.jsx
+|       |   |   |       
+|       |   |   +---departments
+|       |   |   |       DepartmentDetailPanel.jsx
+|       |   |   |       DepartmentOverviewGrid.jsx
+|       |   |   |       
+|       |   |   +---desk
+|       |   |   |       AdminAccess.jsx
+|       |   |   |       
+|       |   |   +---editorial
+|       |   |   |       ArticleMedia.jsx
+|       |   |   |       FeaturedStory.jsx
+|       |   |   |       LatestNewsRow.jsx
+|       |   |   |       TopStoriesRail.jsx
+|       |   |   |       TrendingBar.jsx
+|       |   |   |       
+|       |   |   +---nav
+|       |   |   |       ThemeToggle.jsx
+|       |   |   |       TopNav.jsx
+|       |   |   |       
+|       |   |   +---news
+|       |   |   |       Filters.jsx
+|       |   |   |       NewsCard.jsx
+|       |   |   |       NewsCardGrid.jsx
+|       |   |   |       NewsModal.jsx
+|       |   |   |       NewsTable.jsx
+|       |   |   |       NewsViewToggle.jsx
+|       |   |   |       
+|       |   |   +---problems
+|       |   |   |       ActionRequired.jsx
+|       |   |   |       PrioritySummary.jsx
+|       |   |   |       ProblemFilters.jsx
+|       |   |   |       
+|       |   |   +---settings
+|       |   |   |       PrefControls.jsx
+|       |   |   |       
+|       |   |   +---upload
+|       |   |   |       AdminUpload.jsx
+|       |   |   |       
+|       |   |   \---visits
+|       |   |           AdminVisits.jsx
+|       |   |           VisitKindBadge.jsx
+|       |   |           VisitsSection.jsx
+|       |   |           
+|       |   +---context
+|       |   |       NewsContext.jsx
+|       |   |       ThemeContext.jsx
+|       |   |       
+|       |   +---hooks
+|       |   |       useEditorialFeed.js
+|       |   |       useFilters.js
+|       |   |       useNews.js
+|       |   |       
+|       |   +---layouts
+|       |   |       AppShell.jsx
+|       |   |       
+|       |   +---pages
+|       |   |       AdminPage.jsx
+|       |   |       AnalyticsPage.jsx
+|       |   |       DepartmentsPage.jsx
+|       |   |       NewsPage.jsx
+|       |   |       ProblemsPage.jsx
+|       |   |       ProfilePage.jsx
+|       |   |       
+|       |   +---services
+|       |   |       adminApi.js
+|       |   |       api.js
+|       |   |       birthdaysApi.js
+|       |   |       reportsApi.ts
+|       |   |       visitsApi.js
+|       |   |       
+|       |   \---utils
+|       |           articleMedia.js
+|       |           departments.js
+|       |           derive.js
+|       |           format.js
+|       |           settings.js
+|       |           stats.js
+|       |           
+|       \---news
+|               AdminDesk.tsx
+|               NewsDesk.tsx
+|               
++---scripts
+|       audit-articles-sql.mjs
+|       test-e2e-flow.mjs
+|       
+\---server
+    |   .dockerignore
+    |   .env.example
+    |   .prettierrc
+    |   Dockerfile
+    |   eslint.config.mjs
+    |   nest-cli.json
+    |   package-lock.json
+    |   package.json
+    |   railway.toml
+    |   README.md
+    |   tsconfig.build.json
+    |   tsconfig.json
+    |   tsconfig.spec.json
+    |   
+    +---scripts
+    |       export-to-neon.mjs
+    |       
+    +---src
+    |   |   app.module.ts
+    |   |   main.ts
+    |   |   
+    |   +---admin
+    |   |   |   admin.controller.ts
+    |   |   |   admin.module.ts
+    |   |   |   demo-data.ts
+    |   |   |   
+    |   |   +---auth
+    |   |   |       admin-auth.controller.ts
+    |   |   |       admin-auth.service.spec.ts
+    |   |   |       admin-auth.service.ts
+    |   |   |       
+    |   |   +---desk
+    |   |   |       admin-desk.controller.ts
+    |   |   |       admin-desk.service.spec.ts
+    |   |   |       admin-desk.service.ts
+    |   |   |       
+    |   |   +---fetch
+    |   |   |       admin-fetch.service.ts
+    |   |   |       
+    |   |   \---upload
+    |   |           admin-upload.controller.ts
+    |   |           admin-upload.service.ts
+    |   |           admin-upload.spec.ts
+    |   |           admin-upload.ts
+    |   |           
+    |   +---ai
+    |   |       groq-analyzer.spec.ts
+    |   |       groq-analyzer.ts
+    |   |       groq-keys.spec.ts
+    |   |       groq-keys.ts
+    |   |       groq-normalizer.ts
+    |   |       
+    |   +---birthdays
+    |   |       birthdays-scheduler.service.ts
+    |   |       birthdays.controller.ts
+    |   |       birthdays.module.ts
+    |   |       birthdays.service.ts
+    |   |       birthdays.spec.ts
+    |   |       birthdays.ts
+    |   |       messages.controller.ts
+    |   |       messages.service.ts
+    |   |       messages.spec.ts
+    |   |       messages.ts
+    |   |       
+    |   +---chatbot
+    |   |   |   chatbot-database-queries.spec.ts
+    |   |   |   chatbot.module.spec.ts
+    |   |   |   chatbot.module.ts
+    |   |   |   chatbot.service.spec.ts
+    |   |   |   chatbot.service.ts
+    |   |   |   followup-contacts.spec.ts
+    |   |   |   followup-contacts.ts
+    |   |   |   grievance-priority.ts
+    |   |   |   knowledge.ts
+    |   |   |   news-context.ts
+    |   |   |   
+    |   |   \---data
+    |   |           knowledge.json
+    |   |           
+    |   +---common
+    |   |   +---decorators
+    |   |   |       admin.decorator.ts
+    |   |   |       
+    |   |   +---guards
+    |   |   |       admin-auth.guard.ts
+    |   |   |       
+    |   |   +---types
+    |   |   |       article.ts
+    |   |   |       
+    |   |   \---utils
+    |   |           dates.spec.ts
+    |   |           dates.ts
+    |   |           iso-time.ts
+    |   |           truthy.ts
+    |   |           
+    |   +---config
+    |   |       configuration.ts
+    |   |       env.validation.ts
+    |   |       
+    |   +---database
+    |   |   |   database.module.ts
+    |   |   |   database.service.spec.ts
+    |   |   |   database.service.ts
+    |   |   |   pg-collection.ts
+    |   |   |   
+    |   |   \---repositories
+    |   |           article.repository.ts
+    |   |           daily-report.repository.ts
+    |   |           notification-status.repository.ts
+    |   |           pipeline-state.repository.ts
+    |   |           
+    |   +---health
+    |   |       health.controller.ts
+    |   |       health.module.ts
+    |   |       
+    |   +---news
+    |   |       news-report.spec.ts
+    |   |       news-report.ts
+    |   |       news.controller.ts
+    |   |       news.module.ts
+    |   |       news.service.spec.ts
+    |   |       news.service.ts
+    |   |       
+    |   +---notifications
+    |   |       failure-email.spec.ts
+    |   |       failure-email.ts
+    |   |       news-email.spec.ts
+    |   |       news-email.ts
+    |   |       notifications.controller.ts
+    |   |       notifications.module.ts
+    |   |       notifications.service.spec.ts
+    |   |       notifications.service.ts
+    |   |       
+    |   +---pipeline
+    |   |   |   combined-cycle.spec.ts
+    |   |   |   combined-cycle.ts
+    |   |   |   pipeline-health.service.ts
+    |   |   |   pipeline-history.service.ts
+    |   |   |   pipeline-lock.service.spec.ts
+    |   |   |   pipeline-lock.service.ts
+    |   |   |   pipeline-runner.service.spec.ts
+    |   |   |   pipeline-runner.service.ts
+    |   |   |   pipeline-scheduler.service.spec.ts
+    |   |   |   pipeline-scheduler.service.ts
+    |   |   |   pipeline-state.service.ts
+    |   |   |   pipeline.controller.ts
+    |   |   |   pipeline.module.ts
+    |   |   |   python-bridge.service.spec.ts
+    |   |   |   python-bridge.service.ts
+    |   |   |   
+    |   |   +---data
+    |   |   |       location_dictionary.json
+    |   |   |       
+    |   |   \---native
+    |   |           combined-pipeline.service.spec.ts
+    |   |           combined-pipeline.service.ts
+    |   |           constituency.spec.ts
+    |   |           constituency.ts
+    |   |           fuzzy-title.ts
+    |   |           json-repair.ts
+    |   |           pipeline-alerts.spec.ts
+    |   |           pipeline-alerts.ts
+    |   |           pipeline-notifications.ts
+    |   |           problem-id.ts
+    |   |           quality.spec.ts
+    |   |           quality.ts
+    |   |           religion.spec.ts
+    |   |           religion.ts
+    |   |           
+    |   +---reports
+    |   |       report-email.spec.ts
+    |   |       report-email.ts
+    |   |       report-html.ts
+    |   |       report-pdf.ts
+    |   |       report-stats.ts
+    |   |       report-summary.ts
+    |   |       reports-scheduler.service.ts
+    |   |       reports.controller.ts
+    |   |       reports.module.ts
+    |   |       reports.service.spec.ts
+    |   |       reports.service.ts
+    |   |       
+    |   +---sources
+    |   |   |   source-collector.ts
+    |   |   |   
+    |   |   +---lokal
+    |   |   |       lokal.api.spec.ts
+    |   |   |       lokal.api.ts
+    |   |   |       lokal.collector.spec.ts
+    |   |   |       lokal.collector.ts
+    |   |   |       lokal.constants.ts
+    |   |   |       lokal.extractor.ts
+    |   |   |       lokal.models.ts
+    |   |   |       lokal.normalizer.ts
+    |   |   |       lokal.parser.ts
+    |   |   |       
+    |   |   +---sakshi
+    |   |   |   |   sakshi.collector.spec.ts
+    |   |   |   |   sakshi.collector.ts
+    |   |   |   |   sakshi.constants.ts
+    |   |   |   |   sakshi.extractor.ts
+    |   |   |   |   sakshi.feed.ts
+    |   |   |   |   sakshi.http.ts
+    |   |   |   |   sakshi.models.ts
+    |   |   |   |   sakshi.normalizer.ts
+    |   |   |   |   sakshi.parser.ts
+    |   |   |   |   
+    |   |   |   \---fixtures
+    |   |   |           article_page.html
+    |   |   |           tag_page.html
+    |   |   |           
+    |   |   \---youtube
+    |   |           youtube.collector.spec.ts
+    |   |           youtube.collector.ts
+    |   |           youtube.constants.ts
+    |   |           youtube.models.ts
+    |   |           youtube.normalizer.ts
+    |   |           youtube.parser.ts
+    |   |           youtube.search.ts
+    |   |           youtube.transcript.ts
+    |   |           
+    |   +---visits
+    |   |       visit-followup.scheduler.ts
+    |   |       visit-followup.service.ts
+    |   |       visit-followup.spec.ts
+    |   |       visit-followup.ts
+    |   |       visits-import.spec.ts
+    |   |       visits-import.ts
+    |   |       visits-template.ts
+    |   |       visits.controller.spec.ts
+    |   |       visits.controller.ts
+    |   |       visits.module.ts
+    |   |       visits.service.spec.ts
+    |   |       visits.service.ts
+    |   |       
+    |   +---whatsapp
+    |   |       grievance-progress.service.spec.ts
+    |   |       grievance-progress.service.ts
+    |   |       whatsapp-chatbot.binder.spec.ts
+    |   |       whatsapp-chatbot.binder.ts
+    |   |       whatsapp.audience.ts
+    |   |       whatsapp.controller.ts
+    |   |       whatsapp.lifecycle.ts
+    |   |       whatsapp.messages.ts
+    |   |       whatsapp.module.ts
+    |   |       whatsapp.muted.ts
+    |   |       whatsapp.notify.ts
+    |   |       whatsapp.parser.ts
+    |   |       whatsapp.repository.ts
+    |   |       whatsapp.send.ts
+    |   |       whatsapp.spec.ts
+    |   |       whatsapp.webhook.ts
+    |   |       
+    |   \---workspace
+    |       |   contacts-directory.spec.ts
+    |       |   contacts-directory.ts
+    |       |   progress-report.ts
+    |       |   workspace.controller.ts
+    |       |   workspace.dto.ts
+    |       |   workspace.module.ts
+    |       |   workspace.service.spec.ts
+    |       |   workspace.service.ts
+    |       |   
+    |       \---data
+    |               palnadu-contacts.json
+    |               
+    \---test
+        |   admin-pipeline.e2e-spec.ts
+        |   app.e2e-spec.ts
+        |   jest-e2e.json
+        |   live-native.e2e-spec.ts
+        |   write-path.e2e-spec.ts
+        |   
+        \---fixtures
+                mock_cycle_fail.py
+                mock_cycle_ok.py
+                mock_cycle_slow.py
+                
