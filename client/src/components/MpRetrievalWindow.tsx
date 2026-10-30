@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { api } from "../lib/api";
 import {
   Sparkles,
   Send,
@@ -76,18 +77,10 @@ export function MpRetrievalWindow() {
     setError(null);
 
     try {
-      const res = await fetch("/api/rag/query", {
+      const data = await api<QueryResponse>("/api/rag/query", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q }),
+        body: { question: q },
       });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || errData.detail || "Failed to retrieve answers");
-      }
-
-      const data: QueryResponse = await res.json();
       setResponse(data);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error contacting retrieval engine");
