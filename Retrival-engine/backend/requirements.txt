@@ -1,0 +1,12 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic-settings==2.7.1
+python-docx==1.1.2
+numpy==2.3.4
+sentence-transformers==3.3.1
+groq==0.15.0
+psycopg[binary]==3.2.13
+psycopg-pool==3.2.6
+pytest==8.3.4
+httpx==0.28.1

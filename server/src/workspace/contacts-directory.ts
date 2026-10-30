@@ -211,11 +211,10 @@ export function queryContacts(input: {
     villagesCount: villageSet.size,
     importantCount,
     withDesignationCount,
-    parties: counts(
-      matched,
-      (row) => row.party || 'Unspecified',
-      [],
-    ).slice(0, 8),
+    parties: counts(matched, (row) => row.party || 'Unspecified', []).slice(
+      0,
+      8,
+    ),
   };
 
   return {

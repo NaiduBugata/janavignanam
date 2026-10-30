@@ -1,0 +1,8 @@
+.env
+.git
+backend/data
+backend/tests
+frontend/node_modules
+frontend/dist
+__pycache__
+*.pyc

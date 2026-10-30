@@ -13,16 +13,14 @@ export default defineConfig([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs.flat["recommended-latest"],
+      reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
       "prefer-const": "off",
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
+      "react-refresh/only-export-components": "off",
+      "react-hooks/set-state-in-effect": "off",
     },
     languageOptions: {
       ecmaVersion: 2020,

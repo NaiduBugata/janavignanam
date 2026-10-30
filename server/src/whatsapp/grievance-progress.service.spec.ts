@@ -137,7 +137,9 @@ describe('GrievanceProgressService', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          messages: [{ id: 'wamid_resp_' + Math.random().toString(36).slice(2) }],
+          messages: [
+            { id: 'wamid_resp_' + Math.random().toString(36).slice(2) },
+          ],
         }),
       } as any;
     });
@@ -169,7 +171,9 @@ describe('GrievanceProgressService', () => {
     });
 
     it('ignores non-gpm events when there is no active session', () => {
-      const event = createMockEvent({ text: 'Hello, what is the latest news?' });
+      const event = createMockEvent({
+        text: 'Hello, what is the latest news?',
+      });
       expect(service.isGpmEvent(event, adminPhone)).toBe(false);
     });
   });
@@ -182,7 +186,10 @@ describe('GrievanceProgressService', () => {
     });
 
     it('denies access to unknown phone numbers', async () => {
-      const event = createMockEvent({ sender: unauthorizedPhone, text: 'progress' });
+      const event = createMockEvent({
+        sender: unauthorizedPhone,
+        text: 'progress',
+      });
       await service.handleEvent(event, unauthorizedPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
@@ -211,7 +218,10 @@ describe('GrievanceProgressService', () => {
     });
 
     it('lists authorized grievances with pagination support', async () => {
-      const event = createMockEvent({ sender: adminPhone, listId: 'gpm:update' });
+      const event = createMockEvent({
+        sender: adminPhone,
+        listId: 'gpm:update',
+      });
       await service.handleEvent(event, adminPhone, mockFetch, env);
 
       expect(mockWorkspace.list).toHaveBeenCalledWith('grievances');
@@ -229,27 +239,45 @@ describe('GrievanceProgressService', () => {
   describe('Reference-Number Search', () => {
     it('finds and directly opens grievance when exact reference number is searched', async () => {
       // 1. Initiate search
-      const searchInit = createMockEvent({ sender: adminPhone, listId: 'gpm:search' });
+      const searchInit = createMockEvent({
+        sender: adminPhone,
+        listId: 'gpm:search',
+      });
       await service.handleEvent(searchInit, adminPhone, mockFetch, env);
-      expect(sentBodies[0].text.body).toContain('Search Grievances by Reference #');
+      expect(sentBodies[0].text.body).toContain(
+        'Search Grievances by Reference #',
+      );
 
       // 2. Reply with SR Number
-      const searchReply = createMockEvent({ sender: adminPhone, text: 'JV-GR-2026-0101' });
+      const searchReply = createMockEvent({
+        sender: adminPhone,
+        text: 'JV-GR-2026-0101',
+      });
       await service.handleEvent(searchReply, adminPhone, mockFetch, env);
 
       // Single match directly opens stage selector
       expect(sentBodies.length).toBe(2);
       expect(sentBodies[1].interactive.type).toBe('list');
-      expect(sentBodies[1].interactive.body.text).toContain('Update Progress Stage');
-      expect(sentBodies[1].interactive.body.text).toContain('Water pipe leakage');
+      expect(sentBodies[1].interactive.body.text).toContain(
+        'Update Progress Stage',
+      );
+      expect(sentBodies[1].interactive.body.text).toContain(
+        'Water pipe leakage',
+      );
     });
 
     it('displays filtered list when multiple records match query keyword', async () => {
-      const searchInit = createMockEvent({ sender: adminPhone, listId: 'gpm:search' });
+      const searchInit = createMockEvent({
+        sender: adminPhone,
+        listId: 'gpm:search',
+      });
       await service.handleEvent(searchInit, adminPhone, mockFetch, env);
 
       // Reply with common query "JV-GR"
-      const searchReply = createMockEvent({ sender: adminPhone, text: 'JV-GR' });
+      const searchReply = createMockEvent({
+        sender: adminPhone,
+        text: 'JV-GR',
+      });
       await service.handleEvent(searchReply, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(2);
@@ -260,30 +288,46 @@ describe('GrievanceProgressService', () => {
     });
 
     it('displays clear empty state when no records match search', async () => {
-      const searchInit = createMockEvent({ sender: adminPhone, listId: 'gpm:search' });
+      const searchInit = createMockEvent({
+        sender: adminPhone,
+        listId: 'gpm:search',
+      });
       await service.handleEvent(searchInit, adminPhone, mockFetch, env);
 
-      const searchReply = createMockEvent({ sender: adminPhone, text: 'nonexistent999' });
+      const searchReply = createMockEvent({
+        sender: adminPhone,
+        text: 'nonexistent999',
+      });
       await service.handleEvent(searchReply, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(2);
       expect(sentBodies[1].interactive.type).toBe('button');
-      expect(sentBodies[1].interactive.body.text).toContain('No Grievances Found');
+      expect(sentBodies[1].interactive.body.text).toContain(
+        'No Grievances Found',
+      );
     });
   });
 
   describe('Complete Progress Update Workflow (Steps 1 to 8)', () => {
     it('executes full end-to-end stage update, note, previous status, confirmation and DB persistence', async () => {
       // 1. Select grievance to update
-      const selEvent = createMockEvent({ sender: adminPhone, listId: `gpm:sel:${sampleRecord.id}:update` });
+      const selEvent = createMockEvent({
+        sender: adminPhone,
+        listId: `gpm:sel:${sampleRecord.id}:update`,
+      });
       await service.handleEvent(selEvent, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
       expect(sentBodies[0].interactive.type).toBe('list');
-      expect(sentBodies[0].interactive.body.text).toContain('Update Progress Stage');
+      expect(sentBodies[0].interactive.body.text).toContain(
+        'Update Progress Stage',
+      );
 
       // 2. Select stage 1 (Inspection)
-      const stageEvent = createMockEvent({ sender: adminPhone, listId: `gpm:stg:${sampleRecord.id}:1` });
+      const stageEvent = createMockEvent({
+        sender: adminPhone,
+        listId: `gpm:stg:${sampleRecord.id}:1`,
+      });
       await service.handleEvent(stageEvent, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(2);
@@ -291,7 +335,10 @@ describe('GrievanceProgressService', () => {
       expect(sentBodies[1].interactive.body.text).toContain('Inspection');
 
       // 3. Select status 'Completed'
-      const statusEvent = createMockEvent({ sender: adminPhone, buttonId: 'gpm:status:Completed' });
+      const statusEvent = createMockEvent({
+        sender: adminPhone,
+        buttonId: 'gpm:status:Completed',
+      });
       await service.handleEvent(statusEvent, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(3);
@@ -299,7 +346,10 @@ describe('GrievanceProgressService', () => {
       expect(sentBodies[2].text.body).toContain('Enter Progress Note');
 
       // 4. Enter progress note
-      const noteEvent = createMockEvent({ sender: adminPhone, text: 'Site inspected by AE Ramesh. Leakage localized.' });
+      const noteEvent = createMockEvent({
+        sender: adminPhone,
+        text: 'Site inspected by AE Ramesh. Leakage localized.',
+      });
       await service.handleEvent(noteEvent, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(4);
@@ -312,7 +362,10 @@ describe('GrievanceProgressService', () => {
       expect(reviewText).toContain('Site inspected by AE Ramesh');
 
       // 5. Confirm and Save
-      const confirmEvent = createMockEvent({ sender: adminPhone, buttonId: 'gpm:confirm:yes' });
+      const confirmEvent = createMockEvent({
+        sender: adminPhone,
+        buttonId: 'gpm:confirm:yes',
+      });
       await service.handleEvent(confirmEvent, adminPhone, mockFetch, env);
 
       // Verify WorkspaceService saveProgress was called with exact stages
@@ -329,29 +382,42 @@ describe('GrievanceProgressService', () => {
       // Verify success message sent with progress percentage and bar
       expect(sentBodies.length).toBe(5);
       expect(sentBodies[4].interactive.type).toBe('button');
-      expect(sentBodies[4].interactive.body.text).toContain('Progress Saved Successfully');
-      expect(sentBodies[4].interactive.body.text).toContain('2 of 4 stages completed (50%)');
+      expect(sentBodies[4].interactive.body.text).toContain(
+        'Progress Saved Successfully',
+      );
+      expect(sentBodies[4].interactive.body.text).toContain(
+        '2 of 4 stages completed (50%)',
+      );
       expect(sentBodies[4].interactive.body.text).toContain('🟩🟩⬜⬜ 50%');
     });
 
     it('protects against duplicate webhook submission using idempotency control', async () => {
       // 1. Select grievance
       await service.handleEvent(
-        createMockEvent({ sender: adminPhone, listId: `gpm:sel:${sampleRecord.id}:update` }),
+        createMockEvent({
+          sender: adminPhone,
+          listId: `gpm:sel:${sampleRecord.id}:update`,
+        }),
         adminPhone,
         mockFetch,
         env,
       );
       // 2. Select stage 0 (Work started)
       await service.handleEvent(
-        createMockEvent({ sender: adminPhone, listId: `gpm:stg:${sampleRecord.id}:0` }),
+        createMockEvent({
+          sender: adminPhone,
+          listId: `gpm:stg:${sampleRecord.id}:0`,
+        }),
         adminPhone,
         mockFetch,
         env,
       );
       // 3. Status
       await service.handleEvent(
-        createMockEvent({ sender: adminPhone, buttonId: 'gpm:status:Completed' }),
+        createMockEvent({
+          sender: adminPhone,
+          buttonId: 'gpm:status:Completed',
+        }),
         adminPhone,
         mockFetch,
         env,
@@ -365,7 +431,11 @@ describe('GrievanceProgressService', () => {
       );
       // 5. First confirmation
       await service.handleEvent(
-        createMockEvent({ sender: adminPhone, buttonId: 'gpm:confirm:yes', messageId: 'msg_first' }),
+        createMockEvent({
+          sender: adminPhone,
+          buttonId: 'gpm:confirm:yes',
+          messageId: 'msg_first',
+        }),
         adminPhone,
         mockFetch,
         env,
@@ -375,7 +445,11 @@ describe('GrievanceProgressService', () => {
 
       // 6. Duplicate delivery immediately after
       await service.handleEvent(
-        createMockEvent({ sender: adminPhone, buttonId: 'gpm:confirm:yes', messageId: 'msg_retry' }),
+        createMockEvent({
+          sender: adminPhone,
+          buttonId: 'gpm:confirm:yes',
+          messageId: 'msg_retry',
+        }),
         adminPhone,
         mockFetch,
         env,
@@ -387,13 +461,19 @@ describe('GrievanceProgressService', () => {
 
     it('allows skipping the progress note when user types skip', async () => {
       await service.handleEvent(
-        createMockEvent({ sender: adminPhone, listId: `gpm:stg:${sampleRecord.id}:0` }),
+        createMockEvent({
+          sender: adminPhone,
+          listId: `gpm:stg:${sampleRecord.id}:0`,
+        }),
         adminPhone,
         mockFetch,
         env,
       );
       await service.handleEvent(
-        createMockEvent({ sender: adminPhone, buttonId: 'gpm:status:In progress' }),
+        createMockEvent({
+          sender: adminPhone,
+          buttonId: 'gpm:status:In progress',
+        }),
         adminPhone,
         mockFetch,
         env,
@@ -405,13 +485,18 @@ describe('GrievanceProgressService', () => {
         env,
       );
 
-      expect(sentBodies[2].interactive.body.text).toContain('Review Proposed Progress Update');
+      expect(sentBodies[2].interactive.body.text).toContain(
+        'Review Proposed Progress Update',
+      );
       expect(sentBodies[2].interactive.body.text).toContain('_(none)_');
     });
 
     it('cancels the update when user clicks Cancel or types cancel', async () => {
       await service.handleEvent(
-        createMockEvent({ sender: adminPhone, listId: `gpm:stg:${sampleRecord.id}:0` }),
+        createMockEvent({
+          sender: adminPhone,
+          listId: `gpm:stg:${sampleRecord.id}:0`,
+        }),
         adminPhone,
         mockFetch,
         env,
@@ -423,13 +508,18 @@ describe('GrievanceProgressService', () => {
         env,
       );
 
-      expect(sentBodies[1].interactive.body.text).toContain('Progress update cancelled');
+      expect(sentBodies[1].interactive.body.text).toContain(
+        'Progress update cancelled',
+      );
     });
   });
 
   describe('View Current Progress', () => {
     it('displays stage statuses, completion percentage and web fallback link', async () => {
-      const event = createMockEvent({ sender: adminPhone, listId: `gpm:sel:${sampleRecord.id}:view` });
+      const event = createMockEvent({
+        sender: adminPhone,
+        listId: `gpm:sel:${sampleRecord.id}:view`,
+      });
       await service.handleEvent(event, adminPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
@@ -438,7 +528,9 @@ describe('GrievanceProgressService', () => {
       expect(text).toContain('1 of 4 stages completed (25%)');
       expect(text).toContain('Work started: Completed');
       expect(text).toContain('Inspection: Pending');
-      expect(text).toContain('https://janavignanam-three.vercel.app/progress/token_abc123xyz');
+      expect(text).toContain(
+        'https://janavignanam-three.vercel.app/progress/token_abc123xyz',
+      );
     });
   });
 

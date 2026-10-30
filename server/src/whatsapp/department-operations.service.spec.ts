@@ -175,7 +175,9 @@ describe('DepartmentOperationsService', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          messages: [{ id: 'wamid_resp_' + Math.random().toString(36).slice(2) }],
+          messages: [
+            { id: 'wamid_resp_' + Math.random().toString(36).slice(2) },
+          ],
         }),
       } as any;
     });
@@ -234,8 +236,13 @@ describe('DepartmentOperationsService', () => {
     });
 
     it('allows department event routing to authorized department phones sending menu', () => {
-      const deptMenuEvent = createMockEvent({ sender: deptPhone, text: 'menu' });
-      expect(service.isDepartmentEvent(deptMenuEvent, deptPhone, env)).toBe(true);
+      const deptMenuEvent = createMockEvent({
+        sender: deptPhone,
+        text: 'menu',
+      });
+      expect(service.isDepartmentEvent(deptMenuEvent, deptPhone, env)).toBe(
+        true,
+      );
     });
 
     it('rejects unauthorized phone numbers with an access restricted message', async () => {
@@ -262,13 +269,19 @@ describe('DepartmentOperationsService', () => {
       expect(interactive.body.text).toContain('DEPARTMENT OPERATIONS');
 
       const rows = interactive.action.sections[0].rows;
-      expect(rows.map((r: any) => r.id)).toEqual(['dept:grievances', 'dept:projects']);
+      expect(rows.map((r: any) => r.id)).toEqual([
+        'dept:grievances',
+        'dept:projects',
+      ]);
       expect(rows[0].title).toBe('Grievances');
       expect(rows[1].title).toBe('Projects & Reports');
     });
 
     it('opens Grievances Submenu when Grievances is selected', async () => {
-      const event = createMockEvent({ sender: deptPhone, listId: 'dept:grievances' });
+      const event = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:grievances',
+      });
       await service.handleEvent(event, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
@@ -287,7 +300,10 @@ describe('DepartmentOperationsService', () => {
     });
 
     it('opens Projects & Reports Submenu when Projects & Reports is selected', async () => {
-      const event = createMockEvent({ sender: deptPhone, listId: 'dept:projects' });
+      const event = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:projects',
+      });
       await service.handleEvent(event, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
@@ -311,7 +327,10 @@ describe('DepartmentOperationsService', () => {
   // =========================================================================
   describe('Department Grievance Management', () => {
     it('lists assigned grievances with pagination and search options', async () => {
-      const event = createMockEvent({ sender: deptPhone, listId: 'dept:g:assigned' });
+      const event = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:g:assigned',
+      });
       await service.handleEvent(event, deptPhone, mockFetch, env);
 
       expect(mockWorkspace.list).toHaveBeenCalledWith('grievances');
@@ -325,7 +344,10 @@ describe('DepartmentOperationsService', () => {
     });
 
     it('inspects 4-stage grievance details with visual progress bar and completion %', async () => {
-      const event = createMockEvent({ sender: deptPhone, listId: 'dept:g:pick:gr_101' });
+      const event = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:g:pick:gr_101',
+      });
       await service.handleEvent(event, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
@@ -341,7 +363,10 @@ describe('DepartmentOperationsService', () => {
 
     it('executes full grievance stage update with review confirmation and DB persistence', async () => {
       // 1. Pick stage
-      const stageEvent = createMockEvent({ sender: deptPhone, listId: 'dept:g:stg:gr_101:1' });
+      const stageEvent = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:g:stg:gr_101:1',
+      });
       await service.handleEvent(stageEvent, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
@@ -382,15 +407,22 @@ describe('DepartmentOperationsService', () => {
 
       expect(mockWorkspace.saveProgress).toHaveBeenCalledTimes(1);
       expect(sentBodies.length).toBe(4);
-      expect(sentBodies[3].interactive.body.text).toContain('GRIEVANCE PROGRESS SAVED');
+      expect(sentBodies[3].interactive.body.text).toContain(
+        'GRIEVANCE PROGRESS SAVED',
+      );
     });
 
     it('shows recently updated grievances for the department', async () => {
-      const event = createMockEvent({ sender: deptPhone, listId: 'dept:g:recent' });
+      const event = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:g:recent',
+      });
       await service.handleEvent(event, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
-      expect(sentBodies[0].interactive.body.text).toContain('RECENTLY UPDATED GRIEVANCES');
+      expect(sentBodies[0].interactive.body.text).toContain(
+        'RECENTLY UPDATED GRIEVANCES',
+      );
       expect(sentBodies[0].interactive.body.text).toContain('JV-GR-2026-0101');
     });
   });
@@ -400,7 +432,10 @@ describe('DepartmentOperationsService', () => {
   // =========================================================================
   describe('Department Project Management & Reports', () => {
     it('lists assigned projects with pagination and search options', async () => {
-      const event = createMockEvent({ sender: deptPhone, listId: 'dept:p:assigned' });
+      const event = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:p:assigned',
+      });
       await service.handleEvent(event, deptPhone, mockFetch, env);
 
       expect(mockWorkspace.list).toHaveBeenCalledWith('projects');
@@ -414,7 +449,10 @@ describe('DepartmentOperationsService', () => {
     });
 
     it('inspects project details with milestones and progress bar', async () => {
-      const event = createMockEvent({ sender: deptPhone, listId: 'dept:p:pick:pr_201' });
+      const event = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:p:pick:pr_201',
+      });
       await service.handleEvent(event, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
@@ -428,12 +466,17 @@ describe('DepartmentOperationsService', () => {
 
     it('executes full project milestone update with review confirmation and persistence', async () => {
       // 1. Pick milestone 2 (Work in progress)
-      const milestoneEvent = createMockEvent({ sender: deptPhone, listId: 'dept:p:stg:pr_201:2' });
+      const milestoneEvent = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:p:stg:pr_201:2',
+      });
       await service.handleEvent(milestoneEvent, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
       expect(sentBodies[0].interactive.type).toBe('button');
-      expect(sentBodies[0].interactive.body.text).toContain('SET MILESTONE STATUS');
+      expect(sentBodies[0].interactive.body.text).toContain(
+        'SET MILESTONE STATUS',
+      );
 
       // 2. Pick status 'Completed'
       const statusEvent = createMockEvent({
@@ -470,11 +513,16 @@ describe('DepartmentOperationsService', () => {
 
       expect(mockWorkspace.saveProgress).toHaveBeenCalledTimes(1);
       expect(sentBodies.length).toBe(4);
-      expect(sentBodies[3].interactive.body.text).toContain('PROJECT PROGRESS SAVED');
+      expect(sentBodies[3].interactive.body.text).toContain(
+        'PROJECT PROGRESS SAVED',
+      );
     });
 
     it('generates a concise project summary report directly inside WhatsApp', async () => {
-      const event = createMockEvent({ sender: deptPhone, listId: 'dept:p:reports' });
+      const event = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:p:reports',
+      });
       await service.handleEvent(event, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(1);
@@ -491,14 +539,22 @@ describe('DepartmentOperationsService', () => {
   // =========================================================================
   describe('Cancellation & Idempotency', () => {
     it('cancels active operation when user sends cancel', async () => {
-      const stageEvent = createMockEvent({ sender: deptPhone, listId: 'dept:p:stg:pr_201:2' });
+      const stageEvent = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:p:stg:pr_201:2',
+      });
       await service.handleEvent(stageEvent, deptPhone, mockFetch, env);
 
-      const cancelEvent = createMockEvent({ sender: deptPhone, text: 'cancel' });
+      const cancelEvent = createMockEvent({
+        sender: deptPhone,
+        text: 'cancel',
+      });
       await service.handleEvent(cancelEvent, deptPhone, mockFetch, env);
 
       expect(sentBodies.length).toBe(2);
-      expect(sentBodies[1].interactive.body.text).toContain('Progress update cancelled');
+      expect(sentBodies[1].interactive.body.text).toContain(
+        'Progress update cancelled',
+      );
     });
 
     it('prevents duplicate project update on identical webhook redelivery', async () => {

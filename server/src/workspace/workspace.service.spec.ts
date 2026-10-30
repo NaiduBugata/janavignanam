@@ -121,13 +121,13 @@ describe('WorkspaceService', () => {
   it('approves a grievance and dispatches native WhatsApp interactive buttons instead of external web links', async () => {
     const spyButtons = jest
       .spyOn(waSend, 'sendReplyButtons')
-      .mockResolvedValue({ success: true } as any);
+      .mockResolvedValue({ success: true });
     const spyTemplate = jest
       .spyOn(waSend, 'sendTemplateMessage')
-      .mockResolvedValue({ success: true } as any);
+      .mockResolvedValue({ success: true });
     const spyText = jest
       .spyOn(waSend, 'sendTextMessage')
-      .mockResolvedValue({ success: true } as any);
+      .mockResolvedValue({ success: true });
 
     const records: Array<Record<string, unknown>> = [
       {

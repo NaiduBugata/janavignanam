@@ -116,7 +116,9 @@ function digits(val: string): string {
 function clip(str: string, maxLen: number): string {
   if (!str) return '';
   const trimmed = str.trim();
-  return trimmed.length > maxLen ? trimmed.slice(0, maxLen - 1).trim() + '…' : trimmed;
+  return trimmed.length > maxLen
+    ? trimmed.slice(0, maxLen - 1).trim() + '…'
+    : trimmed;
 }
 
 function progressBar(completed: number, total: number): string {
@@ -142,7 +144,10 @@ function progressPageUrl(env: NodeJS.ProcessEnv, token: string): string {
 export class DepartmentOperationsService {
   private readonly logger = new Logger(DepartmentOperationsService.name);
   private readonly sessions = new Map<string, DeptSession>();
-  private readonly idempotencyCache = new Map<string, { timestamp: number; summary: string }>();
+  private readonly idempotencyCache = new Map<
+    string,
+    { timestamp: number; summary: string }
+  >();
 
   constructor(
     @Optional() private readonly workspace?: WorkspaceService,
@@ -153,7 +158,10 @@ export class DepartmentOperationsService {
    * Fast check: Is the sender recognized as a department user?
    * CRITICAL RULE: MP office phones must NEVER be treated as department users.
    */
-  isDepartmentUser(sender: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  isDepartmentUser(
+    sender: string,
+    env: NodeJS.ProcessEnv = process.env,
+  ): boolean {
     const d = digits(sender);
     if (!d) return false;
     if (isMpPhone(d)) return false;
@@ -191,7 +199,11 @@ export class DepartmentOperationsService {
   /**
    * Determine if an incoming WhatsApp event should be handled by Department Operations.
    */
-  isDepartmentEvent(event: WhatsAppEvent, sender: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  isDepartmentEvent(
+    event: WhatsAppEvent,
+    sender: string,
+    env: NodeJS.ProcessEnv = process.env,
+  ): boolean {
     const rawId = this.replyId(event);
     if (rawId.startsWith('dept:') || rawId.startsWith('gpm:')) return true;
 
@@ -227,14 +239,21 @@ export class DepartmentOperationsService {
   /**
    * Backwards-compatible alias for GPM event check.
    */
-  isGpmEvent(event: WhatsAppEvent, sender: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  isGpmEvent(
+    event: WhatsAppEvent,
+    sender: string,
+    env: NodeJS.ProcessEnv = process.env,
+  ): boolean {
     return this.isDepartmentEvent(event, sender, env);
   }
 
   /**
    * Authorize department user and identify their department scope.
    */
-  checkAuthorization(sender: string, env: NodeJS.ProcessEnv = process.env): DeptAuthResult {
+  checkAuthorization(
+    sender: string,
+    env: NodeJS.ProcessEnv = process.env,
+  ): DeptAuthResult {
     const d = digits(sender);
     if (!d) return { authorized: false, role: 'officer', name: 'Unknown' };
 
@@ -251,14 +270,22 @@ export class DepartmentOperationsService {
       .map(digits)
       .filter(Boolean);
 
-    if (alerts.includes(d) || replies.includes(d) || envRecipients.includes(d)) {
+    if (
+      alerts.includes(d) ||
+      replies.includes(d) ||
+      envRecipients.includes(d)
+    ) {
       return { authorized: true, role: 'admin', name: 'Administrator' };
     }
 
     // 3. Akshay (Department Coordinator / Head)
     const akshayPhone = digits(phoneForName('akshay') || '');
     if (akshayPhone && akshayPhone === d) {
-      return { authorized: true, role: 'admin', name: 'Akshay (Department Head)' };
+      return {
+        authorized: true,
+        role: 'admin',
+        name: 'Akshay (Department Head)',
+      };
     }
 
     // 4. Default Department WhatsApp
@@ -281,14 +308,24 @@ export class DepartmentOperationsService {
       for (const desk of DESKS) {
         const leaderPhone = digits(phoneForName(desk.leader) || '');
         if (leaderPhone && leaderPhone === d) {
-          return { authorized: true, role: 'officer', name: desk.leader, department: desk.name };
+          return {
+            authorized: true,
+            role: 'officer',
+            name: desk.leader,
+            department: desk.name,
+          };
         }
       }
     }
     if (GENERAL_DESK) {
       const generalLeader = digits(phoneForName(GENERAL_DESK.leader) || '');
       if (generalLeader && generalLeader === d) {
-        return { authorized: true, role: 'officer', name: GENERAL_DESK.leader, department: GENERAL_DESK.name };
+        return {
+          authorized: true,
+          role: 'officer',
+          name: GENERAL_DESK.leader,
+          department: GENERAL_DESK.name,
+        };
       }
     }
 
@@ -308,7 +345,9 @@ export class DepartmentOperationsService {
   ): Promise<void> {
     const auth = this.checkAuthorization(sender, env);
     if (!auth.authorized) {
-      this.logger.warn(`Unauthorized department operations access attempt from ${sender}`);
+      this.logger.warn(
+        `Unauthorized department operations access attempt from ${sender}`,
+      );
       await sendTextMessage(
         sender,
         '🔒 *Access Restricted*\n\nThe *Grievance Progress Manager* is restricted to authorized department officers and administrators.\n\nYour WhatsApp number is not verified for in-chat progress updates.',
@@ -384,7 +423,9 @@ export class DepartmentOperationsService {
     }
 
     // Keyword trigger for GPM specifically
-    if (['#progress', 'progress', 'gpm', '#gpm'].includes(textMsg.toLowerCase())) {
+    if (
+      ['#progress', 'progress', 'gpm', '#gpm'].includes(textMsg.toLowerCase())
+    ) {
       this.clearSession(sender);
       await this.sendGpmMenu(sender, undefined, fetchImpl, env, auth);
       return;
@@ -441,7 +482,13 @@ export class DepartmentOperationsService {
 
     if (reply === 'dept:g:recent') {
       session.module = 'grievances';
-      await this.sendRecentlyUpdatedGrievances(sender, fetchImpl, env, auth, deps);
+      await this.sendRecentlyUpdatedGrievances(
+        sender,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -465,7 +512,14 @@ export class DepartmentOperationsService {
       const targetPage = Number.parseInt(pageStr, 10);
       if (!Number.isNaN(targetPage) && targetPage >= 1) {
         session.page = targetPage;
-        await this.sendGrievanceList(sender, session, fetchImpl, env, auth, deps);
+        await this.sendGrievanceList(
+          sender,
+          session,
+          fetchImpl,
+          env,
+          auth,
+          deps,
+        );
         return;
       }
     }
@@ -475,16 +529,35 @@ export class DepartmentOperationsService {
       const id = reply.startsWith('dept:g:pick:')
         ? reply.slice('dept:g:pick:'.length)
         : reply.slice('gpm:pick:'.length);
-      await this.handleGrievanceSelection(sender, session, id, fetchImpl, env, auth, deps);
+      await this.handleGrievanceSelection(
+        sender,
+        session,
+        id,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
-    if (reply.startsWith('dept:g:up_pick:') || reply.startsWith('gpm:up_pick:')) {
+    if (
+      reply.startsWith('dept:g:up_pick:') ||
+      reply.startsWith('gpm:up_pick:')
+    ) {
       const id = reply.startsWith('dept:g:up_pick:')
         ? reply.slice('dept:g:up_pick:'.length)
         : reply.slice('gpm:up_pick:'.length);
       session.action = 'update';
-      await this.handleGrievanceSelection(sender, session, id, fetchImpl, env, auth, deps);
+      await this.handleGrievanceSelection(
+        sender,
+        session,
+        id,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -495,7 +568,16 @@ export class DepartmentOperationsService {
         : reply.slice('gpm:stage:'.length);
       const [id, idxStr] = payload.split(':');
       const stageIdx = Number.parseInt(idxStr, 10);
-      await this.handleGrievanceStageChoice(sender, session, id, stageIdx, fetchImpl, env, auth, deps);
+      await this.handleGrievanceStageChoice(
+        sender,
+        session,
+        id,
+        stageIdx,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -506,7 +588,17 @@ export class DepartmentOperationsService {
         : reply.slice('gpm:status:'.length);
       const [id, idxStr, statusVal] = payload.split(':');
       const stageIdx = Number.parseInt(idxStr, 10);
-      await this.handleGrievanceStatusChoice(sender, session, id, stageIdx, statusVal, fetchImpl, env, auth, deps);
+      await this.handleGrievanceStatusChoice(
+        sender,
+        session,
+        id,
+        stageIdx,
+        statusVal,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -517,7 +609,16 @@ export class DepartmentOperationsService {
         : reply.slice('gpm:conf:'.length);
       const [id, idxStr, statusVal] = payload.split(':');
       const stageIdx = Number.parseInt(idxStr, 10);
-      await this.commitGrievanceUpdate(sender, session, id, stageIdx, statusVal, fetchImpl, env, auth);
+      await this.commitGrievanceUpdate(
+        sender,
+        session,
+        id,
+        stageIdx,
+        statusVal,
+        fetchImpl,
+        env,
+        auth,
+      );
       return;
     }
 
@@ -586,14 +687,30 @@ export class DepartmentOperationsService {
     // Project Selection
     if (reply.startsWith('dept:p:pick:')) {
       const id = reply.slice('dept:p:pick:'.length);
-      await this.handleProjectSelection(sender, session, id, fetchImpl, env, auth, deps);
+      await this.handleProjectSelection(
+        sender,
+        session,
+        id,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
     if (reply.startsWith('dept:p:up_pick:')) {
       const id = reply.slice('dept:p:up_pick:'.length);
       session.action = 'update';
-      await this.handleProjectSelection(sender, session, id, fetchImpl, env, auth, deps);
+      await this.handleProjectSelection(
+        sender,
+        session,
+        id,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -602,7 +719,16 @@ export class DepartmentOperationsService {
       const payload = reply.slice('dept:p:stg:'.length);
       const [id, idxStr] = payload.split(':');
       const stageIdx = Number.parseInt(idxStr, 10);
-      await this.handleProjectMilestoneChoice(sender, session, id, stageIdx, fetchImpl, env, auth, deps);
+      await this.handleProjectMilestoneChoice(
+        sender,
+        session,
+        id,
+        stageIdx,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -611,7 +737,17 @@ export class DepartmentOperationsService {
       const payload = reply.slice('dept:p:sts:'.length);
       const [id, idxStr, statusVal] = payload.split(':');
       const stageIdx = Number.parseInt(idxStr, 10);
-      await this.handleProjectStatusChoice(sender, session, id, stageIdx, statusVal, fetchImpl, env, auth, deps);
+      await this.handleProjectStatusChoice(
+        sender,
+        session,
+        id,
+        stageIdx,
+        statusVal,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -620,7 +756,16 @@ export class DepartmentOperationsService {
       const payload = reply.slice('dept:p:conf:'.length);
       const [id, idxStr, statusVal] = payload.split(':');
       const stageIdx = Number.parseInt(idxStr, 10);
-      await this.commitProjectUpdate(sender, session, id, stageIdx, statusVal, fetchImpl, env, auth);
+      await this.commitProjectUpdate(
+        sender,
+        session,
+        id,
+        stageIdx,
+        statusVal,
+        fetchImpl,
+        env,
+        auth,
+      );
       return;
     }
 
@@ -632,7 +777,14 @@ export class DepartmentOperationsService {
       if (session.step === 'SEARCH_GRIEVANCE') {
         session.searchQuery = textMsg;
         session.page = 1;
-        await this.sendGrievanceList(sender, session, fetchImpl, env, auth, deps);
+        await this.sendGrievanceList(
+          sender,
+          session,
+          fetchImpl,
+          env,
+          auth,
+          deps,
+        );
         return;
       }
 
@@ -697,9 +849,23 @@ export class DepartmentOperationsService {
         session.searchQuery = textMsg;
         session.page = 1;
         if (session.module === 'projects') {
-          await this.sendProjectList(sender, session, fetchImpl, env, auth, deps);
+          await this.sendProjectList(
+            sender,
+            session,
+            fetchImpl,
+            env,
+            auth,
+            deps,
+          );
         } else {
-          await this.sendGrievanceList(sender, session, fetchImpl, env, auth, deps);
+          await this.sendGrievanceList(
+            sender,
+            session,
+            fetchImpl,
+            env,
+            auth,
+            deps,
+          );
         }
         return;
       }
@@ -725,7 +891,9 @@ export class DepartmentOperationsService {
     prefixNotice?: string,
   ): Promise<void> {
     const greeting = auth.name ? `Welcome, *${auth.name}*!` : 'Welcome!';
-    const deptInfo = auth.department ? `\n*Department Scope:* ${auth.department}` : '';
+    const deptInfo = auth.department
+      ? `\n*Department Scope:* ${auth.department}`
+      : '';
 
     const bodyParts = [
       prefixNotice ? `${prefixNotice}\n` : null,
@@ -769,18 +937,44 @@ export class DepartmentOperationsService {
     auth?: DeptAuthResult,
   ): Promise<void> {
     const title = '📋 *Grievance Progress Manager*';
-    const roleNotice = auth?.name ? `Welcome, *${auth.name}*!` : 'Manage grievance progress natively.';
+    const roleNotice = auth?.name
+      ? `Welcome, *${auth.name}*!`
+      : 'Manage grievance progress natively.';
     const lead = prefixText
       ? `${prefixText}\n\n${title}\n${roleNotice}\n\nSelect an option below:`
       : `${title}\n${roleNotice}\n\nSelect an option below to manage grievance progress without opening external links:`;
 
     const rows: MenuRow[] = [
-      { id: 'gpm:assigned', title: 'Assigned Grievances', description: 'View grievances assigned to your department' },
-      { id: 'gpm:update', title: 'Update Progress', description: 'Select a grievance and update stage status' },
-      { id: 'gpm:view', title: 'View Current Progress', description: 'Review progress breakdown across 4 stages' },
-      { id: 'gpm:search', title: 'Search by Ref #', description: 'Find a grievance by reference number or keyword' },
-      { id: 'gpm:help', title: 'Instructions & Help', description: 'How to use in-chat progress updates' },
-      { id: 'home', title: 'Main Menu', description: 'Return to the main chatbot menu' },
+      {
+        id: 'gpm:assigned',
+        title: 'Assigned Grievances',
+        description: 'View grievances assigned to your department',
+      },
+      {
+        id: 'gpm:update',
+        title: 'Update Progress',
+        description: 'Select a grievance and update stage status',
+      },
+      {
+        id: 'gpm:view',
+        title: 'View Current Progress',
+        description: 'Review progress breakdown across 4 stages',
+      },
+      {
+        id: 'gpm:search',
+        title: 'Search by Ref #',
+        description: 'Find a grievance by reference number or keyword',
+      },
+      {
+        id: 'gpm:help',
+        title: 'Instructions & Help',
+        description: 'How to use in-chat progress updates',
+      },
+      {
+        id: 'home',
+        title: 'Main Menu',
+        description: 'Return to the main chatbot menu',
+      },
     ];
 
     await sendReplyList(sender, lead, rows, {
@@ -936,13 +1130,27 @@ export class DepartmentOperationsService {
         { id: 'dept:grievances', title: 'Grievance Menu' },
         { id: 'dept:menu', title: 'Main Menu' },
       ];
-      await sendReplyButtons(sender, `${notice}\n\nWhat would you like to do?`, buttons, fetchImpl, env);
+      await sendReplyButtons(
+        sender,
+        `${notice}\n\nWhat would you like to do?`,
+        buttons,
+        fetchImpl,
+        env,
+      );
       return;
     }
 
     // Direct single search match
     if (session.searchQuery && filtered.length === 1) {
-      await this.handleGrievanceSelection(sender, session, filtered[0].id, fetchImpl, env, auth, deps);
+      await this.handleGrievanceSelection(
+        sender,
+        session,
+        filtered[0].id,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -953,10 +1161,15 @@ export class DepartmentOperationsService {
     const start = (page - 1) * PAGE_SIZE;
     const pageItems = filtered.slice(start, start + PAGE_SIZE);
 
-    const actionText = session.action === 'update' ? 'Tap to update progress:' : 'Tap to inspect details:';
+    const actionText =
+      session.action === 'update'
+        ? 'Tap to update progress:'
+        : 'Tap to inspect details:';
     const body = [
       `📋 *ASSIGNED GRIEVANCES* (Page ${page}/${totalPages})`,
-      session.searchQuery ? `Search: "*${session.searchQuery}*" (${filtered.length} found)` : `Total: ${filtered.length} grievance(s)`,
+      session.searchQuery
+        ? `Search: "*${session.searchQuery}*" (${filtered.length} found)`
+        : `Total: ${filtered.length} grievance(s)`,
       ``,
       actionText,
     ].join('\n');
@@ -967,7 +1180,8 @@ export class DepartmentOperationsService {
       const loc = g.place || g.village || 'Palnadu';
       const stat = g.status || 'Open';
       const desc = clip(`${loc} · ${stat} · ${g.date || ''}`, 72);
-      const prefix = session.action === 'update' ? 'dept:g:up_pick:' : 'dept:g:pick:';
+      const prefix =
+        session.action === 'update' ? 'dept:g:up_pick:' : 'dept:g:pick:';
       return {
         id: `${prefix}${g.id}`,
         title,
@@ -1020,7 +1234,12 @@ export class DepartmentOperationsService {
   ): Promise<void> {
     const record = await this.getRecordById('grievances', id, deps);
     if (!record) {
-      await sendTextMessage(sender, '⚠️ The selected grievance could not be found or is no longer available.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        '⚠️ The selected grievance could not be found or is no longer available.',
+        fetchImpl,
+        env,
+      );
       await this.sendGrievancesMenu(sender, fetchImpl, env, auth);
       return;
     }
@@ -1045,13 +1264,23 @@ export class DepartmentOperationsService {
     env: NodeJS.ProcessEnv,
     auth: DeptAuthResult,
   ): Promise<void> {
-    const stages = record.progressStages && record.progressStages.length ? record.progressStages : defaultStages();
+    const stages =
+      record.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     const counts = stageCounts(stages);
     const bar = progressBar(counts.completed, stages.length);
-    const fallbackLink = record.progressToken ? progressPageUrl(env, record.progressToken) : '';
+    const fallbackLink = record.progressToken
+      ? progressPageUrl(env, record.progressToken)
+      : '';
 
     const stageLines = stages.map((stg, i) => {
-      const icon = stg.status === 'Completed' ? '✅' : stg.status === 'In progress' ? '🔄' : '⏳';
+      const icon =
+        stg.status === 'Completed'
+          ? '✅'
+          : stg.status === 'In progress'
+            ? '🔄'
+            : '⏳';
       const noteStr = stg.note ? `\n   _Note: ${stg.note}_` : '';
       return `${i + 1}. ${stg.name}: ${icon} ${stg.status}${noteStr}`;
     });
@@ -1062,8 +1291,12 @@ export class DepartmentOperationsService {
       `*Title:* ${record.title || record.fullName}`,
       record.detail ? `*Detail:* ${clip(record.detail, 250)}` : null,
       `*Department:* ${record.followUpDepartment || record.department || 'General administration'}`,
-      record.place || record.village ? `*Location:* ${[record.village, record.mandal, record.place].filter(Boolean).join(', ')}` : null,
-      record.assemblyConstituency ? `*Constituency:* ${record.assemblyConstituency}` : null,
+      record.place || record.village
+        ? `*Location:* ${[record.village, record.mandal, record.place].filter(Boolean).join(', ')}`
+        : null,
+      record.assemblyConstituency
+        ? `*Constituency:* ${record.assemblyConstituency}`
+        : null,
       `*Current Status:* *${record.status || 'Open'}*`,
       ``,
       `*Progress Overview:* ${counts.completed} of 4 stages completed (${Math.round((counts.completed / 4) * 100)}%)`,
@@ -1071,8 +1304,12 @@ export class DepartmentOperationsService {
       ``,
       `*Stages:*`,
       ...stageLines,
-      record.progressRemarks ? `\n*Latest Remarks:* ${record.progressRemarks}` : null,
-    ].filter(Boolean).join('\n');
+      record.progressRemarks
+        ? `\n*Latest Remarks:* ${record.progressRemarks}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const buttons: ReplyButton[] = [
       { id: `gpm:up_pick:${record.id}`, title: 'Update Progress' },
@@ -1089,7 +1326,10 @@ export class DepartmentOperationsService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    const stages = record.progressStages && record.progressStages.length ? record.progressStages : defaultStages();
+    const stages =
+      record.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     const counts = stageCounts(stages);
     const bar = progressBar(counts.completed, stages.length);
 
@@ -1102,11 +1342,19 @@ export class DepartmentOperationsService {
     ].join('\n');
 
     const rows: MenuRow[] = stages.map((stg, i) => {
-      const icon = stg.status === 'Completed' ? '✅' : stg.status === 'In progress' ? '🔄' : '⏳';
+      const icon =
+        stg.status === 'Completed'
+          ? '✅'
+          : stg.status === 'In progress'
+            ? '🔄'
+            : '⏳';
       return {
         id: `gpm:stage:${record.id}:${i}`,
         title: clip(`${i + 1}. ${stg.name}`, 24),
-        description: clip(`${icon} Current: ${stg.status}${stg.note ? ` · ${stg.note}` : ''}`, 72),
+        description: clip(
+          `${icon} Current: ${stg.status}${stg.note ? ` · ${stg.note}` : ''}`,
+          72,
+        ),
       };
     });
 
@@ -1144,9 +1392,17 @@ export class DepartmentOperationsService {
       await sendTextMessage(sender, '⚠️ Record not found.', fetchImpl, env);
       return;
     }
-    const stages = record.progressStages && record.progressStages.length ? record.progressStages : defaultStages();
+    const stages =
+      record.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     if (stageIdx < 0 || stageIdx >= stages.length) {
-      await sendTextMessage(sender, '⚠️ Invalid stage selection.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        '⚠️ Invalid stage selection.',
+        fetchImpl,
+        env,
+      );
       return;
     }
 
@@ -1170,8 +1426,14 @@ export class DepartmentOperationsService {
 
     const buttons: ReplyButton[] = [
       { id: `gpm:status:${record.id}:${stageIdx}:Pending`, title: 'Pending' },
-      { id: `gpm:status:${record.id}:${stageIdx}:In progress`, title: 'In Progress' },
-      { id: `gpm:status:${record.id}:${stageIdx}:Completed`, title: 'Completed' },
+      {
+        id: `gpm:status:${record.id}:${stageIdx}:In progress`,
+        title: 'In Progress',
+      },
+      {
+        id: `gpm:status:${record.id}:${stageIdx}:Completed`,
+        title: 'Completed',
+      },
     ];
 
     await sendReplyButtons(sender, body, buttons, fetchImpl, env);
@@ -1241,10 +1503,15 @@ export class DepartmentOperationsService {
       `*Progress Note:* ${note || '_(none / unchanged)_'}`,
       ``,
       `Please confirm this update. It will be saved directly to the database.`,
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const buttons: ReplyButton[] = [
-      { id: `gpm:conf:${id}:${stageIdx}:${statusVal}`, title: 'Confirm & Save' },
+      {
+        id: `gpm:conf:${id}:${stageIdx}:${statusVal}`,
+        title: 'Confirm & Save',
+      },
       { id: 'gpm:cancel', title: 'Cancel' },
     ];
 
@@ -1271,21 +1538,28 @@ export class DepartmentOperationsService {
     }
 
     if (!this.workspace) {
-      await sendTextMessage(sender, '⚠️ Persistence service unavailable.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        '⚠️ Persistence service unavailable.',
+        fetchImpl,
+        env,
+      );
       return;
     }
 
     try {
       const record = await this.workspace.get(id);
-      const stages = record.progressStages && record.progressStages.length
-        ? [...record.progressStages]
-        : defaultStages();
+      const stages =
+        record.progressStages && record.progressStages.length
+          ? [...record.progressStages]
+          : defaultStages();
 
       const stageName = stages[stageIdx]?.name || STAGE_NAMES[stageIdx];
       const prevNote = stages[stageIdx]?.note || '';
-      const finalNote = session.enteredNote !== undefined && session.enteredNote !== ''
-        ? session.enteredNote
-        : prevNote;
+      const finalNote =
+        session.enteredNote !== undefined && session.enteredNote !== ''
+          ? session.enteredNote
+          : prevNote;
 
       stages[stageIdx] = {
         name: stageName,
@@ -1294,13 +1568,20 @@ export class DepartmentOperationsService {
       };
 
       const remarks = finalNote || record.progressRemarks || '';
-      const dept = record.followUpDepartment || record.department || auth.department || 'Department';
+      const dept =
+        record.followUpDepartment ||
+        record.department ||
+        auth.department ||
+        'Department';
 
-      const updated = await this.workspace.saveProgress(record.progressToken || record.id, {
-        stages,
-        remarks,
-        department: dept,
-      });
+      const updated = await this.workspace.saveProgress(
+        record.progressToken || record.id,
+        {
+          stages,
+          remarks,
+          department: dept,
+        },
+      );
 
       const counts = stageCounts(updated.progressStages || stages);
       const bar = progressBar(counts.completed, stages.length);
@@ -1315,7 +1596,9 @@ export class DepartmentOperationsService {
         finalNote ? `*Note Recorded:* ${finalNote}` : null,
         ``,
         `*Authoritative Sync:* Database, website portal, analytics & reports updated.`,
-      ].filter(Boolean).join('\n');
+      ]
+        .filter(Boolean)
+        .join('\n');
 
       this.idempotencyCache.set(idempotencyKey, { timestamp: now, summary });
       this.clearSession(sender);
@@ -1327,10 +1610,19 @@ export class DepartmentOperationsService {
       ];
 
       await sendReplyButtons(sender, summary, buttons, fetchImpl, env);
-      this.logger.log(`Grievance #${id} progress updated to ${statusVal} by ${sender}`);
+      this.logger.log(
+        `Grievance #${id} progress updated to ${statusVal} by ${sender}`,
+      );
     } catch (err) {
-      this.logger.error(`Failed to save grievance progress: ${err instanceof Error ? err.message : 'error'}`);
-      await sendTextMessage(sender, '❌ Failed to save update to database. Please try again.', fetchImpl, env);
+      this.logger.error(
+        `Failed to save grievance progress: ${err instanceof Error ? err.message : 'error'}`,
+      );
+      await sendTextMessage(
+        sender,
+        '❌ Failed to save update to database. Please try again.',
+        fetchImpl,
+        env,
+      );
     }
   }
 
@@ -1342,7 +1634,11 @@ export class DepartmentOperationsService {
     deps: { records?: unknown },
   ): Promise<void> {
     const items = await this.loadAuthorizedRecords('grievances', auth, deps);
-    const withUpdates = items.filter((g) => g.progressUpdatedAt || (g.progressHistory && g.progressHistory.length > 0));
+    const withUpdates = items.filter(
+      (g) =>
+        g.progressUpdatedAt ||
+        (g.progressHistory && g.progressHistory.length > 0),
+    );
 
     withUpdates.sort((a, b) => {
       const ta = new Date(a.progressUpdatedAt || a.date || 0).getTime();
@@ -1355,7 +1651,13 @@ export class DepartmentOperationsService {
         { id: 'dept:g:assigned', title: 'Assigned Grievances' },
         { id: 'dept:grievances', title: 'Grievance Menu' },
       ];
-      await sendReplyButtons(sender, 'No recently updated grievances found for your department.', buttons, fetchImpl, env);
+      await sendReplyButtons(
+        sender,
+        'No recently updated grievances found for your department.',
+        buttons,
+        fetchImpl,
+        env,
+      );
       return;
     }
 
@@ -1366,7 +1668,9 @@ export class DepartmentOperationsService {
       ``,
       ...top5.map((g, i) => {
         const counts = stageCounts(g.progressStages || defaultStages());
-        const time = g.progressUpdatedAt ? new Date(g.progressUpdatedAt).toLocaleDateString('en-IN') : '';
+        const time = g.progressUpdatedAt
+          ? new Date(g.progressUpdatedAt).toLocaleDateString('en-IN')
+          : '';
         return `${i + 1}. *${g.srNumber || g.id}* — ${clip(g.title, 30)}\n   Status: ${g.status} · Progress: ${counts.completed}/4${time ? ` · ${time}` : ''}`;
       }),
     ].join('\n');
@@ -1409,12 +1713,26 @@ export class DepartmentOperationsService {
         { id: 'dept:projects', title: 'Projects Menu' },
         { id: 'dept:menu', title: 'Main Menu' },
       ];
-      await sendReplyButtons(sender, `${notice}\n\nWhat would you like to do?`, buttons, fetchImpl, env);
+      await sendReplyButtons(
+        sender,
+        `${notice}\n\nWhat would you like to do?`,
+        buttons,
+        fetchImpl,
+        env,
+      );
       return;
     }
 
     if (session.searchQuery && filtered.length === 1) {
-      await this.handleProjectSelection(sender, session, filtered[0].id, fetchImpl, env, auth, deps);
+      await this.handleProjectSelection(
+        sender,
+        session,
+        filtered[0].id,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -1425,10 +1743,15 @@ export class DepartmentOperationsService {
     const start = (page - 1) * PAGE_SIZE;
     const pageItems = filtered.slice(start, start + PAGE_SIZE);
 
-    const actionText = session.action === 'update' ? 'Tap to update milestone:' : 'Tap to inspect details:';
+    const actionText =
+      session.action === 'update'
+        ? 'Tap to update milestone:'
+        : 'Tap to inspect details:';
     const body = [
       `🏗️ *ASSIGNED PROJECTS* (Page ${page}/${totalPages})`,
-      session.searchQuery ? `Search: "*${session.searchQuery}*" (${filtered.length} found)` : `Total: ${filtered.length} project(s)`,
+      session.searchQuery
+        ? `Search: "*${session.searchQuery}*" (${filtered.length} found)`
+        : `Total: ${filtered.length} project(s)`,
       ``,
       actionText,
     ].join('\n');
@@ -1439,7 +1762,8 @@ export class DepartmentOperationsService {
       const loc = p.place || p.village || 'Constituency';
       const stat = p.status || 'Open';
       const desc = clip(`${loc} · ${stat}`, 72);
-      const prefix = session.action === 'update' ? 'dept:p:up_pick:' : 'dept:p:pick:';
+      const prefix =
+        session.action === 'update' ? 'dept:p:up_pick:' : 'dept:p:pick:';
       return {
         id: `${prefix}${p.id}`,
         title,
@@ -1492,7 +1816,12 @@ export class DepartmentOperationsService {
   ): Promise<void> {
     const record = await this.getRecordById('projects', id, deps);
     if (!record) {
-      await sendTextMessage(sender, '⚠️ The selected project could not be found or is no longer available.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        '⚠️ The selected project could not be found or is no longer available.',
+        fetchImpl,
+        env,
+      );
       await this.sendProjectsMenu(sender, fetchImpl, env, auth);
       return;
     }
@@ -1517,12 +1846,20 @@ export class DepartmentOperationsService {
     env: NodeJS.ProcessEnv,
     auth: DeptAuthResult,
   ): Promise<void> {
-    const stages = record.progressStages && record.progressStages.length ? record.progressStages : defaultStages();
+    const stages =
+      record.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     const counts = stageCounts(stages);
     const bar = progressBar(counts.completed, stages.length);
 
     const stageLines = stages.map((stg, i) => {
-      const icon = stg.status === 'Completed' ? '✅' : stg.status === 'In progress' ? '🔄' : '⏳';
+      const icon =
+        stg.status === 'Completed'
+          ? '✅'
+          : stg.status === 'In progress'
+            ? '🔄'
+            : '⏳';
       const noteStr = stg.note ? `\n   _Remarks: ${stg.note}_` : '';
       return `${i + 1}. ${stg.name}: ${icon} *${stg.status}*${noteStr}`;
     });
@@ -1533,17 +1870,27 @@ export class DepartmentOperationsService {
       `*Project:* ${record.title}`,
       record.detail ? `*Description:* ${clip(record.detail, 250)}` : null,
       `*Department:* ${record.followUpDepartment || record.department || 'General administration'}`,
-      record.place || record.village ? `*Location:* ${[record.village, record.mandal, record.place].filter(Boolean).join(', ')}` : null,
-      record.assemblyConstituency ? `*Constituency:* ${record.assemblyConstituency}` : null,
+      record.place || record.village
+        ? `*Location:* ${[record.village, record.mandal, record.place].filter(Boolean).join(', ')}`
+        : null,
+      record.assemblyConstituency
+        ? `*Constituency:* ${record.assemblyConstituency}`
+        : null,
       `*Status:* *${record.status || 'Open'}*`,
       ``,
       `*Milestone Progress:* ${bar}`,
       ``,
       `*Milestones:*`,
       ...stageLines,
-      record.progressRemarks ? `\n*Latest Remarks:* ${record.progressRemarks}` : null,
-      record.progressUpdatedAt ? `*Updated:* ${new Date(record.progressUpdatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}` : null,
-    ].filter(Boolean).join('\n');
+      record.progressRemarks
+        ? `\n*Latest Remarks:* ${record.progressRemarks}`
+        : null,
+      record.progressUpdatedAt
+        ? `*Updated:* ${new Date(record.progressUpdatedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const buttons: ReplyButton[] = [
       { id: `dept:p:up_pick:${record.id}`, title: 'Update Progress' },
@@ -1560,7 +1907,10 @@ export class DepartmentOperationsService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    const stages = record.progressStages && record.progressStages.length ? record.progressStages : defaultStages();
+    const stages =
+      record.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     const counts = stageCounts(stages);
     const bar = progressBar(counts.completed, stages.length);
 
@@ -1573,11 +1923,19 @@ export class DepartmentOperationsService {
     ].join('\n');
 
     const rows: MenuRow[] = stages.map((stg, i) => {
-      const icon = stg.status === 'Completed' ? '✅' : stg.status === 'In progress' ? '🔄' : '⏳';
+      const icon =
+        stg.status === 'Completed'
+          ? '✅'
+          : stg.status === 'In progress'
+            ? '🔄'
+            : '⏳';
       return {
         id: `dept:p:stg:${record.id}:${i}`,
         title: clip(`${i + 1}. ${stg.name}`, 24),
-        description: clip(`${icon} Current: ${stg.status}${stg.note ? ` · ${stg.note}` : ''}`, 72),
+        description: clip(
+          `${icon} Current: ${stg.status}${stg.note ? ` · ${stg.note}` : ''}`,
+          72,
+        ),
       };
     });
 
@@ -1612,12 +1970,25 @@ export class DepartmentOperationsService {
   ): Promise<void> {
     const record = await this.getRecordById('projects', id, deps);
     if (!record) {
-      await sendTextMessage(sender, '⚠️ Project record not found.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        '⚠️ Project record not found.',
+        fetchImpl,
+        env,
+      );
       return;
     }
-    const stages = record.progressStages && record.progressStages.length ? record.progressStages : defaultStages();
+    const stages =
+      record.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     if (stageIdx < 0 || stageIdx >= stages.length) {
-      await sendTextMessage(sender, '⚠️ Invalid milestone selection.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        '⚠️ Invalid milestone selection.',
+        fetchImpl,
+        env,
+      );
       return;
     }
 
@@ -1641,8 +2012,14 @@ export class DepartmentOperationsService {
 
     const buttons: ReplyButton[] = [
       { id: `dept:p:sts:${record.id}:${stageIdx}:Pending`, title: 'Pending' },
-      { id: `dept:p:sts:${record.id}:${stageIdx}:In progress`, title: 'In Progress' },
-      { id: `dept:p:sts:${record.id}:${stageIdx}:Completed`, title: 'Completed' },
+      {
+        id: `dept:p:sts:${record.id}:${stageIdx}:In progress`,
+        title: 'In Progress',
+      },
+      {
+        id: `dept:p:sts:${record.id}:${stageIdx}:Completed`,
+        title: 'Completed',
+      },
     ];
 
     await sendReplyButtons(sender, body, buttons, fetchImpl, env);
@@ -1712,10 +2089,15 @@ export class DepartmentOperationsService {
       `*Remarks:* ${remarks || '_(none / unchanged)_'}`,
       ``,
       `Please confirm this update. It will be saved directly to the database.`,
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const buttons: ReplyButton[] = [
-      { id: `dept:p:conf:${id}:${stageIdx}:${statusVal}`, title: 'Confirm & Save' },
+      {
+        id: `dept:p:conf:${id}:${stageIdx}:${statusVal}`,
+        title: 'Confirm & Save',
+      },
       { id: 'dept:cancel', title: 'Cancel' },
     ];
 
@@ -1742,21 +2124,28 @@ export class DepartmentOperationsService {
     }
 
     if (!this.workspace) {
-      await sendTextMessage(sender, '⚠️ Persistence service unavailable.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        '⚠️ Persistence service unavailable.',
+        fetchImpl,
+        env,
+      );
       return;
     }
 
     try {
       const record = await this.workspace.get(id);
-      const stages = record.progressStages && record.progressStages.length
-        ? [...record.progressStages]
-        : defaultStages();
+      const stages =
+        record.progressStages && record.progressStages.length
+          ? [...record.progressStages]
+          : defaultStages();
 
       const stageName = stages[stageIdx]?.name || STAGE_NAMES[stageIdx];
       const prevNote = stages[stageIdx]?.note || '';
-      const finalRemarks = session.enteredNote !== undefined && session.enteredNote !== ''
-        ? session.enteredNote
-        : prevNote;
+      const finalRemarks =
+        session.enteredNote !== undefined && session.enteredNote !== ''
+          ? session.enteredNote
+          : prevNote;
 
       stages[stageIdx] = {
         name: stageName,
@@ -1765,13 +2154,20 @@ export class DepartmentOperationsService {
       };
 
       const remarks = finalRemarks || record.progressRemarks || '';
-      const dept = record.followUpDepartment || record.department || auth.department || 'Department';
+      const dept =
+        record.followUpDepartment ||
+        record.department ||
+        auth.department ||
+        'Department';
 
-      const updated = await this.workspace.saveProgress(record.progressToken || record.id, {
-        stages,
-        remarks,
-        department: dept,
-      });
+      const updated = await this.workspace.saveProgress(
+        record.progressToken || record.id,
+        {
+          stages,
+          remarks,
+          department: dept,
+        },
+      );
 
       const counts = stageCounts(updated.progressStages || stages);
       const bar = progressBar(counts.completed, stages.length);
@@ -1786,7 +2182,9 @@ export class DepartmentOperationsService {
         finalRemarks ? `*Remarks Recorded:* ${finalRemarks}` : null,
         ``,
         `*Authoritative Sync:* Database, website, analytics & reports updated.`,
-      ].filter(Boolean).join('\n');
+      ]
+        .filter(Boolean)
+        .join('\n');
 
       this.idempotencyCache.set(idempotencyKey, { timestamp: now, summary });
       this.clearSession(sender);
@@ -1798,10 +2196,19 @@ export class DepartmentOperationsService {
       ];
 
       await sendReplyButtons(sender, summary, buttons, fetchImpl, env);
-      this.logger.log(`Project #${id} milestone updated to ${statusVal} by ${sender}`);
+      this.logger.log(
+        `Project #${id} milestone updated to ${statusVal} by ${sender}`,
+      );
     } catch (err) {
-      this.logger.error(`Failed to save project milestone: ${err instanceof Error ? err.message : 'error'}`);
-      await sendTextMessage(sender, '❌ Failed to save update to database. Please try again.', fetchImpl, env);
+      this.logger.error(
+        `Failed to save project milestone: ${err instanceof Error ? err.message : 'error'}`,
+      );
+      await sendTextMessage(
+        sender,
+        '❌ Failed to save update to database. Please try again.',
+        fetchImpl,
+        env,
+      );
     }
   }
 
@@ -1819,7 +2226,13 @@ export class DepartmentOperationsService {
         { id: 'dept:p:assigned', title: 'Assigned Projects' },
         { id: 'dept:projects', title: 'Projects Menu' },
       ];
-      await sendReplyButtons(sender, 'No projects found to generate a report.', buttons, fetchImpl, env);
+      await sendReplyButtons(
+        sender,
+        'No projects found to generate a report.',
+        buttons,
+        fetchImpl,
+        env,
+      );
       return;
     }
 
@@ -1869,10 +2282,14 @@ export class DepartmentOperationsService {
       ``,
       `*Key Projects & Milestones:*`,
       ...projectHighlights,
-      projects.length > 4 ? `\n_...and ${projects.length - 4} more project(s)._` : null,
+      projects.length > 4
+        ? `\n_...and ${projects.length - 4} more project(s)._`
+        : null,
       ``,
       `_All data derived directly from the authoritative database._`,
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const buttons: ReplyButton[] = [
       { id: 'dept:p:assigned', title: 'View Projects' },
@@ -1930,12 +2347,16 @@ export class DepartmentOperationsService {
     let all: WorkspaceRecord[] = [];
 
     if (deps.records && Array.isArray(deps.records)) {
-      all = (deps.records as WorkspaceRecord[]).filter((r) => r.section === section);
+      all = (deps.records as WorkspaceRecord[]).filter(
+        (r) => r.section === section,
+      );
     } else if (this.workspace) {
       try {
         all = await this.workspace.list(section);
       } catch (err) {
-        this.logger.warn(`Could not load ${section} records from workspace: ${err}`);
+        this.logger.warn(
+          `Could not load ${section} records from workspace: ${err}`,
+        );
       }
     }
 
@@ -1991,7 +2412,9 @@ export class DepartmentOperationsService {
           }));
         }
       } catch (err) {
-        this.logger.warn(`Could not load ${section} records from database: ${err}`);
+        this.logger.warn(
+          `Could not load ${section} records from database: ${err}`,
+        );
       }
     }
 
@@ -2007,7 +2430,11 @@ export class DepartmentOperationsService {
 
     const deptLower = auth.department.toLowerCase().trim();
     return all.filter((r) => {
-      const assignedDept = (r.followUpDepartment || r.department || '').toLowerCase();
+      const assignedDept = (
+        r.followUpDepartment ||
+        r.department ||
+        ''
+      ).toLowerCase();
       if (!assignedDept) {
         const desk = assignDesk(`${r.title} ${r.detail} ${r.place}`);
         return desk.department.toLowerCase().includes(deptLower);
@@ -2022,7 +2449,9 @@ export class DepartmentOperationsService {
     deps: { records?: unknown },
   ): Promise<WorkspaceRecord | null> {
     if (deps.records && Array.isArray(deps.records)) {
-      const match = (deps.records as WorkspaceRecord[]).find((r) => r.id === id);
+      const match = (deps.records as WorkspaceRecord[]).find(
+        (r) => r.id === id,
+      );
       if (match) return match;
     }
     if (this.workspace) {
@@ -2035,7 +2464,10 @@ export class DepartmentOperationsService {
     return null;
   }
 
-  private filterRecords(items: WorkspaceRecord[], query: string): WorkspaceRecord[] {
+  private filterRecords(
+    items: WorkspaceRecord[],
+    query: string,
+  ): WorkspaceRecord[] {
     const qLower = query.toLowerCase().trim();
     const qDigits = digits(query);
 
@@ -2055,7 +2487,11 @@ export class DepartmentOperationsService {
       ) {
         return true;
       }
-      if (qDigits && qDigits.length >= 2 && digits(r.srNumber || r.id).includes(qDigits)) {
+      if (
+        qDigits &&
+        qDigits.length >= 2 &&
+        digits(r.srNumber || r.id).includes(qDigits)
+      ) {
         return true;
       }
       return false;

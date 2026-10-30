@@ -199,8 +199,8 @@ function AnalyticsTwoCharts({
       .map(([name, count]) => ({ name, count }));
 
     // Sentiment / Category distribution for Donut Chart
-    let donutTitle = 'Sentiment Distribution';
-    let donutItems: { name: string; count: number; fill: string }[] = [];
+    let donutTitle: string;
+    let donutItems: { name: string; count: number; fill: string }[];
 
     if (activeCategory === 'all') {
       donutTitle = 'Sentiment Distribution';
@@ -1698,7 +1698,7 @@ export default function AnalyticsDashboard() {
                         {formatDate(art.created_on || art.first_seen_at)}
                       </td>
                       <td className="py-3 px-3 whitespace-nowrap text-right">
-                        {Boolean(art.source_url) ? (
+                        {art.source_url ? (
                           <a
                             href={art.source_url as string}
                             target="_blank"

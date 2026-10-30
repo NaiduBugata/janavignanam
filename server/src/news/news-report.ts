@@ -36,7 +36,7 @@ const NAVY: Rgb = [0.08, 0.16, 0.32]; // #142952
 const NAVY_BG: Rgb = [0.94, 0.96, 0.98]; // #F0F4F9
 const GREEN: Rgb = [0.063, 0.725, 0.506]; // #10B981
 const RED: Rgb = [0.937, 0.267, 0.267]; // #EF4444
-const AMBER: Rgb = [0.961, 0.620, 0.043]; // #F59E0B
+const AMBER: Rgb = [0.961, 0.62, 0.043]; // #F59E0B
 const SLATE: Rgb = [0.392, 0.455, 0.545]; // #64748B
 const TEXT_DARK: Rgb = [0.06, 0.09, 0.16]; // #0F172A
 const TEXT_MUTED: Rgb = [0.42, 0.48, 0.56]; // #6B7A8F
@@ -388,7 +388,14 @@ class PdfReportBuilder {
     if (filters.search) fList.push(`Keyword: "${filters.search}"`);
 
     const filterText = fList.join('  |  ');
-    this.text(LEFT + 12, bottom + 30, 9, true, 'APPLIED CONSTITUENCY FILTERS:', NAVY);
+    this.text(
+      LEFT + 12,
+      bottom + 30,
+      9,
+      true,
+      'APPLIED CONSTITUENCY FILTERS:',
+      NAVY,
+    );
     this.text(
       LEFT + 12,
       bottom + 16,
@@ -639,7 +646,8 @@ export function generatePdfReport(
   let title = 'JanaVignanam Analytics - Overall Comprehensive Report';
   if (filters.sentiment) {
     const s = filters.sentiment.toLowerCase();
-    if (s === 'positive') title = 'JanaVignanam Analytics - Positive News Report';
+    if (s === 'positive')
+      title = 'JanaVignanam Analytics - Positive News Report';
     else if (s === 'negative')
       title = 'JanaVignanam Analytics - Negative News Report';
     else if (s === 'problems' || s === 'problem')

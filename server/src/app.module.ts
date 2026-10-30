@@ -13,6 +13,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { WorkspaceModule } from './workspace/workspace.module';
 import { VisitsModule } from './visits/visits.module';
 import { BirthdaysModule } from './birthdays/birthdays.module';
+import { RagModule } from './rag/rag.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { BirthdaysModule } from './birthdays/birthdays.module';
     AdminModule,
     VisitsModule,
     BirthdaysModule,
+    RagModule,
   ],
 })
 export class AppModule {}

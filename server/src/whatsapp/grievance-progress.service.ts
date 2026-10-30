@@ -89,7 +89,9 @@ function digits(val: string): string {
 function clip(str: string, maxLen: number): string {
   if (!str) return '';
   const trimmed = str.trim();
-  return trimmed.length > maxLen ? trimmed.slice(0, maxLen - 1).trim() + '…' : trimmed;
+  return trimmed.length > maxLen
+    ? trimmed.slice(0, maxLen - 1).trim() + '…'
+    : trimmed;
 }
 
 function progressBar(completed: number, total: number): string {
@@ -111,7 +113,10 @@ function progressPageUrl(env: NodeJS.ProcessEnv, token: string): string {
 export class GrievanceProgressService {
   private readonly logger = new Logger(GrievanceProgressService.name);
   private readonly sessions = new Map<string, GpmSession>();
-  private readonly idempotencyCache = new Map<string, { timestamp: number; summary: string }>();
+  private readonly idempotencyCache = new Map<
+    string,
+    { timestamp: number; summary: string }
+  >();
 
   constructor(
     @Optional() private readonly workspace?: WorkspaceService,
@@ -137,7 +142,10 @@ export class GrievanceProgressService {
   /**
    * Authorize whether the sender is allowed to manage grievance progress.
    */
-  checkAuthorization(sender: string, env: NodeJS.ProcessEnv = process.env): AdminAuthResult {
+  checkAuthorization(
+    sender: string,
+    env: NodeJS.ProcessEnv = process.env,
+  ): AdminAuthResult {
     const d = digits(sender);
     if (!d) return { authorized: false, role: 'officer', name: 'Unknown' };
 
@@ -154,14 +162,22 @@ export class GrievanceProgressService {
       .map(digits)
       .filter(Boolean);
 
-    if (alerts.includes(d) || replies.includes(d) || envRecipients.includes(d)) {
+    if (
+      alerts.includes(d) ||
+      replies.includes(d) ||
+      envRecipients.includes(d)
+    ) {
       return { authorized: true, role: 'admin', name: 'Administrator' };
     }
 
     // 3. Akshay (Department Coordinator)
     const akshayPhone = digits(phoneForName('akshay') || '');
     if (akshayPhone && akshayPhone === d) {
-      return { authorized: true, role: 'admin', name: 'Akshay (Department Head)' };
+      return {
+        authorized: true,
+        role: 'admin',
+        name: 'Akshay (Department Head)',
+      };
     }
 
     // 4. Default Department WhatsApp
@@ -217,7 +233,10 @@ export class GrievanceProgressService {
     }
 
     // Main Menu Trigger
-    if (reply === 'gpm:menu' || GPM_TRIGGER_KEYWORDS.includes(textMsg.toLowerCase())) {
+    if (
+      reply === 'gpm:menu' ||
+      GPM_TRIGGER_KEYWORDS.includes(textMsg.toLowerCase())
+    ) {
       this.clearSession(sender);
       await this.sendMenu(sender, undefined, fetchImpl, env, auth);
       return;
@@ -275,7 +294,8 @@ export class GrievanceProgressService {
     if (reply.startsWith('gpm:page:')) {
       const parts = reply.split(':');
       const newPage = parseInt(parts[2], 10) || 1;
-      const action = (parts[3] as 'update' | 'view') || session.action || 'update';
+      const action =
+        (parts[3] as 'update' | 'view') || session.action || 'update';
       session.action = action;
       session.page = newPage;
       await this.sendGrievanceList(sender, session, fetchImpl, env, auth, deps);
@@ -287,7 +307,14 @@ export class GrievanceProgressService {
       const [, , id, action] = reply.split(':');
       session.action = (action as 'update' | 'view') || 'update';
       session.grievanceId = id;
-      await this.handleGrievanceSelected(sender, id, session, fetchImpl, env, deps);
+      await this.handleGrievanceSelected(
+        sender,
+        id,
+        session,
+        fetchImpl,
+        env,
+        deps,
+      );
       return;
     }
 
@@ -304,10 +331,12 @@ export class GrievanceProgressService {
     if (reply.startsWith('gpm:stg:')) {
       const [, , id, stageIdxStr] = reply.split(':');
       const stageIdx = parseInt(stageIdxStr, 10);
-      const record = session.grievanceRecord || (await this.getGrievance(id, deps));
-      const stages = record?.progressStages && record.progressStages.length
-        ? record.progressStages
-        : defaultStages();
+      const record =
+        session.grievanceRecord || (await this.getGrievance(id, deps));
+      const stages =
+        record?.progressStages && record.progressStages.length
+          ? record.progressStages
+          : defaultStages();
       const current = stages[stageIdx];
 
       session.grievanceId = id;
@@ -340,7 +369,15 @@ export class GrievanceProgressService {
     // Handle Search text or Note input
     if (session.step === 'SEARCH_GRIEVANCE') {
       if (textMsg) {
-        await this.handleSearch(sender, textMsg, session, fetchImpl, env, auth, deps);
+        await this.handleSearch(
+          sender,
+          textMsg,
+          session,
+          fetchImpl,
+          env,
+          auth,
+          deps,
+        );
         return;
       }
     }
@@ -362,7 +399,14 @@ export class GrievanceProgressService {
       reply === 'gpm:confirm:yes' ||
       (session.step === 'CONFIRM_UPDATE' && textMsg.toLowerCase() === 'yes')
     ) {
-      await this.executeSaveProgress(sender, session, fetchImpl, env, auth, deps);
+      await this.executeSaveProgress(
+        sender,
+        session,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -371,13 +415,27 @@ export class GrievanceProgressService {
       (session.step === 'CONFIRM_UPDATE' && textMsg.toLowerCase() === 'no')
     ) {
       this.clearSession(sender);
-      await this.sendMenu(sender, 'Update cancelled. No changes were made.', fetchImpl, env, auth);
+      await this.sendMenu(
+        sender,
+        'Update cancelled. No changes were made.',
+        fetchImpl,
+        env,
+        auth,
+      );
       return;
     }
 
     // Text search fallback if user typed a keyword or reference # at any time
     if (textMsg && session.step === 'SELECT_GRIEVANCE') {
-      await this.handleSearch(sender, textMsg, session, fetchImpl, env, auth, deps);
+      await this.handleSearch(
+        sender,
+        textMsg,
+        session,
+        fetchImpl,
+        env,
+        auth,
+        deps,
+      );
       return;
     }
 
@@ -532,7 +590,9 @@ export class GrievanceProgressService {
     }
 
     const header = action === 'update' ? 'Select Grievance' : 'View Progress';
-    const filterNote = session.searchQuery ? ` (Filter: "${session.searchQuery}")` : '';
+    const filterNote = session.searchQuery
+      ? ` (Filter: "${session.searchQuery}")`
+      : '';
     const body = `*${header} (Page ${page}/${totalPages})*${filterNote}\n\nTap a grievance below to ${actionLabel} its stages:`;
 
     await sendReplyList(sender, body, rows, {
@@ -558,7 +618,12 @@ export class GrievanceProgressService {
   ): Promise<void> {
     const q = query.trim();
     if (!q) {
-      await sendTextMessage(sender, 'Please provide a reference number or keyword to search.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        'Please provide a reference number or keyword to search.',
+        fetchImpl,
+        env,
+      );
       return;
     }
     const allGrievances = await this.loadAuthorizedGrievances(auth, deps);
@@ -570,7 +635,14 @@ export class GrievanceProgressService {
       session.grievanceId = g.id;
       session.grievanceRecord = g;
       session.grievanceTitle = g.title;
-      await this.handleGrievanceSelected(sender, g.id, session, fetchImpl, env, deps);
+      await this.handleGrievanceSelected(
+        sender,
+        g.id,
+        session,
+        fetchImpl,
+        env,
+        deps,
+      );
       return;
     }
 
@@ -605,7 +677,12 @@ export class GrievanceProgressService {
   ): Promise<void> {
     const record = await this.getGrievance(grievanceId, deps);
     if (!record) {
-      await sendTextMessage(sender, 'Grievance record not found or no longer available.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        'Grievance record not found or no longer available.',
+        fetchImpl,
+        env,
+      );
       await this.sendMenu(sender, undefined, fetchImpl, env);
       return;
     }
@@ -629,18 +706,26 @@ export class GrievanceProgressService {
     fetchImpl: typeof fetch = fetch,
     env: NodeJS.ProcessEnv = process.env,
   ): Promise<void> {
-    const stages = record.progressStages && record.progressStages.length
-      ? record.progressStages
-      : defaultStages();
+    const stages =
+      record.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     const counts = stageCounts(stages);
     const pct = Math.round((counts.completed / stages.length) * 100);
     const bar = progressBar(counts.completed, stages.length);
     const token = record.progressToken || '';
-    const webUrl = token ? progressPageUrl(env, token) : 'Link available upon approval';
+    const webUrl = token
+      ? progressPageUrl(env, token)
+      : 'Link available upon approval';
 
     const stageLines = stages
       .map((s, idx) => {
-        const icon = s.status === 'Completed' ? '✅' : s.status === 'In progress' ? '⏳' : '⬜';
+        const icon =
+          s.status === 'Completed'
+            ? '✅'
+            : s.status === 'In progress'
+              ? '⏳'
+              : '⬜';
         const note = s.note ? `\n   ↳ _${s.note}_` : '';
         return `${idx + 1}. ${icon} ${s.name}: ${s.status}${note}`;
       })
@@ -689,16 +774,20 @@ export class GrievanceProgressService {
       return;
     }
 
-    const stages = record.progressStages && record.progressStages.length
-      ? record.progressStages
-      : defaultStages();
+    const stages =
+      record.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     const counts = stageCounts(stages);
     const pct = Math.round((counts.completed / stages.length) * 100);
 
     const rows: MenuRow[] = stages.map((s, idx) => ({
       id: `gpm:stg:${grievanceId}:${idx}`,
       title: clip(`${idx + 1}. ${s.name}`, 24),
-      description: clip(`Current: ${s.status}${s.note ? ' · ' + s.note : ''}`, 72),
+      description: clip(
+        `Current: ${s.status}${s.note ? ' · ' + s.note : ''}`,
+        72,
+      ),
     }));
 
     rows.push({ id: 'gpm:cancel', title: 'Cancel Update' });
@@ -725,11 +814,14 @@ export class GrievanceProgressService {
     env: NodeJS.ProcessEnv = process.env,
     deps: { records?: unknown } = {},
   ): Promise<void> {
-    const record = session.grievanceRecord || (await this.getGrievance(session.grievanceId || '', deps));
+    const record =
+      session.grievanceRecord ||
+      (await this.getGrievance(session.grievanceId || '', deps));
     const stageIdx = session.selectedStageIndex ?? 0;
-    const stages = record?.progressStages && record.progressStages.length
-      ? record.progressStages
-      : defaultStages();
+    const stages =
+      record?.progressStages && record.progressStages.length
+        ? record.progressStages
+        : defaultStages();
     const current = stages[stageIdx];
 
     const message = [
@@ -788,7 +880,9 @@ export class GrievanceProgressService {
     env: NodeJS.ProcessEnv = process.env,
     deps: { records?: unknown } = {},
   ): Promise<void> {
-    const record = session.grievanceRecord || (await this.getGrievance(session.grievanceId || '', deps));
+    const record =
+      session.grievanceRecord ||
+      (await this.getGrievance(session.grievanceId || '', deps));
 
     const message = [
       `*Review Proposed Progress Update*`,
@@ -826,7 +920,12 @@ export class GrievanceProgressService {
   ): Promise<void> {
     const grievanceId = session.grievanceId;
     if (!grievanceId) {
-      await sendTextMessage(sender, 'No grievance selected. Session expired.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        'No grievance selected. Session expired.',
+        fetchImpl,
+        env,
+      );
       this.clearSession(sender);
       return;
     }
@@ -835,7 +934,9 @@ export class GrievanceProgressService {
     const idempotencyKey = `${sender}:${grievanceId}:${session.selectedStageIndex}:${session.selectedStatus}:${session.enteredNote}`;
     const cached = this.idempotencyCache.get(idempotencyKey);
     if (cached && Date.now() - cached.timestamp < IDEMPOTENCY_TTL_MS) {
-      this.logger.log(`Idempotent duplicate update caught for grievance #${grievanceId}`);
+      this.logger.log(
+        `Idempotent duplicate update caught for grievance #${grievanceId}`,
+      );
       const buttons: ReplyButton[] = [
         { id: `gpm:stg_list:${grievanceId}`, title: 'Update Other Stage' },
         { id: 'gpm:update', title: 'Other Grievance' },
@@ -848,19 +949,29 @@ export class GrievanceProgressService {
 
     const record = await this.getGrievance(grievanceId, deps);
     if (!record) {
-      await sendTextMessage(sender, 'Grievance record could not be found.', fetchImpl, env);
+      await sendTextMessage(
+        sender,
+        'Grievance record could not be found.',
+        fetchImpl,
+        env,
+      );
       this.clearSession(sender);
       return;
     }
 
     const stageIdx = session.selectedStageIndex ?? 0;
-    const stages: ProgressStage[] = record.progressStages && record.progressStages.length
-      ? JSON.parse(JSON.stringify(record.progressStages))
-      : defaultStages();
+    const stages: ProgressStage[] =
+      record.progressStages && record.progressStages.length
+        ? JSON.parse(JSON.stringify(record.progressStages))
+        : defaultStages();
 
-    const stageName = session.selectedStageName || STAGE_NAMES[stageIdx] || 'Work started';
+    const stageName =
+      session.selectedStageName || STAGE_NAMES[stageIdx] || 'Work started';
     const newStatus = session.selectedStatus || 'In progress';
-    const note = session.enteredNote !== undefined ? session.enteredNote : (stages[stageIdx]?.note || '');
+    const note =
+      session.enteredNote !== undefined
+        ? session.enteredNote
+        : stages[stageIdx]?.note || '';
 
     // Update the specific stage
     stages[stageIdx] = {
@@ -871,15 +982,26 @@ export class GrievanceProgressService {
 
     // Calculate new overall record status
     const allCompleted = stages.every((s) => s.status === 'Completed');
-    const anyActive = stages.some((s) => s.status === 'In progress' || s.status === 'Completed');
-    const newRecordStatus = allCompleted ? 'Completed' : (anyActive ? 'In progress' : 'Pending');
+    const anyActive = stages.some(
+      (s) => s.status === 'In progress' || s.status === 'Completed',
+    );
+    const newRecordStatus = allCompleted
+      ? 'Completed'
+      : anyActive
+        ? 'In progress'
+        : 'Pending';
 
-    const dept = record.followUpDepartment || record.department || auth?.department || 'Department';
+    const dept =
+      record.followUpDepartment ||
+      record.department ||
+      auth?.department ||
+      'Department';
 
     const input: SaveProgressInput = {
       stages,
       status: newRecordStatus,
-      remarks: note || `Stage "${stageName}" updated to ${newStatus} via WhatsApp`,
+      remarks:
+        note || `Stage "${stageName}" updated to ${newStatus} via WhatsApp`,
       department: dept,
     };
 
@@ -905,7 +1027,9 @@ export class GrievanceProgressService {
         );
       }
 
-      this.logger.log(`Grievance #${record.id} progress updated to ${newStatus} by ${sender}`);
+      this.logger.log(
+        `Grievance #${record.id} progress updated to ${newStatus} by ${sender}`,
+      );
 
       const counts = stageCounts(stages);
       const pct = Math.round((counts.completed / stages.length) * 100);
@@ -913,7 +1037,12 @@ export class GrievanceProgressService {
 
       const stageLines = stages
         .map((s) => {
-          const icon = s.status === 'Completed' ? '✅' : s.status === 'In progress' ? '⏳' : '⬜';
+          const icon =
+            s.status === 'Completed'
+              ? '✅'
+              : s.status === 'In progress'
+                ? '⏳'
+                : '⬜';
           const n = s.note ? ` (${clip(s.note, 40)})` : '';
           return `${icon} ${s.name}: *${s.status}*${n}`;
         })
@@ -948,7 +1077,10 @@ export class GrievanceProgressService {
 
       await sendReplyButtons(sender, successMsg, buttons, fetchImpl, env);
     } catch (err) {
-      this.logger.error(`Failed to save progress for grievance #${record.id}:`, err);
+      this.logger.error(
+        `Failed to save progress for grievance #${record.id}:`,
+        err,
+      );
       await sendTextMessage(
         sender,
         `⚠️ *Save Failed*\n\nCould not update grievance progress due to an error: ${err instanceof Error ? err.message : 'Database error'}. Please try again.`,
@@ -1001,7 +1133,10 @@ export class GrievanceProgressService {
   // DATA ACCESS & SESSION HELPERS
   // =========================================================================
 
-  private filterByQuery(items: WorkspaceRecord[], query: string): WorkspaceRecord[] {
+  private filterByQuery(
+    items: WorkspaceRecord[],
+    query: string,
+  ): WorkspaceRecord[] {
     const qLower = query.toLowerCase().trim();
     const qDigits = digits(query);
 
@@ -1021,7 +1156,11 @@ export class GrievanceProgressService {
       ) {
         return true;
       }
-      if (qDigits && qDigits.length >= 2 && digits(g.srNumber || g.id).includes(qDigits)) {
+      if (
+        qDigits &&
+        qDigits.length >= 2 &&
+        digits(g.srNumber || g.id).includes(qDigits)
+      ) {
         return true;
       }
       return false;
@@ -1037,7 +1176,10 @@ export class GrievanceProgressService {
       try {
         items = await this.workspace.list('grievances');
       } catch (err) {
-        this.logger.warn('Failed to load grievances from workspace service', err);
+        this.logger.warn(
+          'Failed to load grievances from workspace service',
+          err,
+        );
       }
     }
 
@@ -1055,7 +1197,9 @@ export class GrievanceProgressService {
     }
 
     // Only active/open grievances by default (Open, Reviewed, Pending, In progress, Approved)
-    return items.filter((g) => g.status !== 'Closed' && g.status !== 'Rejected');
+    return items.filter(
+      (g) => g.status !== 'Closed' && g.status !== 'Rejected',
+    );
   }
 
   private async getGrievance(
@@ -1070,7 +1214,9 @@ export class GrievanceProgressService {
       }
     }
     if (deps.records && Array.isArray(deps.records)) {
-      return (deps.records as WorkspaceRecord[]).find((r) => r.id === id) || null;
+      return (
+        (deps.records as WorkspaceRecord[]).find((r) => r.id === id) || null
+      );
     }
     return null;
   }

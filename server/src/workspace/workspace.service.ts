@@ -470,7 +470,9 @@ export class WorkspaceService {
       }
     }
     if (!existing) {
-      throw new NotFoundException('This progress link or grievance is no longer available');
+      throw new NotFoundException(
+        'This progress link or grievance is no longer available',
+      );
     }
 
     const options: SaveProgressInput = Array.isArray(input)

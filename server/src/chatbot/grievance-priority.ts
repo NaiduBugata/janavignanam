@@ -218,9 +218,10 @@ export function departmentOrder(
     .replace(/\+?\d[\d\s-]{7,}\d/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const inChatNotice = messageLanguage(issue) === 'te'
-    ? '\n\n📲 వాట్సాప్‌లోనే పురోగతిని అప్‌డేట్ చేయండి: #progress అని రిప్లై ఇవ్వండి'
-    : '\n\n📲 Update progress natively in WhatsApp: Reply #progress';
+  const inChatNotice =
+    messageLanguage(issue) === 'te'
+      ? '\n\n📲 వాట్సాప్‌లోనే పురోగతిని అప్‌డేట్ చేయండి: #progress అని రిప్లై ఇవ్వండి'
+      : '\n\n📲 Update progress natively in WhatsApp: Reply #progress';
   const link = progressUrl
     ? messageLanguage(issue) === 'te'
       ? `\n\nUpdate the work progress:\n${progressUrl}`

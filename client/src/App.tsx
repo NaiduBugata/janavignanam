@@ -33,6 +33,7 @@ import { ReportActions, ReportDownloads } from "@/ReportPage.tsx";
 import { SimpleRecordForm } from "@/SimpleRecordForm.tsx";
 import { NewsProvider } from "@/mediasphere/context/NewsContext.jsx";
 import AnalyticsDashboard from "@/mediasphere/components/analytics/AnalyticsDashboard.tsx";
+import { MpRetrievalWindow } from "@/components/MpRetrievalWindow.tsx";
 
 type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics";
 type ListSection = "grievances" | "projects" | "people" | "campaigns";
@@ -354,6 +355,10 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove }
             <div key={card.label} className="rounded-xl border bg-card p-5"><card.icon className="mb-8 size-5 text-primary" /><p className="text-sm text-muted-foreground">{card.label}</p><p className="mt-1 font-display text-3xl font-semibold">{card.value}</p></div>
           ))}
         </div>
+
+        {/* MP Retrieval Engine & Intelligence Desk */}
+        <MpRetrievalWindow />
+
         <div className="mt-8 rounded-xl border bg-card p-6">
           <h2 className="font-display text-lg font-semibold">Open a workflow</h2>
           <div className="mt-5 grid gap-2 sm:grid-cols-2">{nav.slice(1, 6).map((item) => <button key={item.id} onClick={() => navigate(item.path)} className="flex items-center justify-between rounded-lg border p-3 text-left text-sm hover:bg-muted"><span className="flex items-center gap-2"><item.icon className="size-4 text-primary" />{item.label}</span><ChevronRight className="size-4 text-muted-foreground" /></button>)}</div>
