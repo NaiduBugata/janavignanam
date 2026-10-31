@@ -1048,7 +1048,11 @@ export class GrievanceProgressService {
         })
         .join('\n');
 
+      const isWorkStartedStage = stageName === 'Work started' || stageName === STAGE_NAMES[0];
+      const complainantNotified = isWorkStartedStage && newStatus !== 'Pending';
+
       const successMsg = [
+        complainantNotified ? '📲 *Complainant Notification:* The citizen who raised this request was notified on WhatsApp.\n' : '',
         `✅ *Progress Saved Successfully!*`,
         ``,
         `📋 *Grievance:* #${(record.srNumber || record.id).slice(-8)} · ${clip(record.title, 50)}`,

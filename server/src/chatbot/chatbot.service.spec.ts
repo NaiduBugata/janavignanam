@@ -1161,7 +1161,6 @@ describe('ChatbotService', () => {
     const texts = sent.filter((message) => message.type === 'text');
     expect(texts.map((message) => message.to)).toEqual([
       '919876543210',
-      '919876543210',
       '918885230708',
     ]);
     const order = messageText(texts[0]);
@@ -1173,12 +1172,9 @@ describe('ChatbotService', () => {
     expect(order).toContain('/progress/');
     expect(order).not.toContain('Udatha');
     expect(order).not.toContain('918885230708');
-    expect(messageText(texts[1])).toContain(
-      'leader to contact for this issue: Ramesh',
-    );
-    expect(messageText(texts[2])).toContain('as early as possible');
-    expect(messageText(texts[2])).toContain('Thank you');
-    expect(messageText(texts[2])).not.toContain(
+    expect(messageText(texts[1])).toContain('as early as possible');
+    expect(messageText(texts[1])).toContain('Thank you');
+    expect(messageText(texts[1])).not.toContain(
       'Need to solve this immediately',
     );
     const menu = sent.find((message) => message.type === 'interactive') as {
@@ -1224,11 +1220,9 @@ describe('ChatbotService', () => {
     const texts = sent.filter((message) => message.type === 'text');
     expect(texts.map((message) => message.to)).toEqual([
       '919876543210',
-      '919876543210',
       '918885230708',
     ]);
-    expect(messageText(texts[1])).toContain('Lakshmi');
-    expect(messageText(texts[2])).toBe(
+    expect(messageText(texts[1])).toBe(
       'మీ సమస్యను పరిష్కరిస్తున్నాము. కొన్ని రోజుల్లో లేదా వీలైనంత త్వరగా పరిష్కారం అవుతుంది. ధన్యవాదాలు.',
     );
   });
@@ -1282,13 +1276,12 @@ describe('ChatbotService', () => {
     const waterTexts = water.filter((message) => message.type === 'text');
     expect(waterTexts.map((message) => message.to)).toEqual([
       '919876543210',
-      '919876543210',
       '919100000001',
     ]);
     expect(messageText(waterTexts[0])).toContain(
       'Need to solve this immediately',
     );
-    expect(messageText(waterTexts[2])).toContain('Thank you');
+    expect(messageText(waterTexts[1])).toContain('Thank you');
     const road: Array<Record<string, unknown>> = [];
     await bot.handle(
       buttonPayload(
@@ -1306,14 +1299,10 @@ describe('ChatbotService', () => {
     const roadTexts = road.filter((message) => message.type === 'text');
     expect(roadTexts.map((message) => message.to)).toEqual([
       '919876543210',
-      '919876543210',
       '918885230708',
     ]);
     expect(messageText(roadTexts[0])).toContain('Leader to contact: Lakshmi');
-    expect(messageText(roadTexts[1])).toContain(
-      'leader to contact for this issue: Lakshmi',
-    );
-    expect(messageText(roadTexts[2])).toContain('as early as possible');
+    expect(messageText(roadTexts[1])).toContain('as early as possible');
   });
 
   it('drops a followed grievance from the WhatsApp list and marks it reviewed', async () => {

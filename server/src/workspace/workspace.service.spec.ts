@@ -1,6 +1,8 @@
 import { WorkspaceService } from './workspace.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../database/database.service';
+import { setStaffDirectory } from '../whatsapp/whatsapp.audience';
+import { defaultStages } from './progress-report';
 import * as waSend from '../whatsapp/whatsapp.send';
 
 describe('WorkspaceService', () => {
@@ -198,6 +200,162 @@ describe('WorkspaceService', () => {
 
     spyButtons.mockRestore();
     spyTemplate.mockRestore();
+    spyText.mockRestore();
+  });
+
+  it('does not send messages to leaders upon grievance approval and dispatches to associated department number', async () => {
+    setStaffDirectory([
+      { phone: '916304581226', role: 'admin', name: 'Akshay' },
+      { phone: '919440123456', role: 'user', name: 'Ramesh' },
+    ]);
+    const spyButtons = jest
+      .spyOn(waSend, 'sendReplyButtons')
+      .mockResolvedValue({ success: true });
+    const spyTemplate = jest
+      .spyOn(waSend, 'sendTemplateMessage')
+      .mockResolvedValue({ success: true });
+    const spyText = jest
+      .spyOn(waSend, 'sendTextMessage')
+      .mockResolvedValue({ success: true });
+
+    const records: Array<Record<string, unknown>> = [
+      {
+        _id: 'gr-officer-1',
+        section: 'grievances',
+        title: 'Water shortage in Chilakaluripet',
+        detail: 'Need water supply repair immediately',
+        status: 'Open',
+        contactNumber: '919876543210',
+        assignedOfficer: 'Akshay',
+      },
+    ];
+
+    const db = {
+      ensureConnected: async () => true,
+      articlesCollectionName: 'articles',
+      collection: () => ({
+        findOne: async (filter: { _id?: unknown }) =>
+          records.find((r) => String(r._id) === String(filter._id)) || null,
+        findOneAndUpdate: async (
+          filter: { _id?: unknown },
+          update: { $set?: Record<string, unknown> },
+        ) => {
+          const row = records.find(
+            (item) => String(item._id) === String(filter._id),
+          );
+          if (!row) return null;
+          Object.assign(row, update.$set || {});
+          return row;
+        },
+      }),
+    };
+    const config = { get: () => 'test-secret' } as unknown as ConfigService;
+    const service = new WorkspaceService(
+      db as unknown as DatabaseService,
+      config,
+    );
+
+    const result = await service.approve('gr-officer-1');
+    expect(result.record.status).toBe('Approved');
+
+    // Leader was NOT messaged
+    const allTextRecipients = spyText.mock.calls.map((c) => c[0]);
+    expect(allTextRecipients).not.toContain('919440123456');
+
+    // Department recipient list includes Akshay (916304581226)
+    const buttonRecipients = spyButtons.mock.calls.map((c) => c[0]);
+    expect(buttonRecipients).toContain('916304581226');
+
+    spyButtons.mockRestore();
+    spyTemplate.mockRestore();
+    spyText.mockRestore();
+  });
+
+  it('notifies the citizen who raised the request once work is started', async () => {
+    const spyText = jest
+      .spyOn(waSend, 'sendTextMessage')
+      .mockResolvedValue({ success: true });
+
+    const testToken = 'ce42a89fab851611dc';
+    const records: Array<Record<string, unknown>> = [
+      {
+        _id: 'gr-prog-1',
+        section: 'grievances',
+        title: 'Broken pipeline near market',
+        detail: 'Pipeline leaking water',
+        status: 'Approved',
+        contactNumber: '918885230708',
+        progressToken: testToken,
+        progressStages: defaultStages(),
+      },
+    ];
+
+    const db = {
+      ensureConnected: async () => true,
+      articlesCollectionName: 'articles',
+      collection: () => ({
+        findOne: async (filter: { _id?: unknown; progressToken?: unknown }) =>
+          records.find(
+            (r) =>
+              (filter._id && String(r._id) === String(filter._id)) ||
+              (filter.progressToken &&
+                String(r.progressToken) === String(filter.progressToken)),
+          ) || null,
+        findOneAndUpdate: async (
+          filter: { _id?: unknown; progressToken?: unknown },
+          update: { $set?: Record<string, unknown> },
+        ) => {
+          const row = records.find(
+            (r) =>
+              (filter._id && String(r._id) === String(filter._id)) ||
+              (filter.progressToken &&
+                String(r.progressToken) === String(filter.progressToken)),
+          );
+          if (!row) return null;
+          Object.assign(row, update.$set || {});
+          return row;
+        },
+      }),
+    };
+    const config = { get: () => 'test-secret' } as unknown as ConfigService;
+    const service = new WorkspaceService(
+      db as unknown as DatabaseService,
+      config,
+    );
+
+    // Update Stage 0 (Work started) from Pending to In progress
+    const stages = defaultStages();
+    stages[0] = {
+      name: 'Work started',
+      status: 'In progress',
+      note: 'Team dispatched',
+    };
+
+    const updated = await service.saveProgress(testToken, {
+      stages,
+      remarks: 'Work commenced on site',
+      department: 'Water supply',
+    });
+
+    expect(updated.status).toBe('In progress');
+    expect(updated.workStartedNotifiedAt).toBeDefined();
+
+    // Verify citizen received the "Work started" message
+    expect(spyText).toHaveBeenCalled();
+    const [citizenPhone, citizenMsg] = spyText.mock.calls[0];
+    expect(citizenPhone).toContain('8885230708');
+    expect(citizenMsg).toContain('work has officially started');
+
+    // On subsequent progress update, citizen should NOT get duplicate notification
+    spyText.mockClear();
+    stages[1] = {
+      name: 'Inspection',
+      status: 'In progress',
+      note: 'Site inspected',
+    };
+    await service.saveProgress(testToken, { stages });
+    expect(spyText).not.toHaveBeenCalled();
+
     spyText.mockRestore();
   });
 });

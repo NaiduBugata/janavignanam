@@ -838,19 +838,24 @@ export class ChatbotService {
       fetchImpl,
       env,
     );
-    const leaderSent = await this.sendNotice(
-      leaderPhone,
-      leaderNotice(issue, desk),
-      fetchImpl,
-      env,
-    );
+    // Leader messaging disabled per user instruction: "do not send any msgs to leaders as of now, disable them i will tell you when it's needed"
+    const LEADER_NOTIFICATIONS_ENABLED = false;
+    const leaderSent =
+      LEADER_NOTIFICATIONS_ENABLED && leaderPhone
+        ? await this.sendNotice(
+            leaderPhone,
+            leaderNotice(issue, desk),
+            fetchImpl,
+            env,
+          )
+        : false;
     const raiserSent = raiser
       ? await this.sendNotice(raiser, leaderUpdate(language), fetchImpl, env)
       : false;
     if (!departmentSent && !leaderSent) {
       await sendTextMessage(
         sender,
-        'Follow up was not sent to the department or the leader.',
+        'Follow up was not sent to the department.',
         fetchImpl,
         env,
       );
@@ -859,11 +864,11 @@ export class ChatbotService {
     await this.markGrievanceReviewed(picked, desk.department, deps, progress);
     const lead =
       raiser && !raiserSent
-        ? 'Follow up sent to the department and the leader. The person who raised it is not in the contact list.'
+        ? 'Follow up sent to the department. The person who raised it is not in the contact list.'
         : 'Follow up sent.';
     await this.sendMenu(sender, lead, fetchImpl, env);
     this.logger.log(
-      `Grievance follow up sent to department ${maskPhone(departmentPhone)} and leader ${maskPhone(leaderPhone)}.`,
+      `Grievance follow up sent to department ${maskPhone(departmentPhone)}.`,
     );
   }
 

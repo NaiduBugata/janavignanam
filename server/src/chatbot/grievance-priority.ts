@@ -159,6 +159,24 @@ export function raiserApproval(language: GrievanceLanguage): string {
     : 'Your grievance has been approved. It will be resolved soon.';
 }
 
+export function raiserWorkStarted(
+  language: GrievanceLanguage,
+  detail?: { title?: string; department?: string; note?: string },
+): string {
+  const dept = (detail?.department || 'Department').trim();
+  const title = (detail?.title || '').trim();
+  const note = (detail?.note || '').trim();
+
+  if (language === 'te') {
+    const titleLine = title ? `\nసమస్య: ${title}` : '';
+    const noteLine = note ? `\nగమనిక: ${note}` : '';
+    return `నమస్కారం, మీ సమస్యపై సంబంధిత శాఖ (${dept}) ద్వారా పనులు ప్రారంభమయ్యాయి (Work Started).${titleLine}${noteLine}\nత్వరలోనే పనులు పూర్తి చేసి పరిష్కరిస్తాము. ధన్యవాదాలు.`;
+  }
+  const titleLine = title ? `\nIssue: ${title}` : '';
+  const noteLine = note ? `\nNote: ${note}` : '';
+  return `Hello, work has officially started on your grievance by the ${dept} department.${titleLine}${noteLine}\nIt will be resolved as early as possible. Thank you.`;
+}
+
 /** Sent to the named leader when the grievance is approved. */
 export function leaderApproval(issue: string, desk: GrievanceDesk): string {
   const text = issue

@@ -1585,6 +1585,10 @@ export class DepartmentOperationsService {
 
       const counts = stageCounts(updated.progressStages || stages);
       const bar = progressBar(counts.completed, stages.length);
+      const isWorkStartedStage =
+        stageName === 'Work started' || stageName === STAGE_NAMES[0];
+      const complainantNotified =
+        isWorkStartedStage && statusVal !== 'Pending';
 
       const summary = [
         `✅ *GRIEVANCE PROGRESS SAVED*`,
@@ -1594,6 +1598,9 @@ export class DepartmentOperationsService {
         `*Overall Progress:* ${bar}`,
         `*Grievance Status:* *${updated.status}*`,
         finalNote ? `*Note Recorded:* ${finalNote}` : null,
+        complainantNotified
+          ? `*Complainant Notification:* The citizen who raised this request was notified on WhatsApp.`
+          : null,
         ``,
         `*Authoritative Sync:* Database, website portal, analytics & reports updated.`,
       ]

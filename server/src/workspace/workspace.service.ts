@@ -26,6 +26,9 @@ import {
   leaderApproval,
   messageLanguage,
   raiserApproval,
+  raiserWorkStarted,
+  type GrievanceDesk,
+  type GrievanceLanguage,
 } from '../chatbot/grievance-priority';
 import { phoneForName } from '../whatsapp/whatsapp.audience';
 import {
@@ -45,6 +48,7 @@ import {
   defaultStages,
   recordsWorkbook,
   reportPdf,
+  STAGE_NAMES,
   type ProgressStage,
   type ReportRow,
 } from './progress-report';
@@ -113,6 +117,7 @@ export interface WorkspaceRecord {
   progressHistory?: ProgressHistoryEntry[];
   department: string;
   leader: string;
+  workStartedNotifiedAt?: string;
 }
 
 type CaseInput = {
@@ -371,7 +376,7 @@ export class WorkspaceService {
     const leaderPhone = phoneForName(desk.leader);
 
     try {
-      await sendDepartmentActionNotice(desk, issue, String(id), token);
+      await sendDepartmentActionNotice(desk, issue, String(id), token, record);
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'send failed';
       throw new BadRequestException(
@@ -381,9 +386,12 @@ export class WorkspaceService {
         ),
       );
     }
-    const leaderSent = leaderPhone
-      ? await sendQuiet(leaderPhone, leaderApproval(issue, desk))
-      : false;
+    // Leader messaging disabled per user instruction: "do not send any msgs to leaders as of now, disable them i will tell you when it's needed"
+    const LEADER_NOTIFICATIONS_ENABLED = false;
+    const leaderSent =
+      LEADER_NOTIFICATIONS_ENABLED && leaderPhone
+        ? await sendQuiet(leaderPhone, leaderApproval(issue, desk))
+        : false;
     const raiserSent = raiser
       ? await sendQuiet(raiser, raiserApproval(language))
       : false;
@@ -408,9 +416,11 @@ export class WorkspaceService {
       raiserSent
         ? 'The person who raised it was messaged.'
         : 'The person who raised it has no WhatsApp number on this grievance.',
-      leaderSent
-        ? `${desk.leader} was messaged.`
-        : `${desk.leader} is not in the contact list.`,
+      LEADER_NOTIFICATIONS_ENABLED
+        ? leaderSent
+          ? `${desk.leader} was messaged.`
+          : `${desk.leader} is not in the contact list.`
+        : 'Leader notifications are paused.',
       'The department was sent the WhatsApp operations menu.',
     ].join(' ');
     return {
@@ -553,6 +563,77 @@ export class WorkspaceService {
     const updatedHistory = [...prevHistory, historyEntry];
     const token = existing.progressToken || randomBytes(9).toString('hex');
 
+    const prevStages = existing.progressStages || [];
+    const prevWorkStartedStage = prevStages.find(
+      (s) => s.name === 'Work started' || s.name === STAGE_NAMES[0],
+    );
+    const prevWorkStartedStatus = prevWorkStartedStage?.status || 'Pending';
+    const prevStatus = existing.status || 'Pending';
+
+    const newWorkStartedStage = stagesToSave.find(
+      (s) => s.name === 'Work started' || s.name === STAGE_NAMES[0],
+    );
+    const newWorkStartedStatus = newWorkStartedStage?.status || 'Pending';
+
+    // Must Do: The one who raised the request must get msg once the work started
+    const isWorkStartedNow =
+      (newWorkStartedStatus === 'In progress' ||
+        newWorkStartedStatus === 'Completed' ||
+        newStatus === 'In progress') &&
+      prevWorkStartedStatus === 'Pending' &&
+      prevStatus !== 'In progress';
+
+    const alreadyNotified = Boolean(
+      (existing as unknown as Record<string, unknown>).workStartedNotifiedAt,
+    );
+
+    let workStartedNotifiedAt: string | undefined = undefined;
+    if (isWorkStartedNow && !alreadyNotified) {
+      const raiser = whatsappNumber(
+        existing.contactNumber ||
+          text((existing as unknown as Record<string, unknown>).reporterPhone),
+      );
+      if (raiser) {
+        const lang =
+          ((existing as unknown as Record<string, unknown>).language as GrievanceLanguage) ||
+          messageLanguage(existing.detail || existing.title || '');
+        const note =
+          newWorkStartedStage?.note ||
+          (typeof options.remarks === 'string' ? options.remarks : '');
+        const textMsg = raiserWorkStarted(lang, {
+          title: existing.title || existing.detail,
+          department: dept,
+          note,
+        });
+
+        try {
+          await sendTextMessage(raiser, textMsg);
+          workStartedNotifiedAt = now;
+        } catch {
+          // If outside 24h window, try approved template fallback
+          try {
+            await sendTemplateMessage(raiser, 'mediasphere_critical_issue', {
+              language: 'en',
+              bodyParameters: [
+                clean(existing.village || existing.place || 'Narasaraopet'),
+                clean(
+                  `Work started on grievance: ${existing.title || existing.detail || ''}`,
+                ),
+                'IN PROGRESS',
+                clean(`${dept} Department`),
+                new Date().toLocaleDateString('en-IN', {
+                  timeZone: 'Asia/Kolkata',
+                }),
+              ],
+            });
+            workStartedNotifiedAt = now;
+          } catch {
+            // Non-blocking log
+          }
+        }
+      }
+    }
+
     const patch: Record<string, unknown> = {
       status: newStatus,
       resolutionStatus: newStatus,
@@ -562,6 +643,7 @@ export class WorkspaceService {
       remarks,
       progressHistory: updatedHistory,
       progressToken: token,
+      ...(workStartedNotifiedAt ? { workStartedNotifiedAt } : {}),
       ...(options.department ? { followUpDepartment: dept } : {}),
     };
 
@@ -702,18 +784,90 @@ function verifyPassword(password: string, stored: string): boolean {
  * Prioritizes native WhatsApp interactive buttons so the department user can
  * manage the grievance entirely inside WhatsApp without external links.
  */
+function clean(value: string): string {
+  return (
+    value
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/ {2,}/g, ' ')
+      .trim()
+      .slice(0, 200) || '—'
+  );
+}
+
+export function resolveDepartmentRecipients(
+  desk: { department: string; place: string; leader: string },
+  record?: WorkspaceRecord,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const result = new Set<string>();
+
+  // 1. Direct lead phone on record
+  if (record?.leadPhone) {
+    const p = whatsappNumber(record.leadPhone);
+    if (p) result.add(p);
+  }
+
+  // 2. Assigned officer's phone from directory
+  if (record?.assignedOfficer) {
+    const officerPhone = phoneForName(record.assignedOfficer);
+    if (officerPhone) {
+      const p = whatsappNumber(officerPhone);
+      if (p) result.add(p);
+    }
+  }
+
+  // 3. Department contact matching in directory
+  const deptName =
+    record?.followUpDepartment || record?.department || desk.department;
+  if (deptName) {
+    const deptPhone = phoneForName(deptName);
+    if (deptPhone) {
+      const p = whatsappNumber(deptPhone);
+      if (p) result.add(p);
+    }
+  }
+
+  // 4. Akshay (Department Coordinator / Head)
+  const akshayPhone = phoneForName('akshay');
+  if (akshayPhone) {
+    const p = whatsappNumber(akshayPhone);
+    if (p) result.add(p);
+  }
+
+  // 5. Configured DEPARTMENT_WHATSAPP from environment
+  const envDeptWa = (env.DEPARTMENT_WHATSAPP || '').trim();
+  if (envDeptWa) {
+    const p = whatsappNumber(envDeptWa);
+    if (p) result.add(p);
+  }
+
+  // 6. Configured DEPARTMENT_PHONES list from environment
+  const envDeptPhones = (env.DEPARTMENT_PHONES || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const item of envDeptPhones) {
+    const p = whatsappNumber(item);
+    if (p) result.add(p);
+  }
+
+  // 7. Primary fallback DEPARTMENT_WHATSAPP (+918919537879)
+  const defaultDeptWa = whatsappNumber(DEPARTMENT_WHATSAPP);
+  if (defaultDeptWa) {
+    result.add(defaultDeptWa);
+  }
+
+  return [...result];
+}
+
 async function sendDepartmentActionNotice(
   desk: { department: string; place: string; leader: string },
   issue: string,
   recordId: string,
   token: string,
+  record?: WorkspaceRecord,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
-  const clean = (value: string) =>
-    value
-      .replace(/[\r\n\t]+/g, ' ')
-      .replace(/ {2,}/g, ' ')
-      .trim()
-      .slice(0, 200) || '—';
   const when = new Date().toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
@@ -727,7 +881,7 @@ async function sendDepartmentActionNotice(
     `The MP has requested your attention regarding:\n` +
     `*${clean(issue)}*\n\n` +
     `📍 *Location:* ${clean(desk.place)}\n` +
-    `👤 *Reference:* ${clean(desk.place)} - ${clean(desk.leader)}\n` +
+    `🏢 *Department:* ${clean(desk.department)}\n` +
     `📅 *Requested on:* ${when}\n\n` +
     `Select an option below to manage this grievance in WhatsApp:`;
 
@@ -737,27 +891,46 @@ async function sendDepartmentActionNotice(
     { id: 'dept:menu', title: 'Department Menu' },
   ];
 
-  try {
-    // 1. Primary: Native WhatsApp interactive buttons (No external links)
-    await sendReplyButtons(DEPARTMENT_WHATSAPP, bodyText, buttons);
-    return;
-  } catch {
-    // 2. Fallback if outside 24-hr customer service window:
-    // Meta requires an approved template when the 24-hour window has expired.
-    await sendTemplateMessage(DEPARTMENT_WHATSAPP, 'jv_mp_action_request', {
-      language: 'en',
-      bodyParameters: [
-        clean(desk.department),
-        clean(issue),
-        clean(`${desk.place} - ${desk.leader}`),
-        when,
-      ],
-      urlButton: `progress/${token}`,
-    });
-    await sendQuiet(
-      DEPARTMENT_WHATSAPP,
-      `📲 *Native WhatsApp Operations Menu*\n\n` +
-        `Reply *MENU* or *OPERATIONS* at any time to open the Department Operations Menu directly in WhatsApp.`,
+  const recipients = resolveDepartmentRecipients(desk, record, env);
+  let deliveredCount = 0;
+  let lastError: unknown = null;
+
+  for (const phone of recipients) {
+    try {
+      // 1. Primary: Native WhatsApp interactive buttons (No external links)
+      await sendReplyButtons(phone, bodyText, buttons, fetch, env);
+      deliveredCount++;
+    } catch {
+      // 2. Fallback if outside 24-hr customer service window:
+      // Meta requires an approved template when the 24-hour window has expired.
+      try {
+        await sendTemplateMessage(phone, 'jv_mp_action_request', {
+          language: 'en',
+          bodyParameters: [
+            clean(desk.department),
+            clean(issue),
+            clean(`${desk.place} - ${desk.department}`),
+            when,
+          ],
+          urlButton: `progress/${token}`,
+          env,
+        });
+        await sendQuiet(
+          phone,
+          `📲 *Native WhatsApp Operations Menu*\n\n` +
+            `Reply *MENU* or *OPERATIONS* at any time to open the Department Operations Menu directly in WhatsApp.`,
+        );
+        deliveredCount++;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+
+  if (!deliveredCount && recipients.length > 0) {
+    throw (
+      lastError ||
+      new Error('Failed to deliver department action notice to any recipient.')
     );
   }
 }
@@ -907,6 +1080,7 @@ function toRecord(doc: Record<string, unknown>): WorkspaceRecord {
     progressRemarks: text(doc.progressRemarks || doc.remarks),
     remarks: text(doc.remarks || doc.progressRemarks),
     progressHistory: historyOf(doc.progressHistory),
+    workStartedNotifiedAt: text(doc.workStartedNotifiedAt),
     ...deskFields(doc),
   };
 }
