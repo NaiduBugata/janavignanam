@@ -64,6 +64,8 @@ type RecordItem = {
   actionTaken?: string;
   actionToBeTaken?: string;
   assignedOfficer?: string;
+  assignedOfficerPhone?: string;
+  issueDetail?: string;
   deadline?: string;
   place?: string;
   progressStages?: { name: string; status: string; note: string }[];
@@ -485,8 +487,14 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
                 </div>
               </div>
               {item.categories?.length ? <p className="mt-2 truncate text-sm">{item.categories.map((category) => (category === "Others" && item.others ? item.others : category)).join(", ")}</p> : null}
+              {item.actionTaken ? <p className="mt-1 truncate text-sm">Action taken: {item.actionTaken}</p> : null}
               {item.actionToBeTaken ? <p className="mt-1 truncate text-sm">Action to be taken: {item.actionToBeTaken}</p> : null}
-              {item.assignedOfficer ? <p className="mt-1 truncate text-sm">Assigned officer: {item.assignedOfficer}</p> : null}
+              {item.assignedOfficer ? (
+                <p className="mt-1 truncate text-sm">
+                  Assigned officer: {item.assignedOfficer}
+                  {item.assignedOfficerPhone ? ` (${item.assignedOfficerPhone})` : ""}
+                </p>
+              ) : null}
               {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
               {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
               {item.progressRemarks ? <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">Remarks:</span> {item.progressRemarks}</p> : null}

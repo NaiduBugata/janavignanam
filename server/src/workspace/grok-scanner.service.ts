@@ -18,18 +18,28 @@ function findPdfjsPath(): string {
 }
 
 export interface GrievanceExtractedData {
+  srNumber?: string;
   applicantName?: string;
   contactNumber?: string;
-  referenceNumber?: string;
-  date?: string;
-  category?: string;
+  address?: string;
+  email?: string;
   village?: string;
   mandal?: string;
   division?: string;
   assemblyConstituency?: string;
-  assignedOfficer?: string;
-  actionRequested?: string;
+  date?: string;
+  referenceName?: string;
+  referenceNumber?: string;
+  category?: string;
+  categories?: string[];
+  others?: string;
   issueSummary?: string;
+  actionTaken?: string;
+  actionRequested?: string;
+  assignedOfficer?: string;
+  assignedOfficerPhone?: string;
+  resolutionStatus?: string;
+  deadline?: string;
   rawJson?: Record<string, unknown>;
 }
 
@@ -730,22 +740,30 @@ export class GrokScannerService {
    */
   private buildExtractionPrompt(): string {
     return (
-      'Please scan and extract all text and details from this grievance document accurately.\n\n' +
-      '1. Transcribe the entire document preserving all headings, paragraphs, bullet points, tables, applicant names, addresses, dates, and reference numbers.\n' +
-      '2. At the end of your response, output a structured JSON code block enclosed in ```json and ``` with the following keys:\n' +
+      'Please scan and extract all text and details from this official constituency grievance visitor form accurately.\n\n' +
+      '1. Transcribe the entire document preserving headings, paragraphs, bullet points, tables, applicant names, addresses, dates, and reference numbers.\n' +
+      '2. At the end of your response, output a structured JSON code block enclosed in ```json and ``` with the following keys from the official visitor slip:\n' +
       '{\n' +
-      '  "applicantName": string | null,\n' +
-      '  "contactNumber": string | null,\n' +
-      '  "referenceNumber": string | null,\n' +
-      '  "date": string | null (format: YYYY-MM-DD if recognizable),\n' +
-      '  "category": string | null (e.g. Roads & Infrastructure, Irrigation & Water Resources, Revenue & Land Issues, CMRF / Medical Assistance, Agriculture, Housing, Public Grievance, etc.),\n' +
-      '  "village": string | null,\n' +
-      '  "mandal": string | null,\n' +
-      '  "division": string | null,\n' +
-      '  "assemblyConstituency": string | null,\n' +
-      '  "assignedOfficer": string | null,\n' +
-      '  "actionRequested": string | null,\n' +
-      '  "issueSummary": string\n' +
+      '  "srNumber": string | null (e.g. from SR. NUMBER),\n' +
+      '  "applicantName": string | null (from FULL NAME),\n' +
+      '  "contactNumber": string | null (from CONTACT NUMBER),\n' +
+      '  "address": string | null (from ADDRESS),\n' +
+      '  "email": string | null (from EMAIL),\n' +
+      '  "village": string | null (from VILLAGE),\n' +
+      '  "mandal": string | null (from MANDAL),\n' +
+      '  "assemblyConstituency": string | null (from ASSEMBLY CONSTITUENCY, e.g. Narasaraopet, Chilakaluripet, Pedakurapadu, Sattenapalle, Vinukonda, Gurazala, Macherla),\n' +
+      '  "date": string | null (from DATE OF VISIT format YYYY-MM-DD),\n' +
+      '  "referenceName": string | null (from REFERENCE NAME),\n' +
+      '  "referenceNumber": string | null (from REFERENCE NUMBER),\n' +
+      '  "category": string | null (from checked category checkboxes e.g. Roads & Infrastructure, Irrigation & Water Resources, Revenue & Land Issues, CMRF / Medical Assistance, Agriculture, Housing, Public Grievance, etc.),\n' +
+      '  "others": string | null (from Others: field),\n' +
+      '  "issueSummary": string (the detailed representation description written in the main text area),\n' +
+      '  "actionTaken": string | null (from ACTION TAKEN),\n' +
+      '  "actionRequested": string | null (from ACTION TO BE TAKEN),\n' +
+      '  "assignedOfficer": string | null (from ASSIGNED OFFICER),\n' +
+      '  "assignedOfficerPhone": string | null (from phone number next to assigned officer),\n' +
+      '  "resolutionStatus": string | null (Pending, In progress, Resolved),\n' +
+      '  "deadline": string | null (from DEADLINE format YYYY-MM-DD)\n' +
       '}\n'
     );
   }
@@ -768,18 +786,27 @@ export class GrokScannerService {
         const parsed = JSON.parse(jsonMatch[1]);
         if (parsed && typeof parsed === 'object') {
           structuredData = {
+            srNumber: strOrNull(parsed.srNumber),
             applicantName: strOrNull(parsed.applicantName),
             contactNumber: strOrNull(parsed.contactNumber),
-            referenceNumber: strOrNull(parsed.referenceNumber),
-            date: strOrNull(parsed.date),
-            category: strOrNull(parsed.category),
+            address: strOrNull(parsed.address),
+            email: strOrNull(parsed.email),
             village: strOrNull(parsed.village),
             mandal: strOrNull(parsed.mandal),
             division: strOrNull(parsed.division),
             assemblyConstituency: strOrNull(parsed.assemblyConstituency),
-            assignedOfficer: strOrNull(parsed.assignedOfficer),
-            actionRequested: strOrNull(parsed.actionRequested),
+            date: strOrNull(parsed.date),
+            referenceName: strOrNull(parsed.referenceName),
+            referenceNumber: strOrNull(parsed.referenceNumber),
+            category: strOrNull(parsed.category),
+            others: strOrNull(parsed.others),
             issueSummary: String(parsed.issueSummary || '').trim(),
+            actionTaken: strOrNull(parsed.actionTaken),
+            actionRequested: strOrNull(parsed.actionRequested),
+            assignedOfficer: strOrNull(parsed.assignedOfficer),
+            assignedOfficerPhone: strOrNull(parsed.assignedOfficerPhone),
+            resolutionStatus: strOrNull(parsed.resolutionStatus),
+            deadline: strOrNull(parsed.deadline),
             rawJson: parsed,
           };
           extractedText = content.replace(jsonMatch[0], '').trim();

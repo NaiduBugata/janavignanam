@@ -61,6 +61,8 @@ type RecordItem = {
   actionTaken?: string;
   actionToBeTaken?: string;
   assignedOfficer?: string;
+  assignedOfficerPhone?: string;
+  issueDetail?: string;
   resolutionStatus?: string;
   deadline?: string;
   place?: string;
@@ -401,9 +403,11 @@ function UploadDesk({
                     referenceNumber: editing.referenceNumber || "",
                     categories: editing.categories || [],
                     others: editing.others || "",
+                    issueDetail: editing.issueDetail || editing.detail || "",
                     actionTaken: editing.actionTaken || "",
                     actionToBeTaken: editing.actionToBeTaken || "",
                     assignedOfficer: editing.assignedOfficer || "",
+                    assignedOfficerPhone: editing.assignedOfficerPhone || "",
                     resolutionStatus: editing.resolutionStatus || (["Pending", "In progress", "Resolved"].includes(editing.status) ? editing.status : ""),
                     deadline: editing.deadline || "",
                   }}
@@ -429,8 +433,14 @@ function UploadDesk({
                         </div>
                       </div>
                       {item.categories?.length ? <p className="mt-2 truncate text-sm">{item.categories.map((category) => (category === "Others" && item.others ? item.others : category)).join(", ")}</p> : null}
+                      {item.actionTaken ? <p className="mt-1 truncate text-sm">Action taken: {item.actionTaken}</p> : null}
                       {item.actionToBeTaken ? <p className="mt-1 truncate text-sm">Action to be taken: {item.actionToBeTaken}</p> : null}
-                      {item.assignedOfficer ? <p className="mt-1 truncate text-sm">Assigned officer: {item.assignedOfficer}</p> : null}
+                      {item.assignedOfficer ? (
+                        <p className="mt-1 truncate text-sm">
+                          Assigned officer: {item.assignedOfficer}
+                          {item.assignedOfficerPhone ? ` (${item.assignedOfficerPhone})` : ""}
+                        </p>
+                      ) : null}
                       {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
                       {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
                       {section === "grievances" && !isSample(item) && (

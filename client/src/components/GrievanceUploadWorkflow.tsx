@@ -11,7 +11,6 @@ import {
   Eye,
   EyeOff,
   FileCheck,
-  FileImage,
   FileSpreadsheet,
   FileText,
   Loader2,
@@ -28,7 +27,6 @@ import { api, apiUpload } from "@/lib/api";
 import { apiUrl } from "@/lib/apiBase";
 import {
   alignPlace,
-  divisionNames,
   mandalNames,
   PLACES,
   villageNames,
@@ -36,9 +34,29 @@ import {
 } from "@/places";
 import {
   ASSEMBLY_CONSTITUENCIES,
-  ISSUE_CATEGORIES,
   RESOLUTION_STATUSES,
 } from "@/CaseRecordForm";
+
+export const OFFICIAL_SLIP_CATEGORIES = [
+  "CMRF / Medical Assistance",
+  "Recommendation / Request Letter",
+  "Banking & Financial Issues",
+  "Irrigation & Water Resources",
+  "Agriculture",
+  "Party / Organizational Matter",
+  "TTD Recommendation Letter",
+  "MPLADS",
+  "Roads & Infrastructure",
+  "Housing",
+  "Police / Law & Order",
+  "Nominated Posts",
+  "Education / Fee Concession",
+  "Employee Transfer",
+  "Electricity",
+  "Revenue & Land Issues",
+  "Pension & Social Welfare",
+  "Public Grievance",
+] as const;
 
 export type GrievanceDraft = {
   srNumber: string;
@@ -55,9 +73,11 @@ export type GrievanceDraft = {
   referenceNumber: string;
   categories: string[];
   others: string;
+  issueDetail: string;
   actionTaken: string;
   actionToBeTaken: string;
   assignedOfficer: string;
+  assignedOfficerPhone: string;
   resolutionStatus: string;
   deadline: string;
 };
@@ -96,7 +116,7 @@ function formatBytes(bytes: number): string {
 
 const emptyDraft = (): GrievanceDraft => {
   const today = new Date().toISOString().split("T")[0];
-  const autoSr = `SR-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+  const autoSr = `00${Math.floor(100 + Math.random() * 900)}`;
   return {
     srNumber: autoSr,
     fullName: "",
@@ -110,11 +130,13 @@ const emptyDraft = (): GrievanceDraft => {
     dateOfVisit: today,
     referenceName: "",
     referenceNumber: "",
-    categories: ["Public Grievance"],
+    categories: [],
     others: "",
+    issueDetail: "",
     actionTaken: "",
-    actionToBeTaken: "Review representation and take appropriate departmental action",
+    actionToBeTaken: "",
     assignedOfficer: "",
+    assignedOfficerPhone: "",
     resolutionStatus: "Pending",
     deadline: "",
   };
@@ -153,7 +175,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     structuredData?: Record<string, string>;
   } | null>(null);
 
-  // Existing Template Draft state
+  // Form State
   const [draft, setDraft] = useState<GrievanceDraft>(emptyDraft);
   const [error, setError] = useState<string | null>(null);
   const [digitizeProgress, setDigitizeProgress] = useState(10);
@@ -173,7 +195,6 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     };
   }, [grievancePreviewUrl, supportingPreviewUrl]);
 
-  // Handle Grievance File Change
   const handleSelectGrievanceFile = (file: File) => {
     setError(null);
     if (!validateFile(file)) return;
@@ -187,7 +208,6 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     }
   };
 
-  // Handle Supporting File Change
   const handleSelectSupportingFile = (file: File) => {
     setError(null);
     if (!validateFile(file)) return;
@@ -234,7 +254,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     if (supportingInputRef.current) supportingInputRef.current.value = "";
   };
 
-  // Step 2 Action: "Submit and Review" -> triggers Grok AI Digitization & auto-fills template
+  // Step 2 Action: "Submit and Review"
   const handleDigitizeAndReview = async () => {
     if (!grievanceFile && !supportingFile) {
       setError("Please upload at least the Primary Grievance Document before reviewing.");
@@ -261,10 +281,8 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
       } | null = null;
 
       try {
-        // Try the batch endpoint first
         scanResult = await apiUpload("/api/workspace/documents/scan-batch", formData, token);
       } catch (err: unknown) {
-        // If scan-batch fails, fallback to scan-preview on grievanceFile
         if (grievanceFile) {
           const singleFormData = new FormData();
           singleFormData.append("file", grievanceFile);
@@ -288,7 +306,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
       }
 
       setDigitizeProgress(75);
-      setDigitizeStatusText("Extracting citizen identity, administrative hierarchy & category...");
+      setDigitizeStatusText("Extracting visitor slip details and matching template fields...");
 
       if (scanResult?.grievanceDoc) {
         setExtractedGrievanceDoc(scanResult.grievanceDoc);
@@ -299,12 +317,11 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
 
       const d = scanResult?.structuredData || {};
 
-      // Match Place / Hierarchy intelligently against PLACES database
+      // Match Place / Hierarchy
       let detectedDivision = d.division || "";
       let detectedMandal = d.mandal || "";
       let detectedVillage = d.village || "";
 
-      // Try smart match if mandal was extracted
       if (detectedMandal) {
         for (const div of PLACES) {
           const foundMandal = div.mandals.find(
@@ -337,45 +354,49 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
       }
 
       // Match categories
-      const matchedCategories = ISSUE_CATEGORIES.filter((c) =>
+      const matchedCategories = OFFICIAL_SLIP_CATEGORIES.filter((c) =>
         d.category && (
           d.category.toLowerCase().includes(c.toLowerCase()) ||
           c.toLowerCase().includes(d.category.toLowerCase())
         )
       );
-      const nextCategories = matchedCategories.length
-        ? matchedCategories
-        : ["Public Grievance"];
 
-      // Calculate default deadline: 14 days from visit date
       const visitDate = d.date || new Date().toISOString().split("T")[0];
-      const targetDeadline = new Date(visitDate);
-      targetDeadline.setDate(targetDeadline.getDate() + 14);
-      const formattedDeadline = targetDeadline.toISOString().split("T")[0];
+      const targetDeadline = d.deadline || (() => {
+        const dd = new Date(visitDate);
+        dd.setDate(dd.getDate() + 14);
+        return dd.toISOString().split("T")[0];
+      })();
 
       // Auto-fill template draft with extracted and digitally converted data
       setDraft((current) => ({
         ...current,
-        srNumber: d.referenceNumber ? `SR-${d.referenceNumber}` : current.srNumber,
+        srNumber: d.srNumber || (d.referenceNumber && /^\d+$/.test(d.referenceNumber) ? d.referenceNumber : current.srNumber),
         fullName: d.applicantName || current.fullName,
         contactNumber: d.contactNumber || current.contactNumber,
+        address: d.address || current.address,
+        email: d.email || current.email,
+        referenceName: d.referenceName || current.referenceName,
         referenceNumber: d.referenceNumber || current.referenceNumber,
         dateOfVisit: visitDate,
         division: detectedDivision || current.division,
         mandal: detectedMandal || current.mandal,
         village: detectedVillage || current.village,
         assemblyConstituency: detectedConstituency || current.assemblyConstituency,
-        categories: nextCategories,
-        others: d.issueSummary || current.others,
+        categories: matchedCategories.length ? matchedCategories : current.categories,
+        others: d.others || current.others,
+        issueDetail: d.issueSummary || current.issueDetail,
+        actionTaken: d.actionTaken || current.actionTaken,
         actionToBeTaken: d.actionRequested || current.actionToBeTaken,
         assignedOfficer: d.assignedOfficer || current.assignedOfficer,
-        deadline: formattedDeadline,
+        assignedOfficerPhone: d.assignedOfficerPhone || current.assignedOfficerPhone,
+        resolutionStatus: d.resolutionStatus || current.resolutionStatus,
+        deadline: targetDeadline,
       }));
 
       setDigitizeProgress(100);
       setDigitizeStatusText("Digital conversion complete!");
 
-      // Transition to template review step
       setTimeout(() => {
         setStep("review");
       }, 500);
@@ -389,23 +410,18 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     }
   };
 
-  // Handle template input changes
   const setDraftField = (key: keyof GrievanceDraft) => (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     setDraft((curr) => ({ ...curr, [key]: event.target.value }));
   };
 
-  // Toggle Category selection
   const toggleCategory = (category: string) => {
     setDraft((current) => {
       const categories = current.categories.includes(category)
         ? current.categories.filter((item) => item !== category)
         : [...current.categories, category];
-      return {
-        ...current,
-        categories: categories.length ? categories : ["Public Grievance"],
-      };
+      return { ...current, categories };
     });
   };
 
@@ -414,15 +430,11 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     event.preventDefault();
 
     if (!draft.fullName.trim()) {
-      setError("Please enter the citizen's full name.");
+      setError("Please enter FULL NAME.");
       return;
     }
     if (!draft.contactNumber.trim()) {
-      setError("Please enter a valid 10-digit contact number.");
-      return;
-    }
-    if (!draft.categories.length) {
-      setError("Please select at least one grievance category.");
+      setError("Please enter CONTACT NUMBER.");
       return;
     }
 
@@ -430,7 +442,6 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     setStep("storing");
 
     try {
-      // 1. Create the grievance record in the database with robust field fallbacks
       const cleanPhone = draft.contactNumber.replace(/[^0-9]/g, "");
       const visitDate = draft.dateOfVisit || new Date().toISOString().split("T")[0];
       const targetDeadline = draft.deadline || (() => {
@@ -439,29 +450,47 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
         return d.toISOString().split("T")[0];
       })();
 
+      // Auto-derive division from mandal if empty
+      let finalDivision = draft.division;
+      if (!finalDivision && draft.mandal) {
+        for (const div of PLACES) {
+          if (div.mandals.some(m => m.name.toLowerCase() === draft.mandal.toLowerCase())) {
+            finalDivision = div.name;
+            break;
+          }
+        }
+      }
+      if (!finalDivision) finalDivision = "Narasaraopet";
+
+      const officerFormatted = draft.assignedOfficerPhone.trim()
+        ? `${draft.assignedOfficer.trim()} (${draft.assignedOfficerPhone.trim()})`
+        : draft.assignedOfficer.trim();
+
+      const fullRepresentation = draft.issueDetail.trim() || draft.others.trim() || `${draft.fullName} - ${draft.categories.join(", ")}`;
+
       const payload = {
         section: "grievances",
         title: draft.fullName.trim(),
         fullName: draft.fullName.trim(),
-        srNumber: draft.srNumber.trim() || `SR-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        srNumber: draft.srNumber.trim() || `00${Math.floor(100 + Math.random() * 900)}`,
         contactNumber: cleanPhone || draft.contactNumber.trim(),
         address: draft.address.trim() || [draft.village, draft.mandal, "Palnadu"].filter(Boolean).join(", ") || "Palnadu",
         email: draft.email && draft.email.includes("@")
           ? draft.email.trim()
-          : `${cleanPhone || "citizen"}@janavignanam.org`,
+          : `${cleanPhone || "citizen"}@gmail.com`,
         village: draft.village.trim() || draft.mandal.trim() || "Palnadu",
         mandal: draft.mandal.trim() || "Narasaraopet",
-        division: draft.division.trim() || "Narasaraopet",
+        division: finalDivision,
         assemblyConstituency: (draft.assemblyConstituency.trim() || "Narasaraopet") as (typeof ASSEMBLY_CONSTITUENCIES)[number],
         dateOfVisit: visitDate,
         referenceName: draft.referenceName.trim() || undefined,
         referenceNumber: draft.referenceNumber.trim() || undefined,
         categories: draft.categories.length ? draft.categories : ["Public Grievance"],
-        others: draft.others.trim() || `${draft.fullName} - ${draft.categories.join(", ")}`,
-        detail: draft.others.trim() || `${draft.fullName} - ${draft.categories.join(", ")}`,
-        actionTaken: draft.actionTaken.trim() || "Grievance received and registered digitally",
+        others: draft.others.trim() || undefined,
+        detail: fullRepresentation,
+        actionTaken: draft.actionTaken.trim() || "Issue verified and forwarded for action.",
         actionToBeTaken: draft.actionToBeTaken.trim() || "Review representation and take appropriate departmental action",
-        assignedOfficer: draft.assignedOfficer.trim() || "Concerned Departmental Officer",
+        assignedOfficer: officerFormatted || "Concerned Officer",
         resolutionStatus: (draft.resolutionStatus || "Pending") as (typeof RESOLUTION_STATUSES)[number],
         status: draft.resolutionStatus || "Pending",
         deadline: targetDeadline,
@@ -475,7 +504,6 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
 
       let attachedDocsCount = 0;
 
-      // 2. Attach Primary Grievance Document if provided
       if (grievanceFile && record.id) {
         try {
           const docFormData = new FormData();
@@ -493,7 +521,6 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
         }
       }
 
-      // 3. Attach Supporting Document if provided
       if (supportingFile && record.id) {
         try {
           const docFormData = new FormData();
@@ -525,7 +552,6 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     }
   };
 
-  // Reset workflow for uploading another grievance
   const handleReset = () => {
     removeGrievanceFile();
     removeSupportingFile();
@@ -543,37 +569,36 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
     setTimeout(() => setCopiedText(false), 2000);
   };
 
-  const inputClass =
-    "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/40 focus:border-primary";
+  const slipInputClass =
+    "h-9 w-full rounded-md border border-border/80 bg-background px-3 text-sm outline-none transition-colors focus:border-amber-500 focus:ring-1 focus:ring-amber-500";
 
   return (
     <div className="w-full">
-      {/* Step Banner / Progress Header */}
-      <div className="mb-6 rounded-2xl border bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-6 shadow-xs">
+      {/* Top Banner Notice */}
+      <div className="mb-6 rounded-2xl border bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-6 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-                JV
+              <span className="flex size-7 items-center justify-center rounded-lg bg-amber-500 text-xs font-black text-white shadow-xs">
+                LSK
               </span>
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-                Constituency Intelligence & Grievance Portal
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                Lavu Sri Krishna Devarayalu • 14-Narasaraopet Constituency
               </p>
             </div>
-            <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-              Grievance Digitization & Submission Desk
+            <h1 className="mt-1 font-display text-2xl font-black tracking-tight text-foreground md:text-3xl">
+              Grievance Visitor Record Portal
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Upload physical petitions or supporting docs, let Grok AI auto-fill the official visitor template, review & edit, and securely store the record.
+              Official MP visitor slip format. Upload grievance documents, let Grok AI digitize all fields into the visitor template, edit any details, and store securely.
             </p>
           </div>
 
-          {/* Stepper Indicator */}
           <div className="flex items-center gap-2 text-xs font-medium">
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${
                 step === "upload" || step === "digitizing"
-                  ? "bg-primary text-primary-foreground font-semibold"
+                  ? "bg-amber-500 text-white font-bold"
                   : "bg-muted text-muted-foreground"
               }`}
             >
@@ -583,21 +608,21 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${
                 step === "review" || step === "storing"
-                  ? "bg-primary text-primary-foreground font-semibold"
+                  ? "bg-amber-500 text-white font-bold"
                   : "bg-muted text-muted-foreground"
               }`}
             >
-              2. Review & Edit Template
+              2. Review & Edit Slip
             </span>
             <ChevronArrow />
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${
                 step === "success"
-                  ? "bg-emerald-600 text-white font-semibold"
+                  ? "bg-emerald-600 text-white font-bold"
                   : "bg-muted text-muted-foreground"
               }`}
             >
-              3. Stored
+              3. Submitted
             </span>
           </div>
         </div>
@@ -625,22 +650,22 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
         <div className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
             {/* UPLOAD SECTION 1: Grievance Petition / Letter */}
-            <div className="flex flex-col rounded-2xl border bg-card p-5 shadow-xs transition-all hover:border-primary/50">
+            <div className="flex flex-col rounded-2xl border bg-card p-5 shadow-xs transition-all hover:border-amber-500/50">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <div className="flex size-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
                     <FileText className="size-4.5" />
                   </div>
                   <div>
-                    <h2 className="font-display text-base font-semibold text-foreground">
+                    <h2 className="font-display text-base font-bold text-foreground">
                       1. Grievance Petition / Letter
                     </h2>
                     <p className="text-xs text-muted-foreground">
-                      Primary petition, representation, or grievance letter
+                      Primary citizen representation, handwritten petition, or grievance slip
                     </p>
                   </div>
                 </div>
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-600 dark:text-amber-400">
                   Required
                 </span>
               </div>
@@ -719,15 +744,15 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                   onClick={() => grievanceInputRef.current?.click()}
                   className={`mt-2 flex flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition-all ${
                     isGrievanceDragging
-                      ? "border-primary bg-primary/10"
-                      : "border-muted-foreground/25 hover:border-primary hover:bg-muted/30"
+                      ? "border-amber-500 bg-amber-500/10"
+                      : "border-muted-foreground/25 hover:border-amber-500 hover:bg-muted/30"
                   }`}
                 >
-                  <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <div className="flex size-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
                     <Upload className="size-6" />
                   </div>
                   <p className="mt-3 font-medium text-foreground">
-                    Upload Main Grievance Document
+                    Upload Grievance Document / Petition
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Drag and drop or browse from device
@@ -737,7 +762,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                   </p>
                   <button
                     type="button"
-                    className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary/10 px-3 text-xs font-semibold text-primary hover:bg-primary/20"
+                    className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"
                   >
                     Select File
                   </button>
@@ -757,18 +782,18 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
             </div>
 
             {/* UPLOAD SECTION 2: Supporting Document / ID Proof */}
-            <div className="flex flex-col rounded-2xl border bg-card p-5 shadow-xs transition-all hover:border-primary/50">
+            <div className="flex flex-col rounded-2xl border bg-card p-5 shadow-xs transition-all hover:border-emerald-500/50">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
                     <ShieldCheck className="size-4.5" />
                   </div>
                   <div>
-                    <h2 className="font-display text-base font-semibold text-foreground">
+                    <h2 className="font-display text-base font-bold text-foreground">
                       2. Supporting Document / Enclosure / ID
                     </h2>
                     <p className="text-xs text-muted-foreground">
-                      Aadhaar card, certificate, photos, 2nd page, or evidence
+                      Aadhaar card, certificates, photo, endorsement, or 2nd page
                     </p>
                   </div>
                 </div>
@@ -892,13 +917,13 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
           {/* SUBMIT AND REVIEW BUTTON */}
           <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-6 text-center shadow-xs">
             <div className="flex items-center gap-2">
-              <Sparkles className="size-5 text-primary" />
-              <h3 className="font-display text-lg font-semibold text-foreground">
-                Ready to Digitize & Review?
+              <Sparkles className="size-5 text-amber-500" />
+              <h3 className="font-display text-lg font-bold text-foreground">
+                Ready to Submit & Review?
               </h3>
             </div>
             <p className="mt-1 max-w-lg text-sm text-muted-foreground">
-              Clicking below will scan both uploaded documents using Grok AI, automatically extract applicant details, constituency hierarchy, and grievance issue, and populate the official template for your review and editing.
+              Clicking below will scan the uploaded documents with Grok AI, auto-fill every field in the official visitor slip template, and let you review and edit any mistakes.
             </p>
 
             <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
@@ -915,7 +940,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                 type="button"
                 disabled={!grievanceFile && !supportingFile}
                 onClick={handleDigitizeAndReview}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-all hover:bg-primary/90 disabled:opacity-50"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-amber-500 px-7 text-sm font-bold text-white shadow-md transition-all hover:bg-amber-600 disabled:opacity-50"
               >
                 <ScanLine className="size-4.5" />
                 Submit and Review
@@ -929,9 +954,9 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
       {/* STEP: DIGITIZING WITH AI */}
       {step === "digitizing" && (
         <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-12 text-center shadow-xs">
-          <div className="relative flex size-20 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <ScanLine className="size-10 animate-pulse text-primary" />
-            <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          <div className="relative flex size-20 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
+            <ScanLine className="size-10 animate-pulse text-amber-500" />
+            <div className="absolute inset-0 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
           </div>
 
           <h2 className="mt-6 font-display text-xl font-bold text-foreground">
@@ -944,7 +969,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
           <div className="mt-6 w-full max-w-md">
             <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full bg-primary transition-all duration-300"
+                className="h-full bg-amber-500 transition-all duration-300"
                 style={{ width: `${digitizeProgress}%` }}
               />
             </div>
@@ -961,7 +986,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
               <CheckCircle2 className="size-3.5 text-emerald-500" /> Telugu & English OCR
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="size-3.5 text-emerald-500" /> Automatic Field Mapping
+              <CheckCircle2 className="size-3.5 text-emerald-500" /> Official Visitor Slip Template
             </span>
           </div>
         </div>
@@ -971,15 +996,15 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
       {step === "review" && (
         <div className="space-y-6">
           {/* Digitization banner notice */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-900 dark:text-emerald-300">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-foreground">
             <div className="flex items-center gap-2.5">
-              <Sparkles className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <Sparkles className="size-5 shrink-0 text-amber-500" />
               <div>
-                <p className="font-semibold">
-                  Grievance Digitized & Template Populated!
+                <p className="font-bold">
+                  Grievance Digitized & Official Template Populated!
                 </p>
-                <p className="text-xs text-emerald-800 dark:text-emerald-400">
-                  All details have been converted digitally from your uploaded documents. Review every field below, correct any mistakes or add missing details, then click Submit to save.
+                <p className="text-xs text-muted-foreground">
+                  The fields below match the official MP visitor slip. Review every field, correct any mistakes, and click Submit to store.
                 </p>
               </div>
             </div>
@@ -988,7 +1013,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
               <button
                 type="button"
                 onClick={() => setShowDocInspector(!showDocInspector)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-background px-3 text-xs font-medium text-foreground hover:bg-muted"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-muted"
               >
                 {showDocInspector ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                 {showDocInspector ? "Hide Document Viewer" : "Show Document Viewer"}
@@ -996,7 +1021,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
               <button
                 type="button"
                 onClick={() => setStep("upload")}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-background px-3 text-xs font-medium text-foreground hover:bg-muted"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-muted"
               >
                 <ArrowLeft className="size-3.5" /> Change Documents
               </button>
@@ -1008,8 +1033,8 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
             {showDocInspector && (
               <div className="lg:col-span-4 flex flex-col rounded-2xl border bg-card p-4 shadow-xs h-fit sticky top-24">
                 <div className="mb-3 flex items-center justify-between border-b pb-3">
-                  <h3 className="font-display text-sm font-semibold text-foreground flex items-center gap-2">
-                    <FileText className="size-4 text-primary" />
+                  <h3 className="font-display text-sm font-bold text-foreground flex items-center gap-2">
+                    <FileText className="size-4 text-amber-500" />
                     Uploaded Documents & OCR
                   </h3>
                   <div className="flex rounded-lg bg-muted p-0.5 text-xs">
@@ -1018,7 +1043,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                       onClick={() => setActiveInspectorTab("doc1")}
                       className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
                         activeInspectorTab === "doc1"
-                          ? "bg-background text-foreground shadow-xs"
+                          ? "bg-background text-foreground shadow-xs font-bold"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -1030,7 +1055,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                         onClick={() => setActiveInspectorTab("doc2")}
                         className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
                           activeInspectorTab === "doc2"
-                            ? "bg-background text-foreground shadow-xs"
+                            ? "bg-background text-foreground shadow-xs font-bold"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -1057,7 +1082,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                               isPdf: grievanceFile.type === "application/pdf" || grievanceFile.name.endsWith(".pdf"),
                             });
                           }}
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 hover:underline"
                         >
                           <Eye className="size-3" /> Full view
                         </button>
@@ -1081,7 +1106,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                       </div>
                     ) : grievanceFile ? (
                       <div className="rounded-xl border bg-muted/30 p-4 text-center">
-                        <FileText className="mx-auto size-10 text-primary" />
+                        <FileText className="mx-auto size-10 text-amber-500" />
                         <p className="mt-2 text-xs font-medium">{grievanceFile.name}</p>
                         <p className="text-[11px] text-muted-foreground">{formatBytes(grievanceFile.size)}</p>
                       </div>
@@ -1090,14 +1115,14 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                     {/* OCR Text extracted */}
                     <div className="mt-3">
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                          Extracted Text
+                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                          Extracted OCR Text
                         </span>
                         {extractedGrievanceDoc?.extractedText && (
                           <button
                             type="button"
                             onClick={() => copyExtractedText(extractedGrievanceDoc.extractedText)}
-                            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                            className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 hover:underline"
                           >
                             {copiedText ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
                             {copiedText ? "Copied" : "Copy text"}
@@ -1127,7 +1152,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                             isPdf: supportingFile.type === "application/pdf" || supportingFile.name.endsWith(".pdf"),
                           });
                         }}
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 hover:underline"
                       >
                         <Eye className="size-3" /> Full view
                       </button>
@@ -1158,14 +1183,14 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
 
                     <div className="mt-3">
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                          Extracted Text
+                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                          Extracted OCR Text
                         </span>
                         {extractedSupportingDoc?.extractedText && (
                           <button
                             type="button"
                             onClick={() => copyExtractedText(extractedSupportingDoc.extractedText)}
-                            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                            className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 hover:underline"
                           >
                             {copiedText ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
                             {copiedText ? "Copied" : "Copy text"}
@@ -1181,319 +1206,319 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
               </div>
             )}
 
-            {/* MAIN EDITABLE TEMPLATE FORM */}
+            {/* MAIN EDITABLE TEMPLATE FORM MATCHING THE PHYSICAL VISITOR SLIP */}
             <div className={showDocInspector ? "lg:col-span-8" : "lg:col-span-12"}>
               <form
                 onSubmit={(e) => void handleFinalSubmit(e)}
-                className="space-y-6 rounded-2xl border bg-card p-6 shadow-xs"
+                className="space-y-6 rounded-2xl border-2 border-border/80 bg-card p-6 md:p-8 shadow-sm"
               >
-                <div className="flex items-center justify-between border-b pb-4">
-                  <div>
-                    <h2 className="font-display text-lg font-bold text-foreground">
-                      Grievance Visitor Record Template
-                    </h2>
-                    <p className="text-xs text-muted-foreground">
-                      Edit any fields below to correct any OCR mistakes before final storage.
-                    </p>
+                {/* OFFICIAL MP HEADER */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-5">
+                  <div className="flex items-center gap-3.5">
+                    <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 font-display font-black text-white text-xl shadow-sm border-2 border-amber-300">
+                      LSK
+                    </div>
+                    <div>
+                      <h1 className="font-display text-lg sm:text-xl font-black tracking-wide text-amber-600 dark:text-amber-400 uppercase">
+                        LAVU SRI KRISHNA DEVARAYALU
+                      </h1>
+                      <p className="text-xs font-bold text-foreground/90 uppercase tracking-wider">
+                        MEMBER OF PARLIAMENT (LS) 14-NARASARAOPET CONSTITUENCY-A.P.
+                      </p>
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                        FLOOR LEADER, TELUGU DESAM PARLIAMENTARY PARTY
+                      </p>
+                    </div>
                   </div>
-                  <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    Editable Form
-                  </span>
+
+                  {/* SR. NUMBER */}
+                  <div className="flex items-center gap-2 self-end sm:self-auto bg-muted/40 px-3 py-1.5 rounded-xl border">
+                    <span className="text-xs sm:text-sm font-black tracking-wider uppercase text-foreground whitespace-nowrap">
+                      SR. NUMBER :
+                    </span>
+                    <input
+                      value={draft.srNumber}
+                      onChange={setDraftField("srNumber")}
+                      className="h-9 w-28 rounded-md border bg-background px-2.5 font-mono font-bold text-sm outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="e.g. 00173"
+                    />
+                  </div>
                 </div>
 
-                {/* SECTION 1: CITIZEN INFORMATION */}
-                <div>
-                  <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-wider text-primary">
-                    1. Citizen Information
-                  </h3>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Sr. Number" required>
-                      <input
-                        value={draft.srNumber}
-                        onChange={setDraftField("srNumber")}
-                        required
-                        className={inputClass}
-                        placeholder="e.g. SR-2026-1042"
-                      />
-                    </Field>
+                {/* 1. VISITOR INFORMATION */}
+                <div className="overflow-hidden rounded-xl border">
+                  <div className="bg-black px-4 py-2.5 text-amber-400 font-black text-xs sm:text-sm uppercase tracking-wider">
+                    VISITOR INFORMATION
+                  </div>
 
-                    <Field label="Full Name (Applicant)" required>
-                      <input
-                        value={draft.fullName}
-                        onChange={setDraftField("fullName")}
-                        required
-                        autoFocus
-                        className={inputClass}
-                        placeholder="Citizen's full name"
-                      />
-                    </Field>
+                  <div className="p-4 bg-card grid gap-4 md:grid-cols-2">
+                    {/* LEFT COLUMN */}
+                    <div className="space-y-3.5">
+                      <SlipField label="FULL NAME" required>
+                        <input
+                          value={draft.fullName}
+                          onChange={setDraftField("fullName")}
+                          required
+                          className={slipInputClass}
+                          placeholder="Enter full name"
+                        />
+                      </SlipField>
 
-                    <Field label="Contact Number" required>
-                      <input
-                        value={draft.contactNumber}
-                        onChange={setDraftField("contactNumber")}
-                        required
-                        inputMode="tel"
-                        className={inputClass}
-                        placeholder="10-digit mobile number"
-                      />
-                    </Field>
-
-                    <Field label="Email Address">
-                      <input
-                        type="email"
-                        value={draft.email}
-                        onChange={setDraftField("email")}
-                        className={inputClass}
-                        placeholder="applicant@example.com (optional)"
-                      />
-                    </Field>
-
-                    <div className="sm:col-span-2">
-                      <Field label="Residential Address">
+                      <SlipField label="ADDRESS">
                         <input
                           value={draft.address}
                           onChange={setDraftField("address")}
-                          className={inputClass}
-                          placeholder="House No, Street, Landmark"
+                          className={slipInputClass}
+                          placeholder="Enter house no., street, area"
                         />
-                      </Field>
-                    </div>
-                  </div>
-                </div>
+                      </SlipField>
 
-                {/* SECTION 2: ADMINISTRATIVE & CONSTITUENCY HIERARCHY */}
-                <div className="border-t pt-5">
-                  <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-wider text-primary">
-                    2. Constituency & Location Hierarchy (Palnadu District)
-                  </h3>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <Field label="Division" required>
-                      <select
-                        value={draft.division}
-                        onChange={(e) =>
-                          setDraft((curr) => ({
-                            ...curr,
-                            division: e.target.value,
-                            mandal: "",
-                            village: "",
-                          }))
-                        }
-                        required
-                        className={inputClass}
-                      >
-                        <option value="">Select Division</option>
-                        {divisionNames().map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
+                      <SlipField label="VILLAGE">
+                        <input
+                          value={draft.village}
+                          onChange={setDraftField("village")}
+                          className={slipInputClass}
+                          placeholder="Enter village"
+                        />
+                      </SlipField>
 
-                    <Field label="Mandal" required>
-                      <select
-                        value={draft.mandal}
-                        onChange={(e) =>
-                          setDraft((curr) => ({
-                            ...curr,
-                            mandal: e.target.value,
-                            village: "",
-                          }))
-                        }
-                        required
-                        className={inputClass}
-                      >
-                        <option value="">Select Mandal</option>
-                        {withCurrent(mandalNames(draft.division), draft.mandal).map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-
-                    <Field label="Village / Habitation" required>
-                      <select
-                        value={draft.village}
-                        onChange={setDraftField("village")}
-                        required
-                        className={inputClass}
-                      >
-                        <option value="">Select Village</option>
-                        {withCurrent(villageNames(draft.division, draft.mandal), draft.village).map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-
-                    <div className="sm:col-span-2 lg:col-span-3">
-                      <Field label="Assembly Constituency" required>
+                      <SlipField label="ASSEMBLY CONSTITUENCY">
                         <select
                           value={draft.assemblyConstituency}
                           onChange={setDraftField("assemblyConstituency")}
-                          required
-                          className={inputClass}
+                          className={slipInputClass}
                         >
-                          <option value="">Select Assembly Constituency</option>
+                          <option value="">Select Constituency</option>
                           {ASSEMBLY_CONSTITUENCIES.map((name) => (
                             <option key={name} value={name}>
                               {name}
                             </option>
                           ))}
                         </select>
-                      </Field>
+                      </SlipField>
+
+                      <SlipField label="REFERENCE NAME">
+                        <input
+                          value={draft.referenceName}
+                          onChange={setDraftField("referenceName")}
+                          className={slipInputClass}
+                          placeholder="Enter reference name"
+                        />
+                      </SlipField>
+                    </div>
+
+                    {/* RIGHT COLUMN */}
+                    <div className="space-y-3.5">
+                      <SlipField label="CONTACT NUMBER" required>
+                        <input
+                          value={draft.contactNumber}
+                          onChange={setDraftField("contactNumber")}
+                          required
+                          inputMode="tel"
+                          className={slipInputClass}
+                          placeholder="10-digit mobile number"
+                        />
+                      </SlipField>
+
+                      <SlipField label="EMAIL">
+                        <input
+                          type="email"
+                          value={draft.email}
+                          onChange={setDraftField("email")}
+                          className={slipInputClass}
+                          placeholder="Enter email address"
+                        />
+                      </SlipField>
+
+                      <SlipField label="MANDAL">
+                        <input
+                          value={draft.mandal}
+                          onChange={setDraftField("mandal")}
+                          className={slipInputClass}
+                          placeholder="Enter mandal"
+                        />
+                      </SlipField>
+
+                      <SlipField label="DATE OF VISIT">
+                        <input
+                          type="date"
+                          value={draft.dateOfVisit}
+                          onChange={setDraftField("dateOfVisit")}
+                          className={slipInputClass}
+                        />
+                      </SlipField>
+
+                      <SlipField label="REFERENCE NUMBER">
+                        <input
+                          value={draft.referenceNumber}
+                          onChange={setDraftField("referenceNumber")}
+                          className={slipInputClass}
+                          placeholder="Enter reference number"
+                        />
+                      </SlipField>
                     </div>
                   </div>
                 </div>
 
-                {/* SECTION 3: REFERENCES & VISIT DATES */}
-                <div className="border-t pt-5">
-                  <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-wider text-primary">
-                    3. Official References & Submission Date
-                  </h3>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Date of Visit / Representation">
-                      <input
-                        type="date"
-                        value={draft.dateOfVisit}
-                        onChange={setDraftField("dateOfVisit")}
-                        className={inputClass}
-                      />
-                    </Field>
-
-                    <Field label="Reference / Referred By">
-                      <input
-                        value={draft.referenceName}
-                        onChange={setDraftField("referenceName")}
-                        className={inputClass}
-                        placeholder="Leader, MLA, or Officer"
-                      />
-                    </Field>
-
-                    <Field label="Reference / Petition No.">
-                      <input
-                        value={draft.referenceNumber}
-                        onChange={setDraftField("referenceNumber")}
-                        className={inputClass}
-                        placeholder="e.g. PET-2026-90"
-                      />
-                    </Field>
+                {/* 2. ISSUE DESCRIPTION */}
+                <div className="overflow-hidden rounded-xl border">
+                  <div className="bg-black px-4 py-2.5 text-amber-400 font-black text-xs sm:text-sm uppercase tracking-wider">
+                    ISSUE DESCRIPTION
                   </div>
-                </div>
 
-                {/* SECTION 4: ISSUE CATEGORIZATION & DESCRIPTION */}
-                <div className="border-t pt-5">
-                  <h3 className="mb-2 font-display text-xs font-semibold uppercase tracking-wider text-primary">
-                    4. Grievance Category & Citizen's Representation
-                  </h3>
+                  <div className="p-4 bg-card space-y-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                        CATEGORY (check all that apply)
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                        {OFFICIAL_SLIP_CATEGORIES.map((cat) => {
+                          const checked = draft.categories.includes(cat);
+                          return (
+                            <label
+                              key={cat}
+                              className={`flex cursor-pointer items-center gap-2 rounded-lg border p-2 text-xs transition-colors ${
+                                checked
+                                  ? "border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-bold"
+                                  : "border-border hover:bg-muted"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleCategory(cat)}
+                                className="size-4 rounded text-amber-600 focus:ring-amber-500"
+                              />
+                              <span>{cat}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                  <div className="mb-4">
-                    <span className="mb-2 block text-xs font-medium text-foreground">
-                      Select Issue Categories <span className="text-destructive">*</span>
-                    </span>
-                    <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-                      {ISSUE_CATEGORIES.map((category) => {
-                        const checked = draft.categories.includes(category);
-                        return (
-                          <label
-                            key={category}
-                            className={`flex cursor-pointer items-center gap-2 rounded-lg border p-2 text-xs transition-colors ${
-                              checked
-                                ? "border-primary bg-primary/10 text-primary font-medium"
-                                : "border-border hover:bg-muted"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleCategory(category)}
-                              className="size-3.5 rounded border-muted-foreground text-primary focus:ring-primary"
-                            />
-                            <span>{category}</span>
-                          </label>
-                        );
-                      })}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2 border-t">
+                      <span className="text-xs font-bold text-foreground uppercase tracking-wider whitespace-nowrap sm:w-24 shrink-0">
+                        Others :
+                      </span>
+                      <input
+                        value={draft.others}
+                        onChange={setDraftField("others")}
+                        className={slipInputClass}
+                        placeholder="Specify other issue category"
+                      />
+                    </div>
+
+                    <div className="pt-2">
+                      <label className="block">
+                        <span className="text-xs font-bold text-foreground uppercase tracking-wider mb-1.5 block">
+                          Representation / Detailed Grievance Description
+                        </span>
+                        <textarea
+                          value={draft.issueDetail}
+                          onChange={setDraftField("issueDetail")}
+                          rows={6}
+                          className="w-full rounded-xl border bg-background px-3.5 py-3 text-sm outline-none transition-colors focus:border-amber-500 focus:ring-1 focus:ring-amber-500 leading-relaxed"
+                          placeholder="Enter detailed grievance representation / description submitted by citizen..."
+                        />
+                      </label>
                     </div>
                   </div>
-
-                  <Field label="Detailed Grievance Representation / Problem Summary" required>
-                    <textarea
-                      value={draft.others}
-                      onChange={setDraftField("others")}
-                      required
-                      rows={4}
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/40 focus:border-primary"
-                      placeholder="Explain the grievance details, citizen's request, background, and specific relief sought..."
-                    />
-                  </Field>
                 </div>
 
-                {/* SECTION 5: ACTION & RESOLUTION PLAN */}
-                <div className="border-t pt-5">
-                  <h3 className="mb-3 font-display text-xs font-semibold uppercase tracking-wider text-primary">
-                    5. Action Plan & Department Assignment
-                  </h3>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Action Taken so far">
-                      <textarea
+                {/* 3. ACTION DETAILS */}
+                <div className="overflow-hidden rounded-xl border">
+                  <div className="bg-black px-4 py-2.5 text-amber-400 font-black text-xs sm:text-sm uppercase tracking-wider">
+                    ACTION DETAILS
+                  </div>
+
+                  <div className="p-4 bg-card space-y-4">
+                    <SlipField label="ACTION TAKEN">
+                      <input
                         value={draft.actionTaken}
                         onChange={setDraftField("actionTaken")}
-                        rows={2}
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/40 focus:border-primary"
-                        placeholder="Endorsed to department, acknowledgment issued, etc."
+                        className={slipInputClass}
+                        placeholder="Details of action taken"
                       />
-                    </Field>
+                    </SlipField>
 
-                    <Field label="Action to be Taken (Directive)">
-                      <textarea
+                    <SlipField label="ACTION TO BE TAKEN">
+                      <input
                         value={draft.actionToBeTaken}
                         onChange={setDraftField("actionToBeTaken")}
-                        rows={2}
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-primary/40 focus:border-primary"
-                        placeholder="Action requested from the executive officer or department"
+                        className={slipInputClass}
+                        placeholder="Details of action to be taken"
                       />
-                    </Field>
+                    </SlipField>
 
-                    <Field label="Assigned Officer / Department">
-                      <input
-                        value={draft.assignedOfficer}
-                        onChange={setDraftField("assignedOfficer")}
-                        className={inputClass}
-                        placeholder="e.g. Tahsildar, MPDO, RDO, or Electricity DE"
-                      />
-                    </Field>
+                    <div className="grid gap-3 sm:grid-cols-12 items-center">
+                      <div className="sm:col-span-8">
+                        <SlipField label="ASSIGNED OFFICER">
+                          <input
+                            value={draft.assignedOfficer}
+                            onChange={setDraftField("assignedOfficer")}
+                            className={slipInputClass}
+                            placeholder="Assigned officer / department"
+                          />
+                        </SlipField>
+                      </div>
+                      <div className="sm:col-span-4">
+                        <input
+                          value={draft.assignedOfficerPhone}
+                          onChange={setDraftField("assignedOfficerPhone")}
+                          inputMode="tel"
+                          className={slipInputClass}
+                          placeholder="Officer phone number"
+                        />
+                      </div>
+                    </div>
 
-                    <Field label="Resolution Status" required>
-                      <select
-                        value={draft.resolutionStatus}
-                        onChange={setDraftField("resolutionStatus")}
-                        required
-                        className={inputClass}
-                      >
-                        {RESOLUTION_STATUSES.map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t">
+                      <div className="flex flex-wrap items-center gap-4">
+                        <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+                          RESOLUTION STATUS :
+                        </span>
+                        <div className="flex items-center gap-3">
+                          {["Pending", "In progress", "Resolved"].map((status) => {
+                            const checked = draft.resolutionStatus.toLowerCase() === status.toLowerCase();
+                            return (
+                              <label
+                                key={status}
+                                className={`flex items-center gap-1.5 text-xs font-bold uppercase cursor-pointer px-2 py-1 rounded-md transition-colors ${
+                                  checked ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : "text-muted-foreground hover:text-foreground"
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name="resolutionStatus"
+                                  value={status}
+                                  checked={checked}
+                                  onChange={() => setDraft((curr) => ({ ...curr, resolutionStatus: status }))}
+                                  className="size-4 text-amber-600 focus:ring-amber-500"
+                                />
+                                <span>{status}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-                    <Field label="Target Resolution Deadline">
-                      <input
-                        type="date"
-                        value={draft.deadline}
-                        onChange={setDraftField("deadline")}
-                        className={inputClass}
-                      />
-                    </Field>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-foreground uppercase tracking-wider whitespace-nowrap">
+                          DEADLINE :
+                        </span>
+                        <input
+                          type="date"
+                          value={draft.deadline}
+                          onChange={setDraftField("deadline")}
+                          className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 {/* BOTTOM SUBMIT BUTTON BAR */}
-                <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-5">
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <CheckCircle2 className="size-4 text-emerald-600" />
                     <span>
@@ -1514,7 +1539,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
 
                     <button
                       type="submit"
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-8 text-sm font-semibold text-primary-foreground shadow-md transition-all hover:bg-primary/90"
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-amber-500 px-8 text-sm font-bold text-white shadow-md transition-all hover:bg-amber-600"
                     >
                       <Check className="size-4.5" />
                       Submit & Store Grievance
@@ -1530,7 +1555,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
       {/* STEP: STORING IN DATABASE */}
       {step === "storing" && (
         <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-12 text-center shadow-xs">
-          <Loader2 className="size-12 animate-spin text-primary" />
+          <Loader2 className="size-12 animate-spin text-amber-500" />
           <h2 className="mt-5 font-display text-xl font-bold text-foreground">
             Storing Grievance & Attaching Documents...
           </h2>
@@ -1552,7 +1577,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
               Grievance Successfully Submitted and Stored!
             </h2>
             <p className="mt-1 text-sm text-muted-foreground max-w-lg">
-              The grievance has been recorded in the JanaVignanam database with full administrative hierarchy and attached digitized documents.
+              The grievance has been recorded in the JanaVignanam database matching the official visitor slip format with attached digitized documents.
             </p>
           </div>
 
@@ -1583,7 +1608,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
               <div>
                 <p className="text-xs text-muted-foreground">Location</p>
                 <p className="text-sm text-foreground">
-                  {[draft.village, draft.mandal, draft.division].filter(Boolean).join(", ") || "Palnadu"}
+                  {[draft.village, draft.mandal].filter(Boolean).join(", ") || "Palnadu"}
                 </p>
               </div>
 
@@ -1597,7 +1622,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
               <div>
                 <p className="text-xs text-muted-foreground">Status & Documents</p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="inline-flex rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                  <span className="inline-flex rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-bold text-amber-700 dark:text-amber-400">
                     {draft.resolutionStatus}
                   </span>
                   <span className="text-xs text-muted-foreground">
@@ -1613,7 +1638,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
             <button
               type="button"
               onClick={handleReset}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-md hover:bg-primary/90"
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-amber-500 px-6 text-sm font-bold text-white shadow-md hover:bg-amber-600"
             >
               <Plus className="size-4.5" />
               Upload Another Grievance
@@ -1626,7 +1651,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                 rel="noreferrer"
                 className="inline-flex h-11 items-center gap-2 rounded-xl border bg-background px-5 text-sm font-medium hover:bg-muted"
               >
-                <Download className="size-4.5 text-primary" />
+                <Download className="size-4.5 text-amber-500" />
                 Download PDF Slip
               </a>
             )}
@@ -1638,7 +1663,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                 rel="noreferrer"
                 className="inline-flex h-11 items-center gap-2 rounded-xl border bg-background px-5 text-sm font-medium hover:bg-muted"
               >
-                <ExternalLink className="size-4.5 text-primary" />
+                <ExternalLink className="size-4.5 text-amber-500" />
                 Public Progress Tracker
               </a>
             )}
@@ -1695,7 +1720,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
   );
 }
 
-function Field({
+function SlipField({
   label,
   required,
   children,
@@ -1705,13 +1730,15 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block text-sm">
-      <span className="mb-1.5 block font-medium text-foreground">
-        {label}
+    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+      <span className="text-xs font-bold uppercase tracking-wider text-foreground sm:w-44 shrink-0">
+        {label} :
         {required && <span className="text-destructive"> *</span>}
       </span>
-      {children}
-    </label>
+      <div className="flex-1 min-w-0">
+        {children}
+      </div>
+    </div>
   );
 }
 

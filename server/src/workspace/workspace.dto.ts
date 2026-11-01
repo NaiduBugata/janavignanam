@@ -251,6 +251,18 @@ export class CreateRecordDto {
   @MaxLength(120)
   assignedOfficer: string;
 
+  @IsOptional()
+  @Transform(({ value }) => trim(value))
+  @IsString()
+  @MaxLength(40)
+  assignedOfficerPhone?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => trim(value))
+  @IsString()
+  @MaxLength(4000)
+  issueDetail?: string;
+
   @ValidateIf(isCase)
   @IsIn(RESOLUTION_STATUSES)
   resolutionStatus: (typeof RESOLUTION_STATUSES)[number];

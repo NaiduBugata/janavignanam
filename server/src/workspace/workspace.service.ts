@@ -124,6 +124,8 @@ export interface WorkspaceRecord {
   actionTaken: string;
   actionToBeTaken: string;
   assignedOfficer: string;
+  assignedOfficerPhone?: string;
+  issueDetail?: string;
   resolutionStatus: string;
   deadline: string;
   place: string;
@@ -160,6 +162,8 @@ type CaseInput = {
   actionTaken?: string;
   actionToBeTaken?: string;
   assignedOfficer?: string;
+  assignedOfficerPhone?: string;
+  issueDetail?: string;
   resolutionStatus?: string;
   deadline?: string;
   place?: string;
@@ -672,7 +676,36 @@ export class WorkspaceService {
     if (data.actionRequested && !text(raw.actionToBeTaken)) {
       updateFields.actionToBeTaken = data.actionRequested;
     }
+    if (data.srNumber && !text(raw.srNumber)) {
+      updateFields.srNumber = data.srNumber;
+    }
+    if (data.address && !text(raw.address)) {
+      updateFields.address = data.address;
+    }
+    if (data.email && !text(raw.email)) {
+      updateFields.email = data.email;
+    }
+    if (data.referenceName && !text(raw.referenceName)) {
+      updateFields.referenceName = data.referenceName;
+    }
+    if (data.actionTaken && !text(raw.actionTaken)) {
+      updateFields.actionTaken = data.actionTaken;
+    }
+    if (data.assignedOfficerPhone && !text(raw.assignedOfficerPhone)) {
+      updateFields.assignedOfficerPhone = data.assignedOfficerPhone;
+    }
+    if (data.resolutionStatus && !text(raw.resolutionStatus)) {
+      updateFields.resolutionStatus = data.resolutionStatus;
+      updateFields.status = data.resolutionStatus;
+    }
+    if (data.deadline && !text(raw.deadline)) {
+      updateFields.deadline = data.deadline;
+    }
+    if (data.others && !text(raw.others)) {
+      updateFields.others = data.others;
+    }
     if (data.issueSummary) {
+      updateFields.issueDetail = data.issueSummary;
       updateFields.detail = text(raw.detail)
         ? `${text(raw.detail)}\n\n[Grok AI Extracted]: ${data.issueSummary}`
         : data.issueSummary;
@@ -1413,6 +1446,8 @@ function storedCase(input: CaseInput): Record<string, unknown> {
     actionTaken: input.actionTaken || '',
     actionToBeTaken: input.actionToBeTaken || '',
     assignedOfficer: input.assignedOfficer || '',
+    assignedOfficerPhone: input.assignedOfficerPhone || '',
+    issueDetail: input.issueDetail || '',
     resolutionStatus: input.resolutionStatus || '',
     deadline: input.deadline || '',
     place,
@@ -1426,6 +1461,7 @@ function caseDetail(input: CaseInput): string {
     picked.push(input.others);
   return [
     picked.join(', '),
+    input.issueDetail ? `Representation: ${input.issueDetail}` : '',
     input.actionToBeTaken ? `Action to be taken: ${input.actionToBeTaken}` : '',
   ]
     .filter(Boolean)
@@ -1465,6 +1501,8 @@ function toRecord(doc: Record<string, unknown>): WorkspaceRecord {
     actionTaken: text(doc.actionTaken),
     actionToBeTaken: text(doc.actionToBeTaken),
     assignedOfficer: text(doc.assignedOfficer),
+    assignedOfficerPhone: text(doc.assignedOfficerPhone),
+    issueDetail: text(doc.issueDetail),
     resolutionStatus: text(doc.resolutionStatus),
     deadline: text(doc.deadline),
     place: text(doc.place),

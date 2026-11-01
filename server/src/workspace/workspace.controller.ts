@@ -161,6 +161,8 @@ export class WorkspaceController {
       actionTaken: body.actionTaken,
       actionToBeTaken: body.actionToBeTaken,
       assignedOfficer: body.assignedOfficer,
+      assignedOfficerPhone: body.assignedOfficerPhone,
+      issueDetail: body.issueDetail,
       resolutionStatus: body.resolutionStatus,
       deadline: body.deadline,
       place: body.place,
@@ -503,18 +505,28 @@ export class WorkspaceController {
     const sd = sResult?.structuredData || {};
 
     const combinedData = {
+      srNumber: gd.srNumber || sd.srNumber || '',
       applicantName: gd.applicantName || sd.applicantName || '',
       contactNumber: gd.contactNumber || sd.contactNumber || '',
-      referenceNumber: gd.referenceNumber || sd.referenceNumber || '',
-      date: gd.date || sd.date || '',
-      category: gd.category || sd.category || '',
+      address: gd.address || sd.address || '',
+      email: gd.email || sd.email || '',
       village: gd.village || sd.village || '',
       mandal: gd.mandal || sd.mandal || '',
       division: gd.division || sd.division || '',
       assemblyConstituency:
         gd.assemblyConstituency || sd.assemblyConstituency || '',
-      assignedOfficer: gd.assignedOfficer || sd.assignedOfficer || '',
+      date: gd.date || sd.date || '',
+      referenceName: gd.referenceName || sd.referenceName || '',
+      referenceNumber: gd.referenceNumber || sd.referenceNumber || '',
+      category: gd.category || sd.category || '',
+      others: gd.others || sd.others || '',
+      actionTaken: gd.actionTaken || sd.actionTaken || '',
       actionRequested: gd.actionRequested || sd.actionRequested || '',
+      assignedOfficer: gd.assignedOfficer || sd.assignedOfficer || '',
+      assignedOfficerPhone:
+        gd.assignedOfficerPhone || sd.assignedOfficerPhone || '',
+      resolutionStatus: gd.resolutionStatus || sd.resolutionStatus || '',
+      deadline: gd.deadline || sd.deadline || '',
       issueSummary: [
         gd.issueSummary,
         sd.issueSummary
