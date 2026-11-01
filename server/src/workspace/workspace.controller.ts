@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -10,7 +11,10 @@ import {
   Query,
   Res,
   UnauthorizedException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   CreateRecordDto,
@@ -22,10 +26,14 @@ import {
 } from './workspace.dto';
 import { queryContacts } from './contacts-directory';
 import { WorkspaceService } from './workspace.service';
+import { GrokScannerService } from './grok-scanner.service';
 
 @Controller('api/workspace')
 export class WorkspaceController {
-  constructor(private readonly workspace: WorkspaceService) {}
+  constructor(
+    private readonly workspace: WorkspaceService,
+    private readonly grokScanner: GrokScannerService,
+  ) {}
 
   @Post('register')
   register(@Body() body: RegisterDto) {
@@ -182,6 +190,151 @@ export class WorkspaceController {
     await this.workspace.me(bearer(authorization));
     return this.workspace.remove(id);
   }
+
+  @Post('records/:id/documents')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    }),
+  )
+  async uploadDocument(
+    @Param('id') id: string,
+    @UploadedFile()
+    file?: {
+      buffer?: Buffer;
+      originalname?: string;
+      mimetype?: string;
+      size?: number;
+    },
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.workspace.me(bearer(authorization));
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Please select a document to upload.');
+    }
+    const validMimes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/jpg',
+    ];
+    const isMimeValid =
+      file.mimetype && validMimes.includes(file.mimetype.toLowerCase());
+    const isExtValid = /\.(pdf|jpe?g|png)$/i.test(file.originalname || '');
+    if (!isMimeValid && !isExtValid) {
+      throw new BadRequestException(
+        'Unsupported file format. Please upload a PDF, JPG, JPEG, or PNG document.',
+      );
+    }
+    return this.workspace.addDocumentToGrievance(id, {
+      buffer: file.buffer,
+      originalname: file.originalname || 'document',
+      mimetype: file.mimetype || 'application/octet-stream',
+      size: file.size || file.buffer.length,
+    });
+  }
+
+  @Get('records/:id/documents/:docId/file')
+  async documentFile(
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @Query('download') download: string | undefined,
+    @Query('token') queryToken: string | undefined,
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    const token = authorization ? bearer(authorization) : queryToken;
+    if (!token) throw new UnauthorizedException('Sign in required');
+    await this.workspace.me(token);
+
+    const file = await this.workspace.getDocumentFile(id, docId);
+    const inline =
+      (file.mimeType === 'application/pdf' ||
+        file.mimeType.startsWith('image/')) &&
+      download !== '1';
+    const ascii = file.filename
+      .replace(/[^\x20-\x7e]/g, '_')
+      .replace(/["\\]/g, '_');
+
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Length', String(file.buffer.length));
+    res.setHeader(
+      'Content-Disposition',
+      `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+    );
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.end(file.buffer);
+  }
+
+  @Delete('records/:id/documents/:docId')
+  async removeDocument(
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.workspace.me(bearer(authorization));
+    return this.workspace.removeDocumentFromGrievance(id, docId);
+  }
+
+  @Post('records/:id/documents/:docId/apply')
+  async applyExtractedData(
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.workspace.me(bearer(authorization));
+    return this.workspace.applyExtractedDataToGrievance(id, docId);
+  }
+
+  @Post('documents/scan-preview')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    }),
+  )
+  async scanPreview(
+    @UploadedFile()
+    file?: {
+      buffer?: Buffer;
+      originalname?: string;
+      mimetype?: string;
+      size?: number;
+    },
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.workspace.me(bearer(authorization));
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Please select a document to scan.');
+    }
+    const validMimes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/jpg',
+    ];
+    const isMimeValid =
+      file.mimetype && validMimes.includes(file.mimetype.toLowerCase());
+    const isExtValid = /\.(pdf|jpe?g|png)$/i.test(file.originalname || '');
+    if (!isMimeValid && !isExtValid) {
+      throw new BadRequestException(
+        'Unsupported file format. Please upload a PDF, JPG, JPEG, or PNG document.',
+      );
+    }
+    const result = await this.grokScanner.scanDocument({
+      buffer: file.buffer,
+      mimeType: file.mimetype || 'application/octet-stream',
+      filename: file.originalname || 'document',
+    });
+    return {
+      filename: file.originalname,
+      mimeType: file.mimetype,
+      sizeBytes: file.size || file.buffer.length,
+      extractedText: result.extractedText,
+      structuredData: result.structuredData,
+      modelUsed: result.modelUsed,
+    };
+  }
+
 }
 
 @Controller('api/progress')

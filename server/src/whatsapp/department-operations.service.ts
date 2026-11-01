@@ -181,19 +181,18 @@ export class DepartmentOperationsService {
     const akshayPhone = digits(phoneForName('akshay') || '');
     if (akshayPhone && akshayPhone === d) return true;
 
-    // 4. Desk leaders
-    if (Array.isArray(DESKS)) {
-      for (const desk of DESKS) {
-        const leaderPhone = digits(phoneForName(desk.leader) || '');
-        if (leaderPhone && leaderPhone === d) return true;
-      }
-    }
-    if (GENERAL_DESK) {
-      const generalLeader = digits(phoneForName(GENERAL_DESK.leader) || '');
-      if (generalLeader && generalLeader === d) return true;
-    }
-
     return false;
+  }
+
+  async prepare(sender: string): Promise<void> {
+    await this.hydrateSession(sender);
+  }
+
+  private isLeaderPhone(sender: string): boolean {
+    const d = digits(sender);
+    if (!d) return false;
+    const names = [GENERAL_DESK.leader, ...DESKS.map((desk) => desk.leader)];
+    return names.some((name) => digits(phoneForName(name) || '') === d);
   }
 
   /**
@@ -207,30 +206,26 @@ export class DepartmentOperationsService {
     const rawId = this.replyId(event);
     if (rawId.startsWith('dept:') || rawId.startsWith('gpm:')) return true;
 
-    // If user has an active in-flight session
+    if (!this.isDepartmentUser(sender, env)) return false;
+
     const session = this.getSession(sender);
     if (session && session.step !== 'IDLE') return true;
 
-    // Keyword match
     const textMsg = (event.message_text || '').trim().toLowerCase();
     if (DEPT_TRIGGER_KEYWORDS.includes(textMsg)) return true;
 
-    // If the sender is an authorized department user (and NOT an MP user),
-    // intercept greetings, menu requests, and initial messages so they get the Department Menu
-    if (this.isDepartmentUser(sender, env)) {
-      if (
-        !textMsg ||
-        textMsg === 'menu' ||
-        textMsg === 'home' ||
-        textMsg === 'hi' ||
-        textMsg === 'hello' ||
-        textMsg === 'start' ||
-        textMsg === 'help' ||
-        textMsg === 'operations' ||
-        textMsg === 'department'
-      ) {
-        return true;
-      }
+    if (
+      !textMsg ||
+      textMsg === 'menu' ||
+      textMsg === 'home' ||
+      textMsg === 'hi' ||
+      textMsg === 'hello' ||
+      textMsg === 'start' ||
+      textMsg === 'help' ||
+      textMsg === 'operations' ||
+      textMsg === 'department'
+    ) {
+      return true;
     }
 
     return false;
@@ -342,6 +337,29 @@ export class DepartmentOperationsService {
     fetchImpl: typeof fetch = fetch,
     env: NodeJS.ProcessEnv = process.env,
     deps: { records?: unknown } = {},
+  ): Promise<void> {
+    await this.prepare(sender);
+    if (this.isLeaderPhone(sender)) {
+      this.logger.warn(
+        `Leader WhatsApp replies stay disabled for ${digits(sender).slice(-4)}`,
+      );
+      return;
+    }
+    try {
+      await this.dispatchDepartmentEvent(event, sender, fetchImpl, env, deps);
+    } finally {
+      const live = this.sessions.get(digits(sender));
+      if (live) await this.persistSession(live);
+      else await this.deleteStoredSession(sender);
+    }
+  }
+
+  private async dispatchDepartmentEvent(
+    event: WhatsAppEvent,
+    sender: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+    deps: { records?: unknown },
   ): Promise<void> {
     const auth = this.checkAuthorization(sender, env);
     if (!auth.authorized) {
@@ -1560,6 +1578,19 @@ export class DepartmentOperationsService {
         session.enteredNote !== undefined && session.enteredNote !== ''
           ? session.enteredNote
           : prevNote;
+      const unchanged =
+        stages[stageIdx]?.status === statusVal &&
+        (stages[stageIdx]?.note || '') === finalNote;
+      if (unchanged) {
+        await sendTextMessage(
+          sender,
+          'This stage already has that status. No duplicate update was saved.',
+          fetchImpl,
+          env,
+        );
+        this.clearSession(sender);
+        return;
+      }
 
       stages[stageIdx] = {
         name: stageName,
@@ -1587,8 +1618,7 @@ export class DepartmentOperationsService {
       const bar = progressBar(counts.completed, stages.length);
       const isWorkStartedStage =
         stageName === 'Work started' || stageName === STAGE_NAMES[0];
-      const complainantNotified =
-        isWorkStartedStage && statusVal !== 'Pending';
+      const complainantNotified = isWorkStartedStage && statusVal !== 'Pending';
 
       const summary = [
         `✅ *GRIEVANCE PROGRESS SAVED*`,
@@ -2503,6 +2533,103 @@ export class DepartmentOperationsService {
       }
       return false;
     });
+  }
+
+  private async hydrateSession(sender: string): Promise<void> {
+    const key = digits(sender);
+    if (!key || this.getSession(sender) || !this.db) return;
+    try {
+      const collection = this.db.collection('dept_wa_sessions');
+      if (typeof collection.findOne !== 'function') return;
+      const doc = await collection.findOne({ _id: key });
+      if (!doc) return;
+      const updatedAt = Number(doc.updatedAt) || 0;
+      if (!updatedAt || Date.now() - updatedAt > SESSION_TTL_MS) {
+        await this.deleteStoredSession(sender);
+        return;
+      }
+      const session: DeptSession = {
+        phone: key,
+        step: (doc.step as DeptSession['step']) || 'IDLE',
+        module: doc.module === 'projects' ? 'projects' : 'grievances',
+        action:
+          doc.action === 'update' ||
+          doc.action === 'recent' ||
+          doc.action === 'reports'
+            ? doc.action
+            : 'view',
+        page: Number(doc.page) || 1,
+        searchQuery:
+          typeof doc.searchQuery === 'string' ? doc.searchQuery : undefined,
+        recordId: typeof doc.recordId === 'string' ? doc.recordId : undefined,
+        recordTitle:
+          typeof doc.recordTitle === 'string' ? doc.recordTitle : undefined,
+        selectedStageIndex:
+          typeof doc.selectedStageIndex === 'number'
+            ? doc.selectedStageIndex
+            : undefined,
+        selectedStageName:
+          typeof doc.selectedStageName === 'string'
+            ? doc.selectedStageName
+            : undefined,
+        previousStatus: doc.previousStatus as DeptSession['previousStatus'],
+        selectedStatus: doc.selectedStatus as DeptSession['selectedStatus'],
+        enteredNote:
+          typeof doc.enteredNote === 'string' ? doc.enteredNote : undefined,
+        updatedAt,
+      };
+      this.sessions.set(key, session);
+    } catch (err) {
+      this.logger.warn(
+        `Department session restore failed: ${err instanceof Error ? err.message : 'error'}`,
+      );
+    }
+  }
+
+  private async persistSession(session: DeptSession): Promise<void> {
+    if (!this.db) return;
+    const collection = this.db.collection('dept_wa_sessions');
+    if (typeof collection.updateOne !== 'function') return;
+    const stored = {
+      phone: session.phone,
+      step: session.step,
+      module: session.module,
+      action: session.action,
+      page: session.page,
+      searchQuery: session.searchQuery || '',
+      recordId: session.recordId || '',
+      recordTitle: session.recordTitle || '',
+      selectedStageIndex: session.selectedStageIndex ?? null,
+      selectedStageName: session.selectedStageName || '',
+      previousStatus: session.previousStatus || '',
+      selectedStatus: session.selectedStatus || '',
+      enteredNote: session.enteredNote || '',
+      updatedAt: session.updatedAt,
+    };
+    try {
+      await collection.updateOne(
+        { _id: session.phone },
+        { $set: stored },
+        { upsert: true },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Department session save failed: ${err instanceof Error ? err.message : 'error'}`,
+      );
+    }
+  }
+
+  private async deleteStoredSession(sender: string): Promise<void> {
+    if (!this.db) return;
+    const key = digits(sender);
+    if (!key) return;
+    const collection = this.db.collection('dept_wa_sessions');
+    if (typeof collection.deleteOne !== 'function') return;
+    try {
+      await collection.deleteOne({ _id: key });
+    } catch {
+      // A missing session store must not block the menu.
+    }
   }
 
   private getSession(sender: string): DeptSession | null {

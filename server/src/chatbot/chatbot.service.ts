@@ -471,6 +471,7 @@ export class ChatbotService {
       last === undefined || now.getTime() - last > CONVERSATION_GAP_MS;
     const fetchImpl = replyFetch(deps.fetchImpl || fetch);
     try {
+      await this.deptOpsService.prepare(sender);
       if (this.deptOpsService.isDepartmentEvent(event, sender, env)) {
         await this.deptOpsService.handleEvent(
           event,

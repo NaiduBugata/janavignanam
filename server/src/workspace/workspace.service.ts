@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -23,18 +24,21 @@ import {
 import {
   assignDesk,
   DEPARTMENT_WHATSAPP,
+  DESKS,
+  GENERAL_DESK,
   leaderApproval,
   messageLanguage,
   raiserApproval,
   raiserWorkStarted,
-  type GrievanceDesk,
   type GrievanceLanguage,
 } from '../chatbot/grievance-priority';
 import { phoneForName } from '../whatsapp/whatsapp.audience';
 import {
+  recordOutboundAttempt,
   sendReplyButtons,
   sendTemplateMessage,
   sendTextMessage,
+  WhatsAppSendError,
   type ReplyButton,
 } from '../whatsapp/whatsapp.send';
 import {
@@ -43,6 +47,11 @@ import {
   WORKSPACE_SECTIONS,
   type WorkspaceSection,
 } from './workspace.dto';
+import {
+  GrokScannerService,
+  type GrievanceExtractedData,
+  type GrokScanResult,
+} from './grok-scanner.service';
 import {
   combinedPdf,
   defaultStages,
@@ -75,6 +84,19 @@ export interface SaveProgressInput {
   status?: string;
   remarks?: string;
   department?: string;
+}
+
+export interface GrievanceDocument {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  status: 'processing' | 'completed' | 'failed';
+  extractedText?: string;
+  structuredData?: GrievanceExtractedData;
+  errorMessage?: string;
+  fileData?: string;
 }
 
 export interface WorkspaceRecord {
@@ -118,6 +140,7 @@ export interface WorkspaceRecord {
   department: string;
   leader: string;
   workStartedNotifiedAt?: string;
+  scannedDocuments?: GrievanceDocument[];
 }
 
 type CaseInput = {
@@ -151,6 +174,9 @@ export class WorkspaceService {
   constructor(
     private readonly db: DatabaseService,
     private readonly config: ConfigService,
+    private readonly grokScanner: GrokScannerService = new GrokScannerService(
+      config,
+    ),
   ) {}
 
   async register(
@@ -375,8 +401,15 @@ export class WorkspaceService {
     );
     const leaderPhone = phoneForName(desk.leader);
 
+    let departmentInteractive = false;
     try {
-      await sendDepartmentActionNotice(desk, issue, String(id), token, record);
+      departmentInteractive = await sendDepartmentActionNotice(
+        desk,
+        issue,
+        String(id),
+        token,
+        record,
+      );
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'send failed';
       throw new BadRequestException(
@@ -421,12 +454,230 @@ export class WorkspaceService {
           ? `${desk.leader} was messaged.`
           : `${desk.leader} is not in the contact list.`
         : 'Leader notifications are paused.',
-      'The department was sent the WhatsApp operations menu.',
+      departmentInteractive
+        ? 'The department was sent the WhatsApp operations menu.'
+        : 'Meta accepted the department template notification.',
     ].join(' ');
     return {
       record: toRecord({ ...existing, ...(saved || {}), ...patch }),
       notice,
     };
+  }
+
+  async addDocumentToGrievance(
+    id: string,
+    file: {
+      buffer: Buffer;
+      originalname: string;
+      mimetype: string;
+      size: number;
+    },
+  ): Promise<{ document: GrievanceDocument; record: WorkspaceRecord }> {
+    await this.ready();
+    const raw = await this.storedRecord(id);
+    if (String(raw.section || '') !== 'grievances') {
+      throw new BadRequestException(
+        'Document scanning is only supported for grievances.',
+      );
+    }
+
+    const docId = `gdoc_${Date.now()}_${randomBytes(4).toString('hex')}`;
+    const now = new Date().toISOString();
+    const base64File = file.buffer.toString('base64');
+
+    const existingDocs = Array.isArray(raw.scannedDocuments)
+      ? (raw.scannedDocuments as Array<Record<string, unknown>>)
+      : Array.isArray(raw.documents)
+        ? (raw.documents as Array<Record<string, unknown>>)
+        : [];
+
+    const initialDoc: Record<string, unknown> = {
+      id: docId,
+      filename: file.originalname || 'document',
+      mimeType: file.mimetype || 'application/octet-stream',
+      sizeBytes: file.size || file.buffer.length,
+      uploadedAt: now,
+      status: 'processing',
+      fileData: base64File,
+    };
+
+    await this.db
+      .collection(RECORDS)
+      .findOneAndUpdate(
+        { _id: asId(id) },
+        { $set: { scannedDocuments: [...existingDocs, initialDoc] } },
+      );
+
+    let scanResult: GrokScanResult | null = null;
+    let scanError: string | null = null;
+
+    try {
+      scanResult = await this.grokScanner.scanDocument({
+        buffer: file.buffer,
+        mimeType: file.mimetype,
+        filename: file.originalname,
+      });
+    } catch (err) {
+      scanError = err instanceof Error ? err.message : String(err);
+    }
+
+    const finalDoc: Record<string, unknown> = {
+      ...initialDoc,
+      status: scanResult ? 'completed' : 'failed',
+      extractedText: scanResult?.extractedText || '',
+      structuredData: scanResult?.structuredData || undefined,
+      errorMessage: scanError || undefined,
+    };
+
+    const updatedDocs = [
+      ...existingDocs.filter((d) => String(d.id) !== docId),
+      finalDoc,
+    ];
+
+    const updatedRaw = await this.db
+      .collection(RECORDS)
+      .findOneAndUpdate(
+        { _id: asId(id) },
+        { $set: { scannedDocuments: updatedDocs } },
+      );
+
+    const updatedRecord = toRecord({
+      ...(raw || {}),
+      ...(updatedRaw || {}),
+      scannedDocuments: updatedDocs,
+    });
+    const returnedDoc = documentsOf([finalDoc])[0];
+
+    return {
+      document: returnedDoc,
+      record: updatedRecord,
+    };
+  }
+
+  async getDocumentFile(
+    recordId: string,
+    docId: string,
+  ): Promise<{ filename: string; mimeType: string; buffer: Buffer }> {
+    await this.ready();
+    const raw = await this.readRecord(recordId);
+    const docs = (raw.scannedDocuments || raw.documents) as
+      Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(docs)) {
+      throw new NotFoundException('No documents found for this grievance');
+    }
+    const match = docs.find((d) => String(d.id) === docId);
+    if (!match) {
+      throw new NotFoundException('Document not found');
+    }
+    const fileData = text(match.fileData);
+    if (!fileData) {
+      throw new NotFoundException('Document file content is not available');
+    }
+    return {
+      filename: text(match.filename) || `grievance-${docId}`,
+      mimeType: text(match.mimeType) || 'application/octet-stream',
+      buffer: Buffer.from(fileData, 'base64'),
+    };
+  }
+
+  async removeDocumentFromGrievance(
+    recordId: string,
+    docId: string,
+  ): Promise<WorkspaceRecord> {
+    await this.ready();
+    const raw = await this.storedRecord(recordId);
+    const existingDocs = Array.isArray(raw.scannedDocuments)
+      ? (raw.scannedDocuments as Array<Record<string, unknown>>)
+      : Array.isArray(raw.documents)
+        ? (raw.documents as Array<Record<string, unknown>>)
+        : [];
+
+    const updatedDocs = existingDocs.filter((d) => String(d.id) !== docId);
+    const updatedRaw = await this.db
+      .collection(RECORDS)
+      .findOneAndUpdate(
+        { _id: asId(recordId) },
+        { $set: { scannedDocuments: updatedDocs } },
+      );
+
+    return toRecord({
+      ...(raw || {}),
+      ...(updatedRaw || {}),
+      scannedDocuments: updatedDocs,
+    });
+  }
+
+  async applyExtractedDataToGrievance(
+    recordId: string,
+    docId: string,
+  ): Promise<WorkspaceRecord> {
+    await this.ready();
+    const raw = await this.storedRecord(recordId);
+    const existingDocs = (raw.scannedDocuments || raw.documents) as
+      Array<Record<string, unknown>> | undefined;
+    const match = Array.isArray(existingDocs)
+      ? existingDocs.find((d) => String(d.id) === docId)
+      : null;
+    if (!match || !match.structuredData) {
+      throw new BadRequestException(
+        'No structured extraction data found for this document.',
+      );
+    }
+
+    const data = match.structuredData as GrievanceExtractedData;
+    const updateFields: Record<string, unknown> = {};
+
+    if (data.applicantName && !text(raw.fullName)) {
+      updateFields.fullName = data.applicantName;
+    }
+    if (data.applicantName && (!text(raw.title) || raw.title === 'Grievance')) {
+      updateFields.title = data.applicantName;
+    }
+    if (data.contactNumber && !text(raw.contactNumber)) {
+      updateFields.contactNumber = data.contactNumber;
+    }
+    if (data.referenceNumber && !text(raw.referenceNumber)) {
+      updateFields.referenceNumber = data.referenceNumber;
+    }
+    if (data.date && !text(raw.dateOfVisit)) {
+      updateFields.dateOfVisit = data.date;
+    }
+    if (data.assignedOfficer && !text(raw.assignedOfficer)) {
+      updateFields.assignedOfficer = data.assignedOfficer;
+    }
+    if (data.village && !text(raw.village)) {
+      updateFields.village = data.village;
+    }
+    if (data.mandal && !text(raw.mandal)) {
+      updateFields.mandal = data.mandal;
+    }
+    if (data.division && !text(raw.division)) {
+      updateFields.division = data.division;
+    }
+    if (data.assemblyConstituency && !text(raw.assemblyConstituency)) {
+      updateFields.assemblyConstituency = data.assemblyConstituency;
+    }
+    if (data.actionRequested && !text(raw.actionToBeTaken)) {
+      updateFields.actionToBeTaken = data.actionRequested;
+    }
+    if (data.issueSummary) {
+      updateFields.detail = text(raw.detail)
+        ? `${text(raw.detail)}\n\n[Grok AI Extracted]: ${data.issueSummary}`
+        : data.issueSummary;
+    }
+
+    if (Object.keys(updateFields).length > 0) {
+      const updatedRaw = await this.db
+        .collection(RECORDS)
+        .findOneAndUpdate({ _id: asId(recordId) }, { $set: updateFields });
+      return toRecord({
+        ...(raw || {}),
+        ...(updatedRaw || {}),
+        ...updateFields,
+      });
+    }
+
+    return toRecord(raw);
   }
 
   async progressByToken(token: string): Promise<{
@@ -568,71 +819,18 @@ export class WorkspaceService {
       (s) => s.name === 'Work started' || s.name === STAGE_NAMES[0],
     );
     const prevWorkStartedStatus = prevWorkStartedStage?.status || 'Pending';
-    const prevStatus = existing.status || 'Pending';
 
     const newWorkStartedStage = stagesToSave.find(
       (s) => s.name === 'Work started' || s.name === STAGE_NAMES[0],
     );
     const newWorkStartedStatus = newWorkStartedStage?.status || 'Pending';
-
-    // Must Do: The one who raised the request must get msg once the work started
-    const isWorkStartedNow =
-      (newWorkStartedStatus === 'In progress' ||
-        newWorkStartedStatus === 'Completed' ||
-        newStatus === 'In progress') &&
-      prevWorkStartedStatus === 'Pending' &&
-      prevStatus !== 'In progress';
-
     const alreadyNotified = Boolean(
       (existing as unknown as Record<string, unknown>).workStartedNotifiedAt,
     );
-
-    let workStartedNotifiedAt: string | undefined = undefined;
-    if (isWorkStartedNow && !alreadyNotified) {
-      const raiser = whatsappNumber(
-        existing.contactNumber ||
-          text((existing as unknown as Record<string, unknown>).reporterPhone),
-      );
-      if (raiser) {
-        const lang =
-          ((existing as unknown as Record<string, unknown>).language as GrievanceLanguage) ||
-          messageLanguage(existing.detail || existing.title || '');
-        const note =
-          newWorkStartedStage?.note ||
-          (typeof options.remarks === 'string' ? options.remarks : '');
-        const textMsg = raiserWorkStarted(lang, {
-          title: existing.title || existing.detail,
-          department: dept,
-          note,
-        });
-
-        try {
-          await sendTextMessage(raiser, textMsg);
-          workStartedNotifiedAt = now;
-        } catch {
-          // If outside 24h window, try approved template fallback
-          try {
-            await sendTemplateMessage(raiser, 'mediasphere_critical_issue', {
-              language: 'en',
-              bodyParameters: [
-                clean(existing.village || existing.place || 'Narasaraopet'),
-                clean(
-                  `Work started on grievance: ${existing.title || existing.detail || ''}`,
-                ),
-                'IN PROGRESS',
-                clean(`${dept} Department`),
-                new Date().toLocaleDateString('en-IN', {
-                  timeZone: 'Asia/Kolkata',
-                }),
-              ],
-            });
-            workStartedNotifiedAt = now;
-          } catch {
-            // Non-blocking log
-          }
-        }
-      }
-    }
+    const workJustStarted =
+      !alreadyNotified &&
+      prevWorkStartedStatus === 'Pending' &&
+      newWorkStartedStatus === 'In progress';
 
     const patch: Record<string, unknown> = {
       status: newStatus,
@@ -643,7 +841,6 @@ export class WorkspaceService {
       remarks,
       progressHistory: updatedHistory,
       progressToken: token,
-      ...(workStartedNotifiedAt ? { workStartedNotifiedAt } : {}),
       ...(options.department ? { followUpDepartment: dept } : {}),
     };
 
@@ -656,6 +853,31 @@ export class WorkspaceService {
       .findOneAndUpdate(filter, { $set: patch });
     if (!saved)
       throw new NotFoundException('This progress link is no longer available');
+
+    if (workJustStarted) {
+      const raiser = whatsappNumber(
+        existing.contactNumber ||
+          text((existing as unknown as Record<string, unknown>).reporterPhone),
+      );
+      const notice = await notifyWorkStarted(raiser, {
+        reference: existing.srNumber || existing.id,
+        title: existing.title || existing.detail,
+        location: existing.place || existing.village,
+        department: dept,
+        note: newWorkStartedStage?.note || remarks,
+        language:
+          ((existing as unknown as Record<string, unknown>)
+            .language as GrievanceLanguage) ||
+          messageLanguage(existing.detail || existing.title || ''),
+        token,
+      });
+      await this.db.collection(RECORDS).findOneAndUpdate(filter, {
+        $set: {
+          ...(notice.accepted ? { workStartedNotifiedAt: now } : {}),
+          workStartedNotice: notice,
+        },
+      });
+    }
 
     return await this.get(existing.id);
   }
@@ -794,70 +1016,225 @@ function clean(value: string): string {
   );
 }
 
+export interface DepartmentRecipient {
+  phone: string;
+  source: string;
+  required: boolean;
+}
+
+function leaderPhoneSet(): Set<string> {
+  const names = [GENERAL_DESK.leader, ...DESKS.map((desk) => desk.leader)];
+  const phones = new Set<string>();
+  for (const name of names) {
+    const found = phoneForName(name);
+    const phone = found ? whatsappNumber(found) : '';
+    if (phone) phones.add(phone);
+  }
+  return phones;
+}
+
+/**
+ * Department inbox first. Assigned officer and directory matches are extra.
+ * Leader numbers and the grievance lead phone are never included.
+ */
 export function resolveDepartmentRecipients(
   desk: { department: string; place: string; leader: string },
   record?: WorkspaceRecord,
   env: NodeJS.ProcessEnv = process.env,
-): string[] {
-  const result = new Set<string>();
-
-  // 1. Direct lead phone on record
-  if (record?.leadPhone) {
-    const p = whatsappNumber(record.leadPhone);
-    if (p) result.add(p);
-  }
-
-  // 2. Assigned officer's phone from directory
-  if (record?.assignedOfficer) {
-    const officerPhone = phoneForName(record.assignedOfficer);
-    if (officerPhone) {
-      const p = whatsappNumber(officerPhone);
-      if (p) result.add(p);
+): DepartmentRecipient[] {
+  const leaders = leaderPhoneSet();
+  const chosen = new Map<string, DepartmentRecipient>();
+  const add = (raw: string, source: string, required: boolean) => {
+    const phone = whatsappNumber(raw);
+    if (!phone || leaders.has(phone)) return;
+    const current = chosen.get(phone);
+    if (!current) {
+      chosen.set(phone, { phone, source, required });
+      return;
     }
+    if (required) current.required = true;
+  };
+
+  const configuredInbox = (env.DEPARTMENT_WHATSAPP || '').trim();
+  const inbox = whatsappNumber(configuredInbox || DEPARTMENT_WHATSAPP);
+  if (inbox) {
+    add(
+      inbox,
+      configuredInbox ? 'DEPARTMENT_WHATSAPP' : 'department_inbox',
+      true,
+    );
   }
 
-  // 3. Department contact matching in directory
+  if (record?.assignedOfficer) {
+    const officer = phoneForName(record.assignedOfficer);
+    if (officer) add(officer, 'assigned_officer', false);
+  }
+
   const deptName =
     record?.followUpDepartment || record?.department || desk.department;
   if (deptName) {
-    const deptPhone = phoneForName(deptName);
-    if (deptPhone) {
-      const p = whatsappNumber(deptPhone);
-      if (p) result.add(p);
+    const match = phoneForName(deptName);
+    if (match) add(match, 'department_directory', false);
+  }
+
+  for (const item of (env.DEPARTMENT_PHONES || '').split(',')) {
+    add(item, 'DEPARTMENT_PHONES', false);
+  }
+
+  return [...chosen.values()];
+}
+
+function metaAccepted(result: unknown): {
+  ok: boolean;
+  messageId: string | null;
+} {
+  if (!result || typeof result !== 'object')
+    return { ok: false, messageId: null };
+  const body = result as Record<string, unknown>;
+  const messages = body.messages;
+  if (Array.isArray(messages) && messages.length) {
+    const id = (messages[0] as Record<string, unknown>).id;
+    if (id) return { ok: true, messageId: String(id) };
+  }
+  if (body.success === true) return { ok: true, messageId: null };
+  return { ok: false, messageId: null };
+}
+
+function windowClosed(err: unknown): boolean {
+  if (!(err instanceof WhatsAppSendError)) return false;
+  if (err.metaErrorCode === 131047 || err.metaErrorCode === 131026) return true;
+  const text = err.message.toLowerCase();
+  return (
+    text.includes('131047') ||
+    text.includes('re-engagement') ||
+    text.includes('customer care window')
+  );
+}
+
+async function notifyWorkStarted(
+  phone: string,
+  detail: {
+    reference: string;
+    title: string;
+    location: string;
+    department: string;
+    note: string;
+    language: GrievanceLanguage;
+    token: string;
+  },
+): Promise<Record<string, unknown>> {
+  const logger = new Logger('WorkStartedNotice');
+  const tail = phone ? phone.slice(-4) : 'none';
+  if (!phone) {
+    const missing = {
+      accepted: false,
+      recipientTail: tail,
+      channel: 'none',
+      error: 'raiser WhatsApp number is missing',
+      at: new Date().toISOString(),
+    };
+    logger.warn('Work-started notice skipped: raiser number is missing');
+    await recordOutboundAttempt({
+      accepted: false,
+      error: String(missing.error),
+      notificationType: 'work_started',
+    });
+    return missing;
+  }
+  const textMsg = raiserWorkStarted(detail.language, {
+    reference: detail.reference,
+    title: detail.title,
+    location: detail.location,
+    department: detail.department,
+    note: detail.note,
+  });
+  try {
+    const sent = await sendTextMessage(phone, textMsg);
+    const accepted = metaAccepted(sent);
+    if (!accepted.ok)
+      throw new Error('Meta did not accept the session message');
+    const result = {
+      accepted: true,
+      recipientTail: tail,
+      channel: 'session',
+      messageId: accepted.messageId,
+      error: null,
+      at: new Date().toISOString(),
+    };
+    await recordOutboundAttempt({
+      accepted: true,
+      messageId: accepted.messageId,
+      notificationType: 'work_started',
+      httpCode: 200,
+    });
+    logger.log(`Work-started session message accepted for ${tail}`);
+    return result;
+  } catch (err) {
+    if (!windowClosed(err)) {
+      const reason = err instanceof Error ? err.message : 'send failed';
+      logger.warn(`Work-started notice failed for ${tail}: ${reason}`);
+      await recordOutboundAttempt({
+        accepted: false,
+        error: reason,
+        notificationType: 'work_started',
+      });
+      return {
+        accepted: false,
+        recipientTail: tail,
+        channel: 'session',
+        error: reason.slice(0, 300),
+        at: new Date().toISOString(),
+      };
+    }
+    try {
+      const sent = await sendTemplateMessage(phone, 'jv_mp_action_request', {
+        language: 'en',
+        bodyParameters: [
+          clean(detail.department),
+          clean(detail.title || detail.reference),
+          clean(
+            `${detail.reference}${detail.location ? ` - ${detail.location}` : ''}`,
+          ),
+          'Work Started',
+        ],
+        urlButton: detail.token ? `progress/${detail.token}` : undefined,
+      });
+      const accepted = metaAccepted(sent);
+      if (!accepted.ok)
+        throw new Error('Meta did not accept the work-started template');
+      await recordOutboundAttempt({
+        accepted: true,
+        messageId: accepted.messageId,
+        notificationType: 'work_started',
+        httpCode: 200,
+      });
+      logger.log(`Work-started template accepted for ${tail}`);
+      return {
+        accepted: true,
+        recipientTail: tail,
+        channel: 'template',
+        messageId: accepted.messageId,
+        error: null,
+        at: new Date().toISOString(),
+      };
+    } catch (templateErr) {
+      const reason =
+        templateErr instanceof Error ? templateErr.message : 'send failed';
+      logger.warn(`Work-started template failed for ${tail}: ${reason}`);
+      await recordOutboundAttempt({
+        accepted: false,
+        error: reason,
+        notificationType: 'work_started',
+      });
+      return {
+        accepted: false,
+        recipientTail: tail,
+        channel: 'template',
+        error: reason.slice(0, 300),
+        at: new Date().toISOString(),
+      };
     }
   }
-
-  // 4. Akshay (Department Coordinator / Head)
-  const akshayPhone = phoneForName('akshay');
-  if (akshayPhone) {
-    const p = whatsappNumber(akshayPhone);
-    if (p) result.add(p);
-  }
-
-  // 5. Configured DEPARTMENT_WHATSAPP from environment
-  const envDeptWa = (env.DEPARTMENT_WHATSAPP || '').trim();
-  if (envDeptWa) {
-    const p = whatsappNumber(envDeptWa);
-    if (p) result.add(p);
-  }
-
-  // 6. Configured DEPARTMENT_PHONES list from environment
-  const envDeptPhones = (env.DEPARTMENT_PHONES || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  for (const item of envDeptPhones) {
-    const p = whatsappNumber(item);
-    if (p) result.add(p);
-  }
-
-  // 7. Primary fallback DEPARTMENT_WHATSAPP (+918919537879)
-  const defaultDeptWa = whatsappNumber(DEPARTMENT_WHATSAPP);
-  if (defaultDeptWa) {
-    result.add(defaultDeptWa);
-  }
-
-  return [...result];
 }
 
 async function sendDepartmentActionNotice(
@@ -867,7 +1244,8 @@ async function sendDepartmentActionNotice(
   token: string,
   record?: WorkspaceRecord,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<void> {
+): Promise<boolean> {
+  const logger = new Logger('DepartmentNotice');
   const when = new Date().toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
@@ -892,47 +1270,98 @@ async function sendDepartmentActionNotice(
   ];
 
   const recipients = resolveDepartmentRecipients(desk, record, env);
-  let deliveredCount = 0;
+  if (!recipients.some((item) => item.required)) {
+    throw new Error('Department WhatsApp number is missing or invalid.');
+  }
+  let requiredAccepted = false;
+  let usedInteractive = false;
   let lastError: unknown = null;
 
-  for (const phone of recipients) {
+  for (const recipient of recipients) {
+    logger.log(
+      `Department notice source=${recipient.source} tail=${recipient.phone.slice(-4)} required=${recipient.required}`,
+    );
     try {
-      // 1. Primary: Native WhatsApp interactive buttons (No external links)
-      await sendReplyButtons(phone, bodyText, buttons, fetch, env);
-      deliveredCount++;
-    } catch {
-      // 2. Fallback if outside 24-hr customer service window:
-      // Meta requires an approved template when the 24-hour window has expired.
+      const sent = await sendReplyButtons(
+        recipient.phone,
+        bodyText,
+        buttons,
+        fetch,
+        env,
+      );
+      const accepted = metaAccepted(sent);
+      if (!accepted.ok) {
+        throw new Error(
+          'Meta did not accept the interactive department message',
+        );
+      }
+      await recordOutboundAttempt({
+        accepted: true,
+        messageId: accepted.messageId,
+        httpCode: 200,
+        notificationType: 'department_approval',
+      });
+      if (recipient.required) {
+        requiredAccepted = true;
+        usedInteractive = true;
+      }
+      continue;
+    } catch (interactiveErr) {
       try {
-        await sendTemplateMessage(phone, 'jv_mp_action_request', {
-          language: 'en',
-          bodyParameters: [
-            clean(desk.department),
-            clean(issue),
-            clean(`${desk.place} - ${desk.department}`),
-            when,
-          ],
-          urlButton: `progress/${token}`,
-          env,
-        });
+        const sent = await sendTemplateMessage(
+          recipient.phone,
+          'jv_mp_action_request',
+          {
+            language: 'en',
+            bodyParameters: [
+              clean(desk.department),
+              clean(issue),
+              clean(`${desk.place} - ${desk.department}`),
+              when,
+            ],
+            urlButton: `progress/${token}`,
+            env,
+          },
+        );
+        const accepted = metaAccepted(sent);
+        if (!accepted.ok) {
+          throw new Error('Meta did not accept the department template');
+        }
         await sendQuiet(
-          phone,
+          recipient.phone,
           `📲 *Native WhatsApp Operations Menu*\n\n` +
             `Reply *MENU* or *OPERATIONS* at any time to open the Department Operations Menu directly in WhatsApp.`,
         );
-        deliveredCount++;
+        await recordOutboundAttempt({
+          accepted: true,
+          messageId: accepted.messageId,
+          httpCode: 200,
+          notificationType: 'department_approval',
+        });
+        if (recipient.required) requiredAccepted = true;
       } catch (err) {
-        lastError = err;
+        lastError = err || interactiveErr;
+        const reason = err instanceof Error ? err.message : 'send failed';
+        logger.warn(
+          `Department notice failed source=${recipient.source} tail=${recipient.phone.slice(-4)}: ${reason}`,
+        );
+        await recordOutboundAttempt({
+          accepted: false,
+          error: reason,
+          notificationType: 'department_approval',
+        });
       }
     }
   }
 
-  if (!deliveredCount && recipients.length > 0) {
-    throw (
-      lastError ||
-      new Error('Failed to deliver department action notice to any recipient.')
-    );
+  if (!requiredAccepted) {
+    const reason =
+      lastError instanceof Error
+        ? lastError.message
+        : 'The department WhatsApp number did not accept the notification.';
+    throw new Error(reason);
   }
+  return usedInteractive;
 }
 
 /** Backward-compatible alias */
@@ -1081,6 +1510,7 @@ function toRecord(doc: Record<string, unknown>): WorkspaceRecord {
     remarks: text(doc.remarks || doc.progressRemarks),
     progressHistory: historyOf(doc.progressHistory),
     workStartedNotifiedAt: text(doc.workStartedNotifiedAt),
+    scannedDocuments: documentsOf(doc.scannedDocuments || doc.documents),
     ...deskFields(doc),
   };
 }
@@ -1174,4 +1604,34 @@ function fileName(title: string, extension: string): string {
       .replace(/^-|-$/g, '')
       .slice(0, 40) || 'report';
   return `${slug}.${extension}`;
+}
+
+function documentsOf(value: unknown): GrievanceDocument[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const doc = item as Record<string, unknown>;
+    const id = text(doc.id);
+    if (!id) return [];
+    const status =
+      doc.status === 'completed' ||
+      doc.status === 'failed' ||
+      doc.status === 'processing'
+        ? doc.status
+        : 'completed';
+    return [
+      {
+        id,
+        filename: text(doc.filename) || 'document',
+        mimeType: text(doc.mimeType) || 'application/octet-stream',
+        sizeBytes: Number(doc.sizeBytes) || 0,
+        uploadedAt: text(doc.uploadedAt) || new Date().toISOString(),
+        status,
+        extractedText: text(doc.extractedText),
+        structuredData: doc.structuredData as
+          GrievanceExtractedData | undefined,
+        errorMessage: text(doc.errorMessage),
+      },
+    ];
+  });
 }

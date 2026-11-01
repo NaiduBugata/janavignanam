@@ -161,20 +161,31 @@ export function raiserApproval(language: GrievanceLanguage): string {
 
 export function raiserWorkStarted(
   language: GrievanceLanguage,
-  detail?: { title?: string; department?: string; note?: string },
+  detail?: {
+    title?: string;
+    department?: string;
+    note?: string;
+    reference?: string;
+    location?: string;
+  },
 ): string {
   const dept = (detail?.department || 'Department').trim();
   const title = (detail?.title || '').trim();
   const note = (detail?.note || '').trim();
+  const reference = (detail?.reference || '').trim();
+  const location = (detail?.location || '').trim();
+  const ref = reference || 'your request';
 
   if (language === 'te') {
     const titleLine = title ? `\nసమస్య: ${title}` : '';
+    const placeLine = location ? `\nప్రాంతం: ${location}` : '';
     const noteLine = note ? `\nగమనిక: ${note}` : '';
-    return `నమస్కారం, మీ సమస్యపై సంబంధిత శాఖ (${dept}) ద్వారా పనులు ప్రారంభమయ్యాయి (Work Started).${titleLine}${noteLine}\nత్వరలోనే పనులు పూర్తి చేసి పరిష్కరిస్తాము. ధన్యవాదాలు.`;
+    return `మీ సమస్య ${ref} నవీకరించబడింది. సంబంధిత శాఖ పని ప్రారంభించింది. శాఖ: ${dept}. ప్రస్తుత స్థితి: Work Started.${titleLine}${placeLine}${noteLine}`;
   }
   const titleLine = title ? `\nIssue: ${title}` : '';
+  const placeLine = location ? `\nLocation: ${location}` : '';
   const noteLine = note ? `\nNote: ${note}` : '';
-  return `Hello, work has officially started on your grievance by the ${dept} department.${titleLine}${noteLine}\nIt will be resolved as early as possible. Thank you.`;
+  return `Your grievance ${ref} has been updated. The concerned department has started working on your request. Department: ${dept}. Current Status: Work Started.${titleLine}${placeLine}${noteLine}\nWork has officially started.`;
 }
 
 /** Sent to the named leader when the grievance is approved. */

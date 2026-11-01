@@ -4,10 +4,11 @@ import {
   WorkspaceController,
 } from './workspace.controller';
 import { WorkspaceService } from './workspace.service';
+import { GrokScannerService } from './grok-scanner.service';
 
 @Module({
   controllers: [WorkspaceController, ProgressController],
-  providers: [WorkspaceService],
-  exports: [WorkspaceService],
+  providers: [WorkspaceService, GrokScannerService],
+  exports: [WorkspaceService, GrokScannerService],
 })
 export class WorkspaceModule {}

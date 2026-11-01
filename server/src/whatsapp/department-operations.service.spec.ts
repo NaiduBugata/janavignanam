@@ -245,6 +245,27 @@ describe('DepartmentOperationsService', () => {
       );
     });
 
+    it('does not capture public words from a citizen', () => {
+      for (const word of [
+        'progress',
+        'projects',
+        'reports',
+        'department',
+        'operations',
+      ]) {
+        const event = createMockEvent({ sender: citizenPhone, text: word });
+        expect(service.isDepartmentEvent(event, citizenPhone, env)).toBe(false);
+      }
+    });
+
+    it('still recognizes a department button so an unknown sender can be refused', () => {
+      const event = createMockEvent({
+        sender: '911111111111',
+        buttonId: 'dept:g:up_pick:gr_101',
+      });
+      expect(service.isDepartmentEvent(event, '911111111111', env)).toBe(true);
+    });
+
     it('rejects unauthorized phone numbers with an access restricted message', async () => {
       const unknownPhone = '911111111111';
       const event = createMockEvent({ sender: unknownPhone, text: 'dept' });

@@ -540,6 +540,28 @@ export async function deliverWhatsApp(
   return result;
 }
 
+/** Records an outbound attempt in the existing channel status log. Delivery is not implied. */
+export async function recordOutboundAttempt(input: {
+  accepted: boolean;
+  error?: string | null;
+  httpCode?: number;
+  messageId?: string | null;
+  notificationType: string;
+}): Promise<void> {
+  await rememberStatus(
+    {
+      success: input.accepted,
+      skipped: false,
+      error: input.error || null,
+      messageId: input.messageId || null,
+      attempts: 1,
+      httpCode: input.httpCode,
+    },
+    input.notificationType,
+    true,
+  );
+}
+
 async function rememberStatus(
   result: WaSendResult,
   notificationType: string | undefined,
