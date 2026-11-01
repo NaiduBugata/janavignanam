@@ -266,7 +266,7 @@ describe('DepartmentOperationsService', () => {
       await service.handleEvent(open, deptPhone, mockFetch, env);
       const rows = sentBodies[0].interactive.action.sections[0].rows;
       expect(sentBodies[0].interactive.type).toBe('list');
-      expect(sentBodies[0].interactive.action.button).toBe('Menu');
+      expect(sentBodies[0].interactive.action.button).toBe('Update work');
       expect(rows.map((row: { title: string }) => row.title)).toEqual([
         'Pending',
         'Started',
@@ -287,6 +287,11 @@ describe('DepartmentOperationsService', () => {
           notifyStatus: 'Need time',
         }),
       );
+      const next = sentBodies[1].interactive.action.sections[0].rows;
+      expect(next.map((row: { title: string }) => row.title)).toEqual([
+        'Update work',
+        'View details',
+      ]);
     });
 
     it('still recognizes a department button so an unknown sender can be refused', () => {

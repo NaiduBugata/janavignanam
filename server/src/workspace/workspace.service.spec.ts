@@ -184,20 +184,24 @@ describe('WorkspaceService', () => {
     const [recipient, body, rows, options] = spyButtons.mock.calls[0];
     expect(recipient).toContain('8919537879');
     expect(body).toContain('UPDATE WORK PROGRESS');
-    expect(body).toContain('Use the menu below to update the progress');
-    expect(options).toEqual(expect.objectContaining({ button: 'Menu' }));
+    expect(body).toContain('Tap Update work and choose the progress.');
+    expect(options).toEqual(expect.objectContaining({ button: 'Update work' }));
     expect(rows).toEqual([
       expect.objectContaining({
-        id: 'dept:g:up_pick:gr-water-1',
-        title: 'Update work',
+        id: 'dept:work:gr-water-1:pending',
+        title: 'Pending',
       }),
       expect.objectContaining({
-        id: 'dept:g:pick:gr-water-1',
-        title: 'View details',
+        id: 'dept:work:gr-water-1:started',
+        title: 'Started',
       }),
       expect.objectContaining({
-        id: 'dept:menu',
-        title: 'Department menu',
+        id: 'dept:work:gr-water-1:progress',
+        title: 'In progress',
+      }),
+      expect.objectContaining({
+        id: 'dept:work:gr-water-1:needtime',
+        title: 'Need time',
       }),
     ]);
 

@@ -1251,23 +1251,28 @@ async function sendDepartmentActionNotice(
     `*Work:* ${clean(issue)}\n` +
     `*Location:* ${clean(desk.place)}\n` +
     `*Date:* ${when}\n\n` +
-    `Use the menu below to update the progress of this work.`;
+    `Tap Update work and choose the progress.`;
 
   const rows = [
     {
-      id: `dept:g:up_pick:${recordId}`,
-      title: 'Update work',
-      description: 'Pending, Started, In progress, or Need time',
+      id: `dept:work:${recordId}:pending`,
+      title: 'Pending',
+      description: 'Work has not started',
     },
     {
-      id: `dept:g:pick:${recordId}`,
-      title: 'View details',
-      description: 'See this grievance',
+      id: `dept:work:${recordId}:started`,
+      title: 'Started',
+      description: 'The department has started the work',
     },
     {
-      id: 'dept:menu',
-      title: 'Department menu',
-      description: 'Open department operations',
+      id: `dept:work:${recordId}:progress`,
+      title: 'In progress',
+      description: 'Work is currently in progress',
+    },
+    {
+      id: `dept:work:${recordId}:needtime`,
+      title: 'Need time',
+      description: 'Extend the deadline by 15 days',
     },
   ];
 
@@ -1285,7 +1290,7 @@ async function sendDepartmentActionNotice(
     );
     try {
       const sent = await sendReplyList(recipient.phone, bodyText, rows, {
-        button: 'Menu',
+        button: 'Update work',
         section: 'Work progress',
         fetchImpl: fetch,
         env,

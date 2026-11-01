@@ -547,6 +547,7 @@ export class DepartmentOperationsService {
       const id = reply.startsWith('dept:g:pick:')
         ? reply.slice('dept:g:pick:'.length)
         : reply.slice('gpm:pick:'.length);
+      session.action = 'view';
       await this.handleGrievanceSelection(
         sender,
         session,
@@ -1338,13 +1339,7 @@ export class DepartmentOperationsService {
       .filter(Boolean)
       .join('\n');
 
-    const buttons: ReplyButton[] = [
-      { id: `gpm:up_pick:${record.id}`, title: 'Update Progress' },
-      { id: 'gpm:assigned', title: 'Assigned List' },
-      { id: 'dept:menu', title: 'Department Menu' },
-    ];
-
-    await sendReplyButtons(sender, body, buttons, fetchImpl, env);
+    await this.sendWorkLoop(sender, record.id, body, fetchImpl, env);
   }
 
   private async sendWorkStatusList(
@@ -1398,11 +1393,42 @@ export class DepartmentOperationsService {
       },
     ];
     await sendReplyList(sender, body, rows, {
-      button: 'Menu',
+      button: 'Update work',
       section: 'Work status',
       fetchImpl,
       env,
     });
+  }
+
+  private async sendWorkLoop(
+    sender: string,
+    id: string,
+    body: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    await sendReplyList(
+      sender,
+      body,
+      [
+        {
+          id: `dept:g:up_pick:${id}`,
+          title: 'Update work',
+          description: 'Pending, Started, In progress, or Need time',
+        },
+        {
+          id: `dept:g:pick:${id}`,
+          title: 'View details',
+          description: 'See this grievance',
+        },
+      ],
+      {
+        button: 'Choose',
+        section: 'Next step',
+        fetchImpl,
+        env,
+      },
+    );
   }
 
   private async applyWorkStatus(
@@ -1473,12 +1499,10 @@ export class DepartmentOperationsService {
         remarks = 'Deadline extended by 15 days';
         notifyStatus = 'Need time';
       }
-      if (
-        choice !== 'needtime' &&
-        JSON.stringify(stages) === before
-      ) {
-        await sendTextMessage(
+      if (choice !== 'needtime' && JSON.stringify(stages) === before) {
+        await this.sendWorkLoop(
           sender,
+          id,
           'This progress is already saved. No duplicate update was sent.',
           fetchImpl,
           env,
@@ -1517,28 +1541,7 @@ export class DepartmentOperationsService {
       ]
         .filter(Boolean)
         .join('\n');
-      await sendReplyList(sender, body, [
-        {
-          id: `dept:g:up_pick:${id}`,
-          title: 'Update work',
-          description: 'Change the progress again',
-        },
-        {
-          id: `dept:g:pick:${id}`,
-          title: 'View details',
-          description: 'See the saved grievance',
-        },
-        {
-          id: 'dept:menu',
-          title: 'Department menu',
-          description: 'Open department operations',
-        },
-      ], {
-        button: 'Menu',
-        section: 'Next step',
-        fetchImpl,
-        env,
-      });
+      await this.sendWorkLoop(sender, id, body, fetchImpl, env);
     } catch (err) {
       this.logger.error(
         `Work status save failed: ${err instanceof Error ? err.message : 'error'}`,
