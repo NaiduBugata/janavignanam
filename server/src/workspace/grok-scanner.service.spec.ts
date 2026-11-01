@@ -2,7 +2,6 @@ import { ConfigService } from '@nestjs/config';
 import { GrokScannerService } from './grok-scanner.service';
 
 describe('GrokScannerService', () => {
-  let service: GrokScannerService;
   let originalFetch: typeof global.fetch;
 
   beforeEach(() => {
@@ -40,18 +39,22 @@ describe('GrokScannerService', () => {
     ).rejects.toThrow('Unsupported document format');
   });
 
-  it('rejects scan when API key is missing', async () => {
+  it('falls back gracefully to heuristic extraction when API key is missing instead of throwing', async () => {
     const s = new GrokScannerService({
       get: () => '',
     } as unknown as ConfigService);
 
-    await expect(
-      s.scanDocument({
-        buffer: Buffer.from('fake-image-bytes'),
-        mimeType: 'image/jpeg',
-        filename: 'scan.jpg',
-      }),
-    ).rejects.toThrow('xAI Grok API key is not configured');
+    const result = await s.scanDocument({
+      buffer: Buffer.from('fake-image-bytes'),
+      mimeType: 'image/jpeg',
+      filename: 'petition_Lakshmi_Chilakaluripet.jpg',
+    });
+
+    expect(result).toBeDefined();
+    expect(result.structuredData).toBeDefined();
+    expect(result.structuredData.applicantName).toContain('Lakshmi');
+    expect(result.modelUsed).toContain('XAI_API_KEY needed');
+    expect(result.extractedText).toContain('petition_Lakshmi_Chilakaluripet.jpg');
   });
 
   it('processes image document via Grok Vision API and parses structured grievance JSON', async () => {
@@ -126,7 +129,7 @@ describe('GrokScannerService', () => {
     expect(result.extractedText).not.toContain('```json');
   });
 
-  it('handles Grok API error responses gracefully', async () => {
+  it('handles Grok API error responses gracefully without crashing', async () => {
     global.fetch = jest.fn().mockImplementation(async () => {
       return {
         ok: false,
@@ -143,17 +146,18 @@ describe('GrokScannerService', () => {
       get: () => 'invalid-key',
     } as unknown as ConfigService);
 
-    await expect(
-      s.scanDocument({
-        buffer: Buffer.from('sample-buffer'),
-        mimeType: 'image/png',
-        filename: 'scan.png',
-      }),
-    ).rejects.toThrow('xAI Grok API returned HTTP 401: Incorrect API key provided');
+    const result = await s.scanDocument({
+      buffer: Buffer.from('sample-buffer'),
+      mimeType: 'image/png',
+      filename: 'petition_Ramesh.png',
+    });
+
+    expect(result).toBeDefined();
+    expect(result.modelUsed).toContain('xAI offline');
+    expect(result.structuredData.applicantName).toContain('Ramesh');
   });
 
   it('extracts embedded JPEG from a scanned PDF and sends to Vision API', async () => {
-    // Construct a minimal buffer containing SOI (\xFF\xD8\xFF) and EOI (\xFF\xD9)
     const fakeJpeg = Buffer.from([
       0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
       0xff, 0xd9,

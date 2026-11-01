@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Headers,
+  Logger,
   Param,
   Patch,
   Post,
@@ -30,6 +31,8 @@ import { GrokScannerService } from './grok-scanner.service';
 
 @Controller('api/workspace')
 export class WorkspaceController {
+  private readonly logger = new Logger(WorkspaceController.name);
+
   constructor(
     private readonly workspace: WorkspaceService,
     private readonly grokScanner: GrokScannerService,
@@ -226,12 +229,18 @@ export class WorkspaceController {
         'Unsupported file format. Please upload a PDF, JPG, JPEG, or PNG document.',
       );
     }
-    return this.workspace.addDocumentToGrievance(id, {
-      buffer: file.buffer,
-      originalname: file.originalname || 'document',
-      mimetype: file.mimetype || 'application/octet-stream',
-      size: file.size || file.buffer.length,
-    });
+    try {
+      return await this.workspace.addDocumentToGrievance(id, {
+        buffer: file.buffer,
+        originalname: file.originalname || 'document',
+        mimetype: file.mimetype || 'application/octet-stream',
+        size: file.size || file.buffer.length,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Document upload error for grievance ${id}: ${msg}`);
+      throw new BadRequestException(`Document upload failed: ${msg}`);
+    }
   }
 
   @Get('records/:id/documents/:docId/file')
@@ -320,19 +329,33 @@ export class WorkspaceController {
         'Unsupported file format. Please upload a PDF, JPG, JPEG, or PNG document.',
       );
     }
-    const result = await this.grokScanner.scanDocument({
-      buffer: file.buffer,
-      mimeType: file.mimetype || 'application/octet-stream',
-      filename: file.originalname || 'document',
-    });
-    return {
-      filename: file.originalname,
-      mimeType: file.mimetype,
-      sizeBytes: file.size || file.buffer.length,
-      extractedText: result.extractedText,
-      structuredData: result.structuredData,
-      modelUsed: result.modelUsed,
-    };
+    try {
+      const result = await this.grokScanner.scanDocument({
+        buffer: file.buffer,
+        mimeType: file.mimetype || 'application/octet-stream',
+        filename: file.originalname || 'document',
+      });
+      return {
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size || file.buffer.length,
+        extractedText: result.extractedText,
+        structuredData: result.structuredData,
+        modelUsed: result.modelUsed,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Scan preview fallback engaged: ${msg}`);
+      const fallbackData = this.grokScanner.heuristicExtraction('', file.originalname || 'document');
+      return {
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size || file.buffer.length,
+        extractedText: `[Document: ${file.originalname}]\\nScanned. Notice: ${msg}`,
+        structuredData: fallbackData,
+        modelUsed: 'local-fallback',
+      };
+    }
   }
 
 }
