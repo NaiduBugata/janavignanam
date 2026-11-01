@@ -505,11 +505,33 @@ export class WorkspaceController {
     const gd = gResult?.structuredData || {};
     const sd = sResult?.structuredData || {};
 
+    const isInvalidName = (name?: string) =>
+      !name ||
+      name.trim().length < 3 ||
+      /^(handwritten|visitor|doc|petition|form|scan|document)/i.test(name.trim());
+
+    let finalName = '';
+    if (!isInvalidName(gd.applicantName) && !isInvalidName(sd.applicantName)) {
+      finalName =
+        (sd.applicantName?.length || 0) > (gd.applicantName?.length || 0)
+          ? sd.applicantName!
+          : gd.applicantName!;
+    } else if (!isInvalidName(gd.applicantName)) {
+      finalName = gd.applicantName!;
+    } else if (!isInvalidName(sd.applicantName)) {
+      finalName = sd.applicantName!;
+    }
+
     const rawCategories: string[] = [];
     if (gd.category) rawCategories.push(gd.category);
     if (sd.category) rawCategories.push(sd.category);
+    if (Array.isArray(gd.categories)) rawCategories.push(...gd.categories.map(String));
+    if (Array.isArray(sd.categories)) rawCategories.push(...sd.categories.map(String));
     if (Array.isArray(gd.rawJson?.categories)) {
       rawCategories.push(...gd.rawJson.categories.map(String));
+    }
+    if (Array.isArray(sd.rawJson?.categories)) {
+      rawCategories.push(...sd.rawJson.categories.map(String));
     }
     const matchedCategories = Array.from(
       new Set(
@@ -527,7 +549,7 @@ export class WorkspaceController {
 
     const combinedData = {
       srNumber: gd.srNumber || sd.srNumber || '',
-      applicantName: gd.applicantName || sd.applicantName || '',
+      applicantName: finalName,
       contactNumber: gd.contactNumber || sd.contactNumber || '',
       address: gd.address || sd.address || '',
       email: gd.email || sd.email || '',
@@ -539,7 +561,7 @@ export class WorkspaceController {
       date: gd.date || sd.date || '',
       referenceName: gd.referenceName || sd.referenceName || '',
       referenceNumber: gd.referenceNumber || sd.referenceNumber || '',
-      category: gd.category || sd.category || '',
+      category: gd.category || sd.category || (matchedCategories.length > 0 ? matchedCategories.join(', ') : ''),
       categories: matchedCategories,
       others: gd.others || sd.others || '',
       actionTaken: gd.actionTaken || sd.actionTaken || '',
