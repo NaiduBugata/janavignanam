@@ -183,7 +183,8 @@ describe('WorkspaceService', () => {
     expect(spyButtons).toHaveBeenCalledTimes(1);
     const [recipient, body, buttons] = spyButtons.mock.calls[0];
     expect(recipient).toContain('8919537879');
-    expect(body).toContain('DEPARTMENT OPERATIONS: ACTION REQUEST');
+    expect(body).toContain('UPDATE WORK PROGRESS');
+    expect(body).toContain('Use the menu below to update the progress');
     expect(buttons).toHaveLength(3);
     expect(buttons[0]).toEqual({
       id: 'dept:g:up_pick:gr-water-1',

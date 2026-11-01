@@ -1190,14 +1190,12 @@ async function sendDepartmentActionNotice(
   });
 
   const bodyText =
-    `🏢 *DEPARTMENT OPERATIONS: ACTION REQUEST*\n\n` +
-    `Hello *${clean(desk.department)}*,\n` +
-    `The MP has requested your attention regarding:\n` +
-    `*${clean(issue)}*\n\n` +
-    `📍 *Location:* ${clean(desk.place)}\n` +
-    `🏢 *Department:* ${clean(desk.department)}\n` +
-    `📅 *Requested on:* ${when}\n\n` +
-    `Select an option below to manage this grievance in WhatsApp:`;
+    `📋 *UPDATE WORK PROGRESS*\n\n` +
+    `*Department:* ${clean(desk.department)}\n` +
+    `*Work:* ${clean(issue)}\n` +
+    `*Location:* ${clean(desk.place)}\n` +
+    `*Date:* ${when}\n\n` +
+    `Use the menu below to update the progress of this work.`;
 
   const buttons: ReplyButton[] = [
     { id: `dept:g:up_pick:${recordId}`, title: 'Update Progress' },
