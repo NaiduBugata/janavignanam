@@ -1,3 +1,4 @@
+import { GrievanceDocumentSection, type ScannedDocument } from "@/components/GrievanceDocumentSection.tsx";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -66,6 +67,7 @@ type RecordItem = {
   progressStages?: { name: string; status: string; note: string }[];
   progressRemarks?: string;
   progressUpdatedAt?: string;
+  scannedDocuments?: ScannedDocument[];
 };
 type Session = { token: string; email: string; name: string };
 type Summary = { counts: Record<CaseSection, number>; open: number; news: number; mongo: boolean };
@@ -207,7 +209,13 @@ function App() {
     return result.notice;
   };
 
-  const addRecord = async (target: CaseSection, body: Record<string, string | string[]>) => {
+  const updateRecordItem = (id: string, updated: Partial<RecordItem>) => {
+    setRecords((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...updated } : item))
+    );
+  };
+
+    const addRecord = async (target: CaseSection, body: Record<string, string | string[]>) => {
     try {
       const row = await api<RecordItem>("/api/workspace/records", {
         method: "POST",
@@ -267,7 +275,7 @@ function App() {
         {panel && <div className="border-b bg-card px-5 py-3 text-sm whitespace-pre-line text-muted-foreground md:px-10">{panelBody}</div>}
         {notice && <div className="border-b bg-destructive/10 px-5 py-3 text-sm text-destructive md:px-10">{notice}</div>}
         <div className={section === "news" ? "h-[calc(100vh-5rem)]" : "mx-auto max-w-7xl p-5 md:p-10"}>
-          <Workspace section={section} records={visible} summary={summary} stats={stats} token={session.token} onAdd={(body) => addRecord(section as CaseSection, body)} onApprove={approveRecord} />
+          <Workspace section={section} records={visible} summary={summary} stats={stats} token={session.token} onAdd={(body) => addRecord(section as CaseSection, body)} onApprove={approveRecord} onUpdateRecord={updateRecordItem} />
         </div>
       </main>
     </div>
@@ -320,7 +328,7 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
   );
 }
 
-function Workspace({ section, records, summary, stats, token, onAdd, onApprove }: { section: Section; records: RecordItem[]; summary: Summary | null; stats: NewsStats | null; token: string; onAdd: (body: Record<string, string | string[]>) => Promise<void>; onApprove: (id: string) => Promise<string> }) {
+function Workspace({ section, records, summary, stats, token, onAdd, onApprove, onUpdateRecord }: { section: Section; records: RecordItem[]; summary: Summary | null; stats: NewsStats | null; token: string; onAdd: (body: Record<string, string | string[]>) => Promise<void>; onApprove: (id: string) => Promise<string>; onUpdateRecord: (id: string, updated: Partial<RecordItem>) => void }) {
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [approving, setApproving] = useState("");
@@ -389,7 +397,7 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove }
         </div>
       </div>
       {showForm && section === "campaigns" && <SimpleRecordForm key={section} section="campaigns" onSubmit={onAdd} />}
-      {showForm && isListSection(section) && section !== "campaigns" && <CaseRecordForm key={section} section={section} onSubmit={onAdd} />}
+      {showForm && isListSection(section) && section !== "campaigns" && <CaseRecordForm key={section} section={section} token={token} onSubmit={onAdd} />}
       {located && <PlaceFilters value={place} onChange={setPlace} />}
       <div className="mb-4 flex items-center gap-4 text-sm text-muted-foreground"><span>{shown.length} records</span><span>{open} active</span></div>
       {approveNote && <p className="mb-4 rounded-lg bg-primary/10 px-3 py-2 text-sm">{approveNote}</p>}
@@ -416,6 +424,13 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove }
               {item.progressRemarks ? <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">Remarks:</span> {item.progressRemarks}</p> : null}
               {item.status === "Reviewed" && item.followUpDepartment ? <p className="mt-1 text-sm text-muted-foreground">Follow up sent to {item.followUpDepartment}.</p> : null}
               {item.status === "Approved" && item.followUpDepartment ? <p className="mt-1 text-sm text-muted-foreground">The department, the leader, and the person who raised it were messaged.</p> : null}
+{section === "grievances" && !item.id.startsWith("demo-") && (
+                <GrievanceDocumentSection
+                  record={item}
+                  token={token}
+                  onUpdateRecord={(updated) => onUpdateRecord(item.id, updated)}
+                />
+              )}
               <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                 {(section === "grievances" || section === "projects") && <ReportActions token={token} section={section} id={item.id} />}
                 {section === "grievances" && !item.id.startsWith("demo-") && item.status !== "Approved" && (

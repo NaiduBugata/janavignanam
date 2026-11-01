@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { CheckCircle2, Loader2, Sparkles, Upload } from "lucide-react";
+import { apiUpload } from "@/lib/api";
 import { alignPlace, divisionNames, mandalNames, villageNames, withCurrent } from "@/places.ts";
 
 export const ISSUE_CATEGORIES = [
@@ -113,11 +115,13 @@ export function CaseRecordForm({
   section,
   initial,
   submitLabel,
+  token,
   onSubmit,
 }: {
   section: CaseSection;
   initial?: Partial<Draft>;
   submitLabel?: string;
+  token?: string;
   onSubmit: (body: Record<string, string | string[]>) => Promise<void>;
 }) {
   const located = section === "grievances" || section === "projects";
@@ -134,6 +138,56 @@ export function CaseRecordForm({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const othersChecked = draft.categories.includes("Others");
+  const [scanning, setScanning] = useState(false);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleScanFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (scanInputRef.current) scanInputRef.current.value = "";
+    setScanning(true);
+    setScanNotice(null);
+    setError("");
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await apiUpload<{
+        filename: string;
+        extractedText: string;
+        structuredData: Record<string, string>;
+      }>("/api/workspace/documents/scan-preview", formData, token);
+
+      const d = res.structuredData || {};
+      setDraft((current) => {
+        const matchedCategories = ISSUE_CATEGORIES.filter((c) =>
+          d.category && (d.category.toLowerCase().includes(c.toLowerCase()) || c.toLowerCase().includes(d.category.toLowerCase()))
+        );
+        const nextCategories = matchedCategories.length ? matchedCategories : current.categories.length ? current.categories : ["Public Grievance"];
+        return {
+          ...current,
+          fullName: d.applicantName || current.fullName,
+          contactNumber: d.contactNumber || current.contactNumber,
+          referenceNumber: d.referenceNumber || current.referenceNumber,
+          dateOfVisit: d.date || current.dateOfVisit,
+          village: d.village || current.village,
+          mandal: d.mandal || current.mandal,
+          division: d.division || current.division,
+          assemblyConstituency: d.assemblyConstituency || current.assemblyConstituency,
+          assignedOfficer: d.assignedOfficer || current.assignedOfficer,
+          actionToBeTaken: d.actionRequested || current.actionToBeTaken,
+          categories: nextCategories,
+          others: d.issueSummary || current.others,
+        };
+      });
+      setScanNotice(`Scanned "${res.filename}" with Grok AI! Form fields auto-filled below.`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Document scan failed.");
+    } finally {
+      setScanning(false);
+    };
+  };
+
 
   const set = (key: keyof Draft) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setDraft((current) => ({ ...current, [key]: event.target.value }));
@@ -174,6 +228,52 @@ export function CaseRecordForm({
 
   return (
     <form onSubmit={(event) => void submit(event)} className="mb-6 space-y-6 rounded-xl border bg-card p-5">
+      {section === "grievances" && token && (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-4 text-primary" />
+              <span className="text-sm font-semibold text-foreground">
+                Auto-fill from Grievance Document (Grok AI)
+              </span>
+            </div>
+            <div>
+              <input
+                ref={scanInputRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf"
+                className="hidden"
+                onChange={handleScanFile}
+                disabled={scanning}
+              />
+              <button
+                type="button"
+                disabled={scanning}
+                onClick={() => scanInputRef.current?.click()}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {scanning ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Scanning with Grok AI…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="size-3.5" />
+                    Upload & Auto-fill Form
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+          {scanNotice && (
+            <div className="mt-2 flex items-center gap-2 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="size-3.5" />
+              {scanNotice}
+            </div>
+          )}
+        </div>
+      )}
       <SectionTitle>Visitor information</SectionTitle>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Sr. number">
