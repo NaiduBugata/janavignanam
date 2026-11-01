@@ -1,5 +1,10 @@
 import { ConfigService } from '@nestjs/config';
-import { GrokScannerService } from './grok-scanner.service';
+import {
+  GrokScannerService,
+  matchIssueCategories,
+  repairSlipOcr,
+  tickedCategories,
+} from './grok-scanner.service';
 
 describe('GrokScannerService', () => {
   let originalFetch: typeof global.fetch;
@@ -23,6 +28,130 @@ describe('GrokScannerService', () => {
     } as unknown as ConfigService);
     expect(configured.isConfigured()).toBe(true);
     expect(configured.apiKey).toBe('xai-test-key');
+  });
+
+  it('maps Groq categories and day-first dates onto the grievance form', () => {
+    expect(matchIssueCategories(['Roads and Infrastructure, Agriculture'])).toEqual([
+      'Agriculture',
+      'Roads & Infrastructure',
+    ]);
+  });
+
+  it('maps the visitor slip onto the form fields without the sample person', () => {
+    const broken = [
+      'LAVU SRI KRISHNA DEVARAYALU',
+      'SR. NUMBER : 00l73',
+      'FULL NAME : K. Ramesh Naidu',
+      'CONTACT NUMBER : 6281/68530',
+      'ADDRESS : D.No: 8-24, Main Road',
+      'EMAIL : rameshnaidu.k@gmail.com',
+      'VILLAGE : Peddanandipadu',
+      'MANDAL : Narasaracpet',
+      'ASSEMBLY CONSTITUENCY : Narasaraopet',
+      'DATE OF VISIT : 3/-/0-2026',
+      'REFERENCE NAME : M. Narasimha Rao',
+      'REFERENCE NUMBER : REF //426 /2026',
+      'Request for installation of street lights on the Peddanandipadu Main Road (from Bus Stand to School).',
+      'ACTION TAKEN : Issue verified and forwarded to the Electricity Department.',
+      'ACTION TO BE TAKEN : Installation of street lights and completion of necessary field inspection.',
+      'ASSIGNED OFFICER : AE, R&B (Narasaraopet) 8885230708',
+      'RESOLUTION STATUS : ( ) PENDING (Y) IN PROGRESS ( ) RESOLVED',
+      'DEADLINE : /5 ~// - 2026',
+    ].join('\n');
+
+    expect(repairSlipOcr(broken)).toContain('31-10-2026');
+    expect(repairSlipOcr(broken)).toContain('REF/1426/2026');
+    expect(repairSlipOcr(broken)).toContain('6281168530');
+    expect(repairSlipOcr(broken)).toContain('15-11-2026');
+
+    const scanner = new GrokScannerService({
+      get: () => '',
+    } as unknown as ConfigService);
+    const mapped = scanner.normalizeGrievanceData(
+      {
+        applicantName: 'Ramesh Naidu',
+        date: '2026-10-03',
+        referenceNumber: '426/2026',
+        categories: ['Roads & Infrastructure', 'Electricity', 'Public Grievance'],
+        issueSummary:
+          'Request for installation of street lights on the Peddanandipadu Main Road (from Bus Stand to School). The area remains dark at night.',
+        resolutionStatus: 'Pending',
+      },
+      broken,
+      'visitor-slip.jpg',
+    );
+
+    expect(mapped.applicantName).toBe('K. Ramesh Naidu');
+    expect(mapped.applicantName).not.toContain('Praveen');
+    expect(mapped.contactNumber).toBe('6281168530');
+    expect(mapped.address).toBe('D.No: 8-24, Main Road');
+    expect(mapped.email).toBe('rameshnaidu.k@gmail.com');
+    expect(mapped.village).toBe('Peddanandipadu');
+    expect(mapped.mandal).toBe('Narasaraopet');
+    expect(mapped.assemblyConstituency).toBe('Narasaraopet');
+    expect(mapped.date).toBe('2026-10-31');
+    expect(mapped.deadline).toBe('2026-11-15');
+    expect(mapped.referenceName).toBe('M. Narasimha Rao');
+    expect(mapped.referenceNumber).toBe('REF/1426/2026');
+    expect(mapped.srNumber).toBe('00173');
+    expect(mapped.categories).toEqual(['Electricity']);
+    expect(mapped.assignedOfficer).toBe('AE, R&B (Narasaraopet)');
+    expect(mapped.assignedOfficerPhone).toBe('8885230708');
+    expect(mapped.resolutionStatus).toBe('In progress');
+    expect(mapped.actionTaken).toContain('Electricity Department');
+    expect(mapped.actionRequested).toContain('street lights');
+  });
+
+  it('keeps only the ticked category boxes', () => {
+    const slip = [
+      '(CD Banking & Financial Issues (.) Roads & Infrastructure Ow Electricity',
+      'C) Irrigation & Water Resources (©) Housing w Revenue & Land Issues',
+      '() Public Grievance',
+      'Others: Power Supply & Land Records',
+    ].join('\n');
+    expect(tickedCategories(slip)).toEqual(['Electricity', 'Revenue & Land Issues']);
+  });
+
+  it('reads a Groq answer from the reasoning field when content is empty', async () => {
+    process.env.GROQ_API_KEY = 'test-key';
+    global.fetch = jest.fn().mockImplementation(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: '',
+              reasoning:
+                '{"srNumber":"44","applicantName":"Sita Rao","contactNumber":"9876543210","date":"31-10-2026","deadline":"15-11-2026","category":"Roads and Infrastructure","resolutionStatus":"IN PROGRESS","issueSummary":"Repair the village road near the school"}',
+            },
+          },
+        ],
+      }),
+    }));
+    const text =
+      'BT (FULL NAME : Sita Rao CONTACT NUMBER : 9876543210 DATE 31-10-2026) Tj ET';
+    const pdf = Buffer.from(
+      `%PDF-1.1\n1 0 obj<<>>stream\n${text}\nendstream\nendobj\n`,
+    );
+    const s = new GrokScannerService({
+      get: () => '',
+    } as unknown as ConfigService);
+    try {
+      const result = await s.scanDocument({
+        buffer: pdf,
+        mimeType: 'application/pdf',
+        filename: 'sita-rao.pdf',
+      });
+      expect(result.modelUsed).toContain('groq');
+      expect(result.structuredData.applicantName).toBe('Sita Rao');
+      expect(result.structuredData.contactNumber).toBe('9876543210');
+      expect(result.structuredData.date).toBe('2026-10-31');
+      expect(result.structuredData.deadline).toBe('2026-11-15');
+      expect(result.structuredData.resolutionStatus).toBe('In progress');
+      expect(result.structuredData.categories).toContain('Roads & Infrastructure');
+    } finally {
+      delete process.env.GROQ_API_KEY;
+    }
   });
 
   it('rejects unsupported file formats', async () => {

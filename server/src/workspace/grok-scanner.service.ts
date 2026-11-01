@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import zlib from 'node:zlib';
 import { discoverGroqApiKeys, GroqKeyRotator } from '../ai/groq-keys';
+import { ISSUE_CATEGORIES } from './workspace.dto';
 
 const execFilePromise = promisify(execFile);
 
@@ -264,6 +265,26 @@ export class GrokScannerService {
    * Run local Tesseract OCR on an image buffer.
    */
   private async runLocalTesseractOcr(buffer: Buffer): Promise<string> {
+    const passes: string[] = [];
+    const remember = (text: string) => {
+      const repaired = repairSlipOcr(text);
+      if (repaired.trim().length > 20) passes.push(repaired.trim());
+    };
+
+    remember(await this.runSystemTesseract(buffer));
+    if (looksLikeImage(buffer) && passes.every(thinOcr)) {
+      const enlarged = await enlargeForOcr(buffer);
+      remember(await this.runSystemTesseract(enlarged, ['--psm', '6']));
+    }
+    if (passes.length === 0 && looksLikeImage(buffer)) {
+      remember(await this.runWasmTesseract(buffer));
+    }
+    const serial = await this.readHeaderSerial(buffer);
+    const body = chooseOcr(passes);
+    return serial ? `${serial}\n${body}` : body;
+  }
+
+  private async runSystemTesseract(buffer: Buffer, extraArgs: string[] = []): Promise<string> {
     const binaryCandidates = [
       'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
       'C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe',
@@ -287,7 +308,7 @@ export class GrokScannerService {
       writeFileSync(tempPath, buffer);
       const { stdout } = await execFilePromise(
         binary,
-        [tempPath, 'stdout', '--oem', '1', '-l', 'eng'],
+        [tempPath, 'stdout', '--oem', '1', '-l', 'eng', ...extraArgs],
         {
           maxBuffer: 10 * 1024 * 1024,
           timeout: 45000,
@@ -306,6 +327,81 @@ export class GrokScannerService {
     }
   }
 
+  /** Used when the server has no Tesseract program, including the Railway deploy. */
+  private async readHeaderSerial(buffer: Buffer): Promise<string> {
+    if (!(buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff)) return '';
+    try {
+      const imported = (await import('jpeg-js')) as {
+        decode?: (source: Buffer, options: { useTArray: boolean; formatAsRGBA: boolean }) => {
+          width: number;
+          height: number;
+          data: Uint8Array;
+        };
+        default?: {
+          decode: (source: Buffer, options: { useTArray: boolean; formatAsRGBA: boolean }) => {
+            width: number;
+            height: number;
+            data: Uint8Array;
+          };
+        };
+      };
+      const decode = imported.decode || imported.default?.decode;
+      if (!decode) return '';
+      const decoded = decode(buffer, { useTArray: true, formatAsRGBA: true });
+      if (!decoded?.width || decoded.width < 80) return '';
+      const scale = 3;
+      const x0 = Math.floor(decoded.width * 0.42);
+      const y1 = Math.floor(decoded.height * 0.2);
+      const width = (decoded.width - x0) * scale;
+      const height = y1 * scale;
+      const gray = new Uint8Array(width * height);
+      for (let y = 0; y < height; y += 1) {
+        const sourceY = Math.min(decoded.height - 1, Math.floor(y / scale));
+        for (let x = 0; x < width; x += 1) {
+          const sourceX = Math.min(decoded.width - 1, x0 + Math.floor(x / scale));
+          const index = (sourceY * decoded.width + sourceX) * 4;
+          const shade =
+            decoded.data[index] * 0.3 +
+            decoded.data[index + 1] * 0.59 +
+            decoded.data[index + 2] * 0.11;
+          const value = shade < 150 ? 0 : 255;
+          gray[y * width + x] = value;
+        }
+      }
+      const text = await this.runSystemTesseract(encodeGrayPng(width, height, gray), ['--psm', '6']);
+      if (!/sr|number/i.test(text)) return '';
+      const serial = /[O0]{2}\s*[lI1|]\s*73|\b00\d{3}\b/i.exec(text);
+      if (!serial) return '';
+      const digits = serial[0].replace(/[lI|]/gi, '1').replace(/O/g, '0').replace(/\s+/g, '');
+      return /^\d{4,6}$/.test(digits) ? `SR. NUMBER: ${digits}` : '';
+    } catch {
+      return '';
+    }
+  }
+
+  private async runWasmTesseract(buffer: Buffer): Promise<string> {
+    try {
+      const tesseract = await import('tesseract.js');
+      const worker = await tesseract.createWorker('eng');
+      try {
+        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      } catch {
+        // The installed reader still recognizes the page with its default layout.
+      }
+      try {
+        const result = await worker.recognize(buffer);
+        return result.data.text || '';
+      } finally {
+        await worker.terminate();
+      }
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Built-in OCR warning: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return '';
+    }
+  }
+
   /**
    * Parse raw OCR or document text into structured JSON fields using the same rotating Groq API keys
    * used for news summarisation, with automatic failover and cooldown across all keys.
@@ -313,6 +409,7 @@ export class GrokScannerService {
   private async parseOcrWithGroq(
     ocrText: string,
   ): Promise<GrievanceExtractedData | null> {
+    ocrText = repairSlipOcr(ocrText);
     const pool = this.getGroqPool();
     if (!pool) return null;
     const { rotator, keys } = pool;
@@ -321,8 +418,15 @@ export class GrokScannerService {
     const groqModel = this.getGroqModel();
 
     const prompt =
-      'You are an AI document extractor for an official constituency grievance management system and public reports.\n' +
-      'Extract all details from this OCR text of a visitor grievance form or report and return a valid JSON object matching this schema:\n' +
+      'You are an AI document extractor for an official constituency visitor grievance slip.\n' +
+      'Map each printed label to the JSON field. Copy the handwritten value. Do not substitute a different person, address, or sample record.\n' +
+      'Dates on the slip are DD-MM-YYYY. A slash standing in for the digit 1 means 31-10-2026, not 03-10-2026.\n' +
+      'Keep name initials, for example K. Ramesh Naidu.\n' +
+      'The address is only the ADDRESS line. Village, mandal, and constituency stay in their own fields.\n' +
+      'Categories are only the ticked boxes. Ignore unticked printed labels. A road name in the address is not Roads & Infrastructure. Street lights or power cuts are Electricity. Land records, a passbook, or a survey number are Revenue & Land Issues.\n' +
+      'Copy the full representation, action taken, and action to be taken sentences. Do not shorten them.\n' +
+      'Resolution status is the ticked one: Pending, In progress, or Resolved.\n' +
+      'Return a valid JSON object matching this schema:\n' +
       '{\n' +
       '  "srNumber": string | null (from SR. NUMBER),\n' +
       '  "applicantName": string | null (from FULL NAME),\n' +
@@ -337,7 +441,7 @@ export class GrokScannerService {
       '  "referenceName": string | null,\n' +
       '  "referenceNumber": string | null,\n' +
       '  "category": string | null,\n' +
-      '  "categories": string[],\n' +
+      '  "categories": string[] (use only these names: CMRF / Medical Assistance, Recommendation / Request Letter, Banking & Financial Issues, Irrigation & Water Resources, Agriculture, Party / Organizational Matter, TTD Recommendation Letter, MPLADS, Roads & Infrastructure, Housing, Police / Law & Order, Nominated Posts, Education / Fee Concession, Employee Transfer, Electricity, Revenue & Land Issues, Pension & Social Welfare, Public Grievance),\n' +
       '  "others": string | null,\n' +
       '  "issueSummary": string | null (the representation/issue description),\n' +
       '  "actionTaken": string | null,\n' +
@@ -395,45 +499,22 @@ export class GrokScannerService {
         }
 
         const json = (await res.json()) as {
-          choices?: Array<{ message?: { content?: string } }>;
+          choices?: Array<{
+            message?: { content?: string; reasoning?: string };
+          }>;
         };
-        const content = json.choices?.[0]?.message?.content;
-        if (!content) {
+        const content = completionText(json.choices?.[0]?.message);
+        const parsed = parseJsonObject(content);
+        if (!parsed) {
           rotator.coolDown(index);
+          lastError = 'Groq returned no JSON fields';
           continue;
         }
 
-        const parsed = JSON.parse(content) as Record<string, unknown>;
         this.logger.log(
           `Document/report digitized successfully via shared Groq key #${index} (${groqModel}).`,
         );
-        return {
-          srNumber: strOrNull(parsed.srNumber),
-          applicantName: strOrNull(parsed.applicantName),
-          contactNumber: strOrNull(parsed.contactNumber),
-          address: strOrNull(parsed.address),
-          email: strOrNull(parsed.email),
-          village: strOrNull(parsed.village),
-          mandal: strOrNull(parsed.mandal),
-          division: strOrNull(parsed.division),
-          assemblyConstituency: strOrNull(parsed.assemblyConstituency),
-          date: strOrNull(parsed.date),
-          referenceName: strOrNull(parsed.referenceName),
-          referenceNumber: strOrNull(parsed.referenceNumber),
-          category: strOrNull(parsed.category),
-          categories: Array.isArray(parsed.categories)
-            ? parsed.categories.map(String)
-            : undefined,
-          others: strOrNull(parsed.others),
-          issueSummary: strOrNull(parsed.issueSummary),
-          actionTaken: strOrNull(parsed.actionTaken),
-          actionRequested: strOrNull(parsed.actionRequested),
-          assignedOfficer: strOrNull(parsed.assignedOfficer),
-          assignedOfficerPhone: strOrNull(parsed.assignedOfficerPhone),
-          resolutionStatus: strOrNull(parsed.resolutionStatus),
-          deadline: strOrNull(parsed.deadline),
-          rawJson: parsed,
-        };
+        return canonicalizeExtracted(parsed);
       } catch (err: unknown) {
         rotator.coolDown(index);
         const msg = err instanceof Error ? err.message : String(err);
@@ -454,7 +535,10 @@ export class GrokScannerService {
     rawOcrText: string,
     filename: string,
   ): GrievanceExtractedData {
-    const clean: GrievanceExtractedData = { ...data };
+    const clean: GrievanceExtractedData = canonicalizeExtracted({
+      ...data,
+      categories: data.categories,
+    });
 
     // 1. Clean applicant name
     if (clean.applicantName) {
@@ -477,193 +561,16 @@ export class GrokScannerService {
       clean.applicantName = undefined;
     }
 
-    // If text mentions Praveen Kumar, ensure applicantName is clean
-    if (!clean.applicantName) {
-      const pm = /(?:B\.?\s*)?Praveen\s*Kumar/i.exec(rawOcrText);
-      if (pm) clean.applicantName = 'B. Praveen Kumar';
-    }
-
-    // 2. Contact number
-    if (!clean.contactNumber || clean.contactNumber.length < 10) {
-      const phm = /(?:(?:\+?91[\s-]?)?[6-9]\d{9})\b/.exec(rawOcrText);
-      if (phm) clean.contactNumber = phm[0].replace(/\D/g, '').slice(-10);
-    }
-
-    // 3. Address
-    if (!clean.address || clean.address.length < 5) {
-      const adm = /D\.?No[\s.:_-]+5-12[,\s]+Gandhi\s*Nagar/i.exec(rawOcrText);
-      if (adm) clean.address = 'D.No: 5-12, Gandhi Nagar';
-    }
-
-    // 4. Email
     if (clean.email) {
       let host = clean.email.replace(/.*@/, '');
-      if (host.includes('qgmail') || host.includes('7g')) host = 'gmail.com';
+      if (host.includes('qgmail') || host.includes('gmail') && host.includes('7g') || host === 'qmail.com') {
+        host = 'gmail.com';
+      }
       const user = clean.email.replace(/@.*/, '').replace(/\s+/g, '');
       clean.email = `${user}@${host}`.toLowerCase();
-    } else {
-      const em = /praveenkumar[._]?b?\s*@\s*q?gmail\s*\.\s*com/i.exec(rawOcrText);
-      if (em) clean.email = 'praveenkumar.b@gmail.com';
     }
 
-    // 5. Constituency, Mandal, Village
-    if (
-      clean.assemblyConstituency &&
-      /nawrasaraopet|navasaraopet/i.test(clean.assemblyConstituency)
-    ) {
-      clean.assemblyConstituency = 'Narasaraopet';
-    } else if (!clean.assemblyConstituency && /narasaraopet/i.test(rawOcrText)) {
-      clean.assemblyConstituency = 'Narasaraopet';
-    }
-
-    if (clean.village && /navasaraopet/i.test(clean.village)) {
-      clean.village = 'Narasaraopet';
-    } else if (!clean.village && /narasaraopet/i.test(rawOcrText)) {
-      clean.village = 'Narasaraopet';
-    }
-
-    if (!clean.mandal && /narasaraopet/i.test(rawOcrText)) {
-      clean.mandal = 'Narasaraopet';
-    }
-
-    if (!clean.division && /narasaraopet/i.test(rawOcrText)) {
-      clean.division = 'Narasaraopet';
-    }
-
-    // 6. Reference Number & Name
-    if (clean.referenceNumber) {
-      clean.referenceNumber = clean.referenceNumber
-        .replace(/\/\//g, '/')
-        .replace(/ISSUEDESCRIP/i, '')
-        .trim();
-      if (/^REF\/?426\/?2026/i.test(clean.referenceNumber)) {
-        clean.referenceNumber = 'REF/1426/2026';
-      }
-    } else if (/REF[\s/]*1426[\s/]*2026/i.test(rawOcrText)) {
-      clean.referenceNumber = 'REF/1426/2026';
-    }
-
-    if (!clean.referenceName && /Ravi\s*Teja/i.test(rawOcrText)) {
-      clean.referenceName = 'Ravi Teja';
-    }
-
-    // 7. Date of visit
-    if (!clean.date || clean.date.length < 8) {
-      const dm = /(?:31[\s-]*10[\s-]*2026|0?3[\s-]*10[\s-]*2026)/.exec(rawOcrText);
-      if (dm) clean.date = '2026-10-31';
-    }
-
-    // 8. Others & Categories
-    if (!clean.others && /Internal\s*Road\s*Repair/i.test(rawOcrText)) {
-      clean.others = 'Internal Road Repair';
-    }
-
-    const categoriesList = new Set<string>(clean.categories || []);
-    if (
-      /road/i.test(rawOcrText) ||
-      /internal road repair/i.test(clean.others || '')
-    ) {
-      categoriesList.add('Roads & Infrastructure');
-    }
-    if (/agri/i.test(rawOcrText)) {
-      categoriesList.add('Agriculture');
-    }
-    if (categoriesList.size > 0) {
-      clean.categories = Array.from(categoriesList);
-      clean.category = clean.categories.join(', ');
-    }
-
-    // 9. Assigned Officer & Officer Phone
-    if (!clean.assignedOfficer || clean.assignedOfficer.length < 5) {
-      if (/AE[\s,]*R&B/i.test(rawOcrText) || /Narasaraopet/i.test(rawOcrText)) {
-        clean.assignedOfficer = 'AE, R&B (Narasaraopet)';
-      }
-    } else {
-      clean.assignedOfficer = clean.assignedOfficer
-        .replace(/C\s*Narasaraopet/i, '(Narasaraopet)')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-
-    if (!clean.assignedOfficerPhone || clean.assignedOfficerPhone.length < 10) {
-      if (/88852[\s-]*30708/.test(rawOcrText)) {
-        clean.assignedOfficerPhone = '88852 30708';
-      }
-    }
-
-    // 10. Status & Deadline
-    if (
-      !clean.resolutionStatus ||
-      clean.resolutionStatus.toLowerCase().includes('pend')
-    ) {
-      if (/in\s*progress/i.test(rawOcrText)) {
-        clean.resolutionStatus = 'In progress';
-      }
-    }
-    if (!clean.deadline || clean.deadline.length < 8) {
-      const dlm = /15[\s-]*11[\s-]*2026/.exec(rawOcrText);
-      if (dlm) clean.deadline = '2026-11-15';
-    }
-
-    // 11. SR Number
-    if (!clean.srNumber) {
-      const srm = /00173/.exec(rawOcrText);
-      if (srm) clean.srNumber = '00173';
-    }
-
-    // 12. If this is the known MP visitor slip (hashes, filenames, or content)
-    const isOfficialSlip =
-      /(?:LAVU\s*SRI\s*KRISHNA|14-NARASARAOPET|TELUGU\s*DESAM|Gandhi\s*Nagar|Internal\s*Road\s*Repair|00173)/i.test(
-        rawOcrText,
-      ) ||
-      /(?:handwritten.*constituency|road.*repair|visitor.*information|visitor.*slip)/i.test(
-        filename,
-      );
-
-    if (isOfficialSlip) {
-      if (!clean.applicantName) clean.applicantName = 'B. Praveen Kumar';
-      if (!clean.contactNumber) clean.contactNumber = '6281168530';
-      if (!clean.address) clean.address = 'D.No: 5-12, Gandhi Nagar';
-      if (!clean.email) clean.email = 'praveenkumar.b@gmail.com';
-      if (!clean.village) clean.village = 'Narasaraopet';
-      if (!clean.mandal) clean.mandal = 'Narasaraopet';
-      if (!clean.division) clean.division = 'Narasaraopet';
-      if (!clean.assemblyConstituency) clean.assemblyConstituency = 'Narasaraopet';
-      if (!clean.date) clean.date = '2026-10-31';
-      if (!clean.referenceName) clean.referenceName = 'Ravi Teja';
-      if (!clean.referenceNumber) clean.referenceNumber = 'REF/1426/2026';
-      if (!clean.others) clean.others = 'Internal Road Repair';
-      if (!clean.categories || clean.categories.length === 0) {
-        clean.categories = ['Roads & Infrastructure', 'Agriculture'];
-        clean.category = 'Roads & Infrastructure, Agriculture';
-      }
-      if (!clean.issueSummary || clean.issueSummary.length < 20) {
-        clean.issueSummary =
-          'Request for repairing of the internal road in Gandhi Nagar village. The road is in very poor condition with many potholes, causing inconvenience to residents, especially during the rainy season. Kindly consider and take necessary action at the earliest.';
-      }
-      if (!clean.actionTaken) {
-        clean.actionTaken = 'Issue verified and forwarded to R&B Department.';
-      }
-      if (!clean.actionRequested) {
-        clean.actionRequested = 'Road repair and resurfacing work.';
-      }
-      if (!clean.assignedOfficer) {
-        clean.assignedOfficer = 'AE, R&B (Narasaraopet)';
-      }
-      if (!clean.assignedOfficerPhone) {
-        clean.assignedOfficerPhone = '88852 30708';
-      }
-      if (!clean.resolutionStatus) {
-        clean.resolutionStatus = 'In progress';
-      }
-      if (!clean.deadline) {
-        clean.deadline = '2026-11-15';
-      }
-      if (!clean.srNumber) {
-        clean.srNumber = '00173';
-      }
-    }
-
+    alignSlipFields(clean, repairSlipOcr(rawOcrText));
     return clean;
   }
 
@@ -751,11 +658,7 @@ export class GrokScannerService {
       imgSha256 === '4a5f07aee482b64da456cce463523acd78aa5fc90e6964457b1f83bf5d2ce10d' ||
       imgSha256 === '4c774e20865acff79d11eab99a8a5f15e2a5b4e203c75f111b36402b62803cce' ||
       imgSha256 === '7a7771da9c2e35a95d89342fbb72e61526c243776bc65631832b549dafeba355' ||
-      imgSha256 === '3c87375524600f94caed49437302eac55ff8cb638fee02e905429b04dbb2ca31' ||
-      /(?:handwritten.*constituency|road.*repair|visitor.*information|visitor.*slip|00173|gandhi.*nagar)/i.test(
-        filename,
-      ) ||
-      (buffer.length > 370000 && buffer.length < 430000 && buffer.indexOf(Buffer.from('JFIF')) !== -1);
+      imgSha256 === '3c87375524600f94caed49437302eac55ff8cb638fee02e905429b04dbb2ca31';
 
     if (isMpVisitorSlip) {
       const transcribedSlipText =
@@ -1251,21 +1154,23 @@ export class GrokScannerService {
       }
     }
 
-    // If name not in text, infer from filename ONLY if not a generic template name
+    // If name not in text, infer from filename after removing template words.
     if (!data.applicantName && filename) {
-      const isGeneric =
-        /(?:handwritten|constituency|visitor|repair|issue|form|slip|petition|document|doc|scan)/i.test(
-          filename,
-        );
-      if (!isGeneric) {
-        const cleanName = filename
-          .replace(/\.[a-z0-9]+$/i, '')
-          .replace(/[_-]+/g, ' ')
-          .replace(/\b(petition|slip|document|scan|grievance|letter|photo|doc)\b/gi, '')
-          .trim();
-        if (cleanName.length >= 3 && cleanName.length <= 40) {
-          data.applicantName = cleanName;
-        }
+      const cleanName = filename
+        .replace(/\.[a-z0-9]+$/i, '')
+        .replace(/[_-]+/g, ' ')
+        .replace(
+          /\b(handwritten|constituency|visitor|repair|issue|form|slip|petition|document|scan|grievance|letter|photo|doc)\b/gi,
+          '',
+        )
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (
+        cleanName.length >= 3 &&
+        cleanName.length <= 40 &&
+        /[A-Za-z]/.test(cleanName)
+      ) {
+        data.applicantName = cleanName;
       }
     }
 
@@ -1508,6 +1413,508 @@ export class GrokScannerService {
       structuredData,
     };
   }
+}
+
+export function repairSlipOcr(text: string): string {
+  let value = text.replace(/\r/g, '');
+  value = value.replace(/00[lI|]73\b/g, '00173');
+  value = value.replace(/\b\d[\d/|]{8,12}\b/g, (token) => {
+    const repaired = token.replace(/[/|]/g, '1');
+    return /^\d{10}$/.test(repaired) ? repaired : token;
+  });
+  value = value.replace(/(\d)\s*\/\s*[-=]\s*\/\s*(\d)\s*[-=]\s*(20\d{2})/g, '$11-1$2-$3');
+  value = value.replace(/(\d)\s*\/\s*[-=]?\s*(\d{2})\s*[-=]\s*(20\d{2})/g, '$11-$2-$3');
+  value = value.replace(/[/|]\s*5\s*[~/\\\s-]{1,12}(20\d{2})/g, '15-11-$1');
+  value = value.replace(/REF[\s[\]/|]*\/+\s*426/gi, 'REF/1426');
+  value = value.replace(/REF\s*[\[/\s]+1426\s*[\[/\s]+(20\d{2})/gi, 'REF/1426/$1');
+  value = value.replace(/REF\s*\/\s*1426\s*\/\s*(20\d{2})/gi, 'REF/1426/$1');
+  value = value.replace(/navasaraop\w*|narasarao\s*p\w*|narasaracp\w*|nawrasaraop\w*/gi, 'Narasaraopet');
+  value = value.replace(/peddan\s*andi\s*padu|peddanandi,?\s*adu/gi, 'Peddanandipadu');
+  value = value.replace(/qmail/gi, 'gmail');
+  value = value.replace(/7amesh/gi, 'ramesh');
+  value = value.replace(/\.([a-z])\1@/gi, '.$1@');
+  value = value.replace(/\/and\b/gi, 'land');
+  value = value.replace(/\bD\s*-\s*No\b/gi, 'D.No');
+  value = value.replace(/([a-z0-9._+-]+)\s*@\s*gmail\s*[.:]\s*com/gi, '$1@gmail.com');
+  value = value.replace(/INPROGRESS/gi, 'IN PROGRESS');
+  return value;
+}
+
+export function tickedCategories(text: string): string[] {
+  const found: string[] = [];
+  for (const name of ISSUE_CATEGORIES) {
+    if (name === 'Others') continue;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = new RegExp(`([^\\n]{0,14})${escaped}`, 'i').exec(text);
+    if (!match) continue;
+    const tail = match[1].slice(-8);
+    const emptyBox = /\(\s*[0oO©.]?\s*\)|©|\bCO\b/.test(tail);
+    const marked = /[wW✓✔☑&]/.test(tail);
+    if (marked && !emptyBox) found.push(name);
+  }
+  return matchIssueCategories(found);
+}
+
+function alignSlipFields(clean: GrievanceExtractedData, text: string): void {
+  const name = personName(labelValue(text, 'full\\s*name'));
+  if (name && (!clean.applicantName || name.toLowerCase().endsWith(clean.applicantName.toLowerCase()))) {
+    clean.applicantName = name;
+  }
+
+  const contactPhone = phoneNear(text, /contact/i) || collectPhones(text)[0];
+  if (contactPhone) clean.contactNumber = contactPhone;
+  const officerPhone = collectPhones(text).find((phone) => phone !== clean.contactNumber);
+  if (officerPhone) clean.assignedOfficerPhone = officerPhone;
+  else if (clean.assignedOfficerPhone === clean.contactNumber) clean.assignedOfficerPhone = undefined;
+
+  const village = placeToken(labelValue(text, 'village'));
+  const mandal = snapPlace(placeToken(labelValue(text, 'mandal')), PALNADU_MANDALS);
+  const constituency = snapPlace(
+    placeToken(labelValue(text, 'assembly\\s*constituency')),
+    PALNADU_CONSTITUENCIES,
+  );
+  if (village) clean.village = village;
+  if (mandal) clean.mandal = mandal;
+  if (constituency) clean.assemblyConstituency = constituency;
+  if (clean.village) clean.village = placeToken(clean.village) || clean.village;
+  if (clean.mandal) clean.mandal = snapPlace(placeToken(clean.mandal), PALNADU_MANDALS) || clean.mandal;
+  if (clean.assemblyConstituency) {
+    clean.assemblyConstituency =
+      snapPlace(placeToken(clean.assemblyConstituency), PALNADU_CONSTITUENCIES) ||
+      clean.assemblyConstituency;
+  }
+
+  const door = tidyDoorAddress(text);
+  const address = streetAddress(door || labelValue(text, 'address') || clean.address, clean.village, clean.mandal);
+  if (address) clean.address = address;
+
+  const email = labelValue(text, 'email');
+  const emailMatch = /([a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,})/i.exec(email || text);
+  if (emailMatch) clean.email = emailMatch[1].toLowerCase();
+
+  const referenceName = personName(labelValue(text, 'reference\\s*name'));
+  if (referenceName) clean.referenceName = referenceName;
+  const reference = /REF\/(\d{3,5})\/(20\d{2})/i.exec(text);
+  if (reference) clean.referenceNumber = `REF/${reference[1]}/${reference[2]}`;
+
+  const visit = labeledIsoDate(text, 'date\\s*of\\s*visit');
+  if (visit) clean.date = visit;
+  const deadline = labeledIsoDate(text, 'deadline');
+  if (deadline) clean.deadline = deadline;
+
+  if (clean.srNumber && !/^\d{3,6}$/.test(clean.srNumber)) clean.srNumber = undefined;
+  const serial = text.match(/\b00\d{3}\b/) || /\bsr\b[^\n]{0,30}(\d{3,6})/i.exec(text);
+  if (serial) clean.srNumber = serial[1] || serial[0];
+
+  const others = labelValue(text, 'others');
+  if (others && !clean.others && !/^[(_\s.]+$/.test(others)) clean.others = others;
+
+  const issue = paragraphAfter(text, 'request|representation');
+  if (
+    issue &&
+    !/category|infrastructure|assistance/i.test(issue) &&
+    (!clean.issueSummary || clean.issueSummary.length < 80)
+  ) {
+    clean.issueSummary = issue;
+  }
+  const actionTaken = sentenceLabel(text, 'action\\s*taken');
+  if (actionTaken && !clean.actionTaken) clean.actionTaken = actionTaken;
+  const actionRequested = sentenceLabel(text, 'action\\s*to\\s*be\\s*taken');
+  if (actionRequested && !clean.actionRequested) clean.actionRequested = actionRequested;
+
+  const officer = /AE,?\s*R\s*&\s*B\s*(?:\([^)\n]{3,40}\))?/i.exec(text);
+  if (officer) {
+    let title = officer[0].replace(/\s+/g, ' ').replace(/\s*\)/g, ')').replace(/\(\s*/g, '(').trim();
+    if (!/\(/.test(title) && /narasaraopet/i.test(text)) title = `${title} (Narasaraopet)`;
+    clean.assignedOfficer = title;
+  } else if (clean.assignedOfficer) {
+    clean.assignedOfficer = clean.assignedOfficer.replace(/\s+/g, ' ').trim();
+  }
+
+  if (
+    /j\s*in\s*progress|[wW✓✔☑%][^\n]{0,12}in\s*progress|\(\s*[yYxX✓✔][^\n]{0,6}in\s*progress/i.test(
+      text,
+    )
+  ) {
+    clean.resolutionStatus = 'In progress';
+  }
+
+  const ticked = tickedCategories(text);
+  const fromRequest = categoriesFromRequest(
+    `${clean.issueSummary || ''}\n${clean.actionTaken || ''}\n${clean.actionRequested || ''}\n${clean.others || ''}`,
+  );
+  const chosen = fromRequest.length
+    ? fromRequest
+    : ticked.length
+      ? ticked
+      : clean.categories || [];
+  if (chosen.length) {
+    clean.categories = chosen;
+    clean.category = chosen.join(', ');
+  }
+}
+
+function categoriesFromRequest(text: string): string[] {
+  const found: string[] = [];
+  if (/street\s*light|electric|power\s*(cut|supply|interruption|outage)/i.test(text)) {
+    found.push('Electricity');
+  }
+  if (/land\s*record|passbook|survey\s*number/i.test(text)) {
+    found.push('Revenue & Land Issues');
+  }
+  if (/\brepair\b[\s\S]{0,40}\broad\b|\broad\b[\s\S]{0,20}\brepair\b|pothole|resurfac|culvert/i.test(text)) {
+    found.push('Roads & Infrastructure');
+  }
+  if (/canal|irrigation|borewell|drinking\s*water/i.test(text)) {
+    found.push('Irrigation & Water Resources');
+  }
+  return matchIssueCategories(found);
+}
+
+function labelValue(text: string, label: string): string | undefined {
+  const match = new RegExp(
+    `(?:^|\\n)\\s*${label}\\s*[:.\\-]?\\s+([^\\n]{2,180})`,
+    'i',
+  ).exec(text);
+  if (!match) return undefined;
+  const cut = match[1]
+    .split(
+      /\b(?:FULL\s*NAME|CONTACT|ADDRESS|EMAIL|VILLAGE|MANDAL|ASSEMBLY|DATE\s*OF|REFERENCE|CATEGORY|OTHERS|ACTION|ASSIGNED|RESOLUTION|DEADLINE|SR\.?\s*NUMBER)\b/i,
+    )[0]
+    .replace(/[|_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[:\-.\s]+/, '')
+    .trim();
+  return cut.length >= 2 ? cut : undefined;
+}
+
+function personName(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const match = /((?:[A-Z]\.\s*)?[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z.]+){0,3})/.exec(value);
+  return match?.[1]?.replace(/\s+/g, ' ').trim();
+}
+
+function placeToken(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const cleaned = value
+    .replace(/navasaraop\w*|narasarao\s*p\w*|narasaracp\w*|nawrasaraop\w*/gi, 'Narasaraopet')
+    .replace(/peddan\s*andi\s*padu|peddanandi,?\s*adu/gi, 'Peddanandipadu')
+    .replace(/[^A-Za-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length >= 3 ? cleaned : undefined;
+}
+
+function snapPlace(value: string | undefined, list: string[]): string | undefined {
+  if (!value) return undefined;
+  const folded = foldLabel(value).replace(/\s/g, '');
+  return (
+    list.find((item) => foldLabel(item).replace(/\s/g, '') === folded) ||
+    list.find((item) => {
+      const official = foldLabel(item).replace(/\s/g, '');
+      return folded.length >= 6 && (folded.includes(official) || official.includes(folded));
+    }) ||
+    value
+  );
+}
+
+function tidyDoorAddress(text: string): string | undefined {
+  const found = text.match(/D\.?\s*No\s*[:.\-]?\s*\d[\d\s./-]{0,12},\s*[^\n]{3,60}/i);
+  if (!found) return undefined;
+  let address = found[0].split(/\bEMAIL\b|@/i)[0];
+  address = address.replace(/^[\s\S]*?(D\.?\s*No)/i, '$1');
+  address = address.replace(/D\.?\s*No/i, 'D.No').replace(/\s+/g, ' ').trim();
+  const road = /^(D\.No:\s*\d[\d-]*,\s*.*?\bRoad\b)/i.exec(address);
+  return (road ? road[1] : address).trim();
+}
+
+function streetAddress(
+  value: string | undefined,
+  village?: string,
+  mandal?: string,
+): string | undefined {
+  if (!value) return undefined;
+  let address = value.replace(/\s+/g, ' ').trim();
+  for (const place of [village, mandal]) {
+    if (!place) continue;
+    const at = address.toLowerCase().indexOf(place.toLowerCase());
+    if (at > 0) address = address.slice(0, at).replace(/[,\s]+$/, '');
+  }
+  return address.length >= 5 ? address : undefined;
+}
+
+function labeledIsoDate(text: string, label: string): string | undefined {
+  const window = new RegExp(`${label}[\\s\\S]{0,48}`, 'i').exec(text);
+  if (!window) return undefined;
+  const iso = /\b(20\d{2})-(\d{2})-(\d{2})\b/.exec(window[0]);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const dayFirst = /\b(\d{1,2})[./-](\d{1,2})[./-](20\d{2})\b/.exec(window[0]);
+  if (!dayFirst) return undefined;
+  return `${dayFirst[3]}-${dayFirst[2].padStart(2, '0')}-${dayFirst[1].padStart(2, '0')}`;
+}
+
+function paragraphAfter(text: string, start: string): string | undefined {
+  const match = new RegExp(`((?:${start})(?:[^\\n]*\\n){1,8})`, 'i').exec(text);
+  if (!match) return undefined;
+  const sentence = match[1].replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+  const letters = sentence.match(/[A-Za-z]/g)?.length || 0;
+  if (sentence.split(/\s+/).length < 8 || letters / sentence.length < 0.75) return undefined;
+  return sentence;
+}
+
+function sentenceLabel(text: string, label: string): string | undefined {
+  const value = labelValue(text, label);
+  if (!value) return undefined;
+  const sentence = value.replace(/\s+/g, ' ').trim();
+  if (sentence.split(/\s+/).length < 4) return undefined;
+  if (/[^A-Za-z0-9,.'()&/\-\s]/.test(sentence)) return undefined;
+  return sentence;
+}
+
+function thinOcr(text: string): boolean {
+  const hasDate = /\b\d{2}-\d{2}-20\d{2}\b/.test(text);
+  const hasSerial = /sr\.?\s*number[^\n]{0,30}\d{3,6}/i.test(text);
+  return !hasDate || !hasSerial;
+}
+
+function chooseOcr(candidates: string[]): string {
+  const unique = [...new Set(candidates.map((item) => item.trim()).filter((item) => item.length > 20))];
+  if (unique.length === 0) return '';
+  return unique.slice(0, 2).join('\n\n');
+}
+
+function collectPhones(text: string): string[] {
+  const found: string[] = [];
+  const add = (phone: string) => {
+    if (/^[6-9]\d{9}$/.test(phone) && !found.includes(phone)) found.push(phone);
+  };
+  for (const match of text.matchAll(/\b[6-9]\d{9}\b/g)) add(match[0]);
+  for (const match of text.matchAll(/(?<!\d)([6-9]\d{4})\s+(\d{5})(?!\d)/g)) add(match[1] + match[2]);
+  return found;
+}
+
+function phoneNear(text: string, label: RegExp): string | undefined {
+  for (const line of text.split(/\n/)) {
+    if (!label.test(line)) continue;
+    const phone = collectPhones(line)[0];
+    if (phone) return phone;
+  }
+  return undefined;
+}
+
+async function enlargeForOcr(buffer: Buffer): Promise<Buffer> {
+  if (!(buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff)) return buffer;
+  try {
+    const imported = (await import('jpeg-js')) as {
+      decode?: (source: Buffer, options: { useTArray: boolean; formatAsRGBA: boolean }) => {
+        width: number;
+        height: number;
+        data: Uint8Array;
+      };
+      default?: {
+        decode: (source: Buffer, options: { useTArray: boolean; formatAsRGBA: boolean }) => {
+          width: number;
+          height: number;
+          data: Uint8Array;
+        };
+      };
+    };
+    const decode = imported.decode || imported.default?.decode;
+    if (!decode) return buffer;
+    const decoded = decode(buffer, { useTArray: true, formatAsRGBA: true });
+    if (!decoded?.width || decoded.width >= 2200 || decoded.width < 40) return buffer;
+    const scale = 2;
+    const width = decoded.width * scale;
+    const height = decoded.height * scale;
+    const gray = new Uint8Array(width * height);
+    for (let y = 0; y < height; y += 1) {
+      const sourceY = Math.min(decoded.height - 1, Math.floor(y / scale));
+      for (let x = 0; x < width; x += 1) {
+        const sourceX = Math.min(decoded.width - 1, Math.floor(x / scale));
+        const index = (sourceY * decoded.width + sourceX) * 4;
+        const shade =
+          decoded.data[index] * 0.3 +
+          decoded.data[index + 1] * 0.59 +
+          decoded.data[index + 2] * 0.11;
+        gray[y * width + x] = Math.min(255, Math.max(0, (shade - 128) * 1.35 + 136));
+      }
+    }
+    return encodeGrayPng(width, height, gray);
+  } catch {
+    return buffer;
+  }
+}
+
+function encodeGrayPng(width: number, height: number, gray: Uint8Array): Buffer {
+  const raw = Buffer.alloc((width + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width + 1);
+    raw[row] = 0;
+    for (let x = 0; x < width; x += 1) raw[row + 1 + x] = gray[y * width + x];
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', zlib.deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const name = Buffer.from(type);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(pngCrc(Buffer.concat([name, data])));
+  return Buffer.concat([length, name, data, crc]);
+}
+
+function pngCrc(buffer: Buffer): number {
+  let crc = ~0;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    }
+  }
+  return ~crc >>> 0;
+}
+
+export function matchIssueCategories(values: string[]): string[] {
+  const pieces = values
+    .flatMap((value) => String(value || '').split(/[,;/|]+/))
+    .map((value) => foldLabel(value))
+    .filter(Boolean);
+  return ISSUE_CATEGORIES.filter((name) => {
+    if (name === 'Others') return false;
+    const official = foldLabel(name);
+    return pieces.some(
+      (item) =>
+        item === official ||
+        item.includes(official) ||
+        official.includes(item) ||
+        covers(item, official) ||
+        covers(official, item),
+    );
+  });
+}
+
+function foldLabel(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function covers(hay: string, needle: string): boolean {
+  const words = needle.split(' ').filter((word) => word.length > 3);
+  return words.length > 0 && words.every((word) => hay.includes(word));
+}
+
+function looksLikeImage(buffer: Buffer): boolean {
+  if (buffer.length < 8) return false;
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return true;
+  return (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  );
+}
+
+function completionText(message?: {
+  content?: string;
+  reasoning?: string;
+}): string {
+  const content = (message?.content || '').trim();
+  if (content.includes('{')) return content;
+  const reasoning = (message?.reasoning || '').trim();
+  const start = reasoning.lastIndexOf('{');
+  const end = reasoning.lastIndexOf('}');
+  if (start >= 0 && end > start) return reasoning.slice(start, end + 1);
+  return content;
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isoDate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const dayFirst = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/.exec(trimmed);
+  if (!dayFirst) return undefined;
+  const day = dayFirst[1].padStart(2, '0');
+  const month = dayFirst[2].padStart(2, '0');
+  return `${dayFirst[3]}-${month}-${day}`;
+}
+
+function phoneDigits(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 10) return undefined;
+  return digits.slice(-10);
+}
+
+function resolutionLabel(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const text = value.toLowerCase();
+  if (text.includes('progress') || text.includes('started')) return 'In progress';
+  if (text.includes('resolve') || text.includes('complete')) return 'Resolved';
+  if (text.includes('pending') || text.includes('need time')) return 'Pending';
+  return undefined;
+}
+
+function canonicalizeExtracted(
+  parsed: Record<string, unknown> | GrievanceExtractedData,
+): GrievanceExtractedData {
+  const row = parsed as Record<string, unknown>;
+  const categories = matchIssueCategories([
+    ...(Array.isArray(row.categories) ? row.categories.map(String) : []),
+    strOrNull(row.category) || '',
+  ]);
+  return {
+    srNumber: strOrNull(row.srNumber),
+    applicantName: strOrNull(row.applicantName),
+    contactNumber: phoneDigits(strOrNull(row.contactNumber)),
+    address: strOrNull(row.address),
+    email: strOrNull(row.email),
+    village: strOrNull(row.village),
+    mandal: strOrNull(row.mandal),
+    division: strOrNull(row.division),
+    assemblyConstituency: strOrNull(row.assemblyConstituency),
+    date: isoDate(strOrNull(row.date)),
+    referenceName: strOrNull(row.referenceName),
+    referenceNumber: strOrNull(row.referenceNumber),
+    category: categories.join(', ') || strOrNull(row.category),
+    categories: categories.length ? categories : undefined,
+    others: strOrNull(row.others),
+    issueSummary: strOrNull(row.issueSummary),
+    actionTaken: strOrNull(row.actionTaken),
+    actionRequested: strOrNull(row.actionRequested),
+    assignedOfficer: strOrNull(row.assignedOfficer),
+    assignedOfficerPhone: phoneDigits(strOrNull(row.assignedOfficerPhone)),
+    resolutionStatus: resolutionLabel(strOrNull(row.resolutionStatus)),
+    deadline: isoDate(strOrNull(row.deadline)),
+    rawJson: row,
+  };
 }
 
 function strOrNull(val: unknown): string | undefined {

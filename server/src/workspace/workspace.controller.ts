@@ -23,7 +23,6 @@ import {
 import type { Response } from 'express';
 import {
   CreateRecordDto,
-  ISSUE_CATEGORIES,
   LoginDto,
   RegisterDto,
   UpdateProgressDto,
@@ -32,7 +31,10 @@ import {
 } from './workspace.dto';
 import { queryContacts } from './contacts-directory';
 import { WorkspaceService } from './workspace.service';
-import { GrokScannerService } from './grok-scanner.service';
+import {
+  GrokScannerService,
+  matchIssueCategories,
+} from './grok-scanner.service';
 
 @Controller('api/workspace')
 export class WorkspaceController {
@@ -527,25 +529,7 @@ export class WorkspaceController {
     if (sd.category) rawCategories.push(sd.category);
     if (Array.isArray(gd.categories)) rawCategories.push(...gd.categories.map(String));
     if (Array.isArray(sd.categories)) rawCategories.push(...sd.categories.map(String));
-    if (Array.isArray(gd.rawJson?.categories)) {
-      rawCategories.push(...gd.rawJson.categories.map(String));
-    }
-    if (Array.isArray(sd.rawJson?.categories)) {
-      rawCategories.push(...sd.rawJson.categories.map(String));
-    }
-    const matchedCategories = Array.from(
-      new Set(
-        ISSUE_CATEGORIES.filter(
-          (c) =>
-            c !== 'Others' &&
-            rawCategories.some(
-              (rc) =>
-                rc.toLowerCase().includes(c.toLowerCase()) ||
-                c.toLowerCase().includes(rc.toLowerCase()),
-            ),
-        ),
-      ),
-    );
+    const matchedCategories = matchIssueCategories(rawCategories);
 
     const combinedData = {
       srNumber: gd.srNumber || sd.srNumber || '',
