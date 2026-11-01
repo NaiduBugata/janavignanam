@@ -29,8 +29,6 @@ import {
   leaderApproval,
   messageLanguage,
   raiserApproval,
-  raiserWorkStarted,
-  type GrievanceLanguage,
 } from '../chatbot/grievance-priority';
 import { phoneForName } from '../whatsapp/whatsapp.audience';
 import {
@@ -38,7 +36,6 @@ import {
   sendReplyButtons,
   sendTemplateMessage,
   sendTextMessage,
-  WhatsAppSendError,
   type ReplyButton,
 } from '../whatsapp/whatsapp.send';
 import {
@@ -864,11 +861,6 @@ export class WorkspaceService {
         title: existing.title || existing.detail,
         location: existing.place || existing.village,
         department: dept,
-        note: newWorkStartedStage?.note || remarks,
-        language:
-          ((existing as unknown as Record<string, unknown>)
-            .language as GrievanceLanguage) ||
-          messageLanguage(existing.detail || existing.title || ''),
         token,
       });
       await this.db.collection(RECORDS).findOneAndUpdate(filter, {
@@ -1100,16 +1092,8 @@ function metaAccepted(result: unknown): {
   return { ok: false, messageId: null };
 }
 
-function windowClosed(err: unknown): boolean {
-  if (!(err instanceof WhatsAppSendError)) return false;
-  if (err.metaErrorCode === 131047 || err.metaErrorCode === 131026) return true;
-  const text = err.message.toLowerCase();
-  return (
-    text.includes('131047') ||
-    text.includes('re-engagement') ||
-    text.includes('customer care window')
-  );
-}
+/** Approved dynamic template already on this WhatsApp account. Do not add another. */
+const APPROVED_DYNAMIC_TEMPLATE = 'jv_mp_action_request';
 
 async function notifyWorkStarted(
   phone: string,
@@ -1118,8 +1102,6 @@ async function notifyWorkStarted(
     title: string;
     location: string;
     department: string;
-    note: string;
-    language: GrievanceLanguage;
     token: string;
   },
 ): Promise<Record<string, unknown>> {
@@ -1141,99 +1123,53 @@ async function notifyWorkStarted(
     });
     return missing;
   }
-  const textMsg = raiserWorkStarted(detail.language, {
-    reference: detail.reference,
-    title: detail.title,
-    location: detail.location,
-    department: detail.department,
-    note: detail.note,
-  });
+  const reference = clean(
+    `${detail.reference || 'your request'}${detail.location ? ` - ${detail.location}` : ''}`,
+  );
   try {
-    const sent = await sendTextMessage(phone, textMsg);
+    const sent = await sendTemplateMessage(phone, APPROVED_DYNAMIC_TEMPLATE, {
+      language: 'en',
+      bodyParameters: [
+        clean(detail.department || 'Department'),
+        clean(detail.title || detail.reference || 'your grievance'),
+        reference,
+        'Work Started',
+      ],
+      urlButton: detail.token ? `progress/${detail.token}` : undefined,
+    });
     const accepted = metaAccepted(sent);
     if (!accepted.ok)
-      throw new Error('Meta did not accept the session message');
-    const result = {
-      accepted: true,
-      recipientTail: tail,
-      channel: 'session',
-      messageId: accepted.messageId,
-      error: null,
-      at: new Date().toISOString(),
-    };
+      throw new Error('Meta did not accept the approved dynamic template');
     await recordOutboundAttempt({
       accepted: true,
       messageId: accepted.messageId,
       notificationType: 'work_started',
       httpCode: 200,
     });
-    logger.log(`Work-started session message accepted for ${tail}`);
-    return result;
+    logger.log(`Work-started template accepted for ${tail}`);
+    return {
+      accepted: true,
+      recipientTail: tail,
+      channel: 'template',
+      messageId: accepted.messageId,
+      error: null,
+      at: new Date().toISOString(),
+    };
   } catch (err) {
-    if (!windowClosed(err)) {
-      const reason = err instanceof Error ? err.message : 'send failed';
-      logger.warn(`Work-started notice failed for ${tail}: ${reason}`);
-      await recordOutboundAttempt({
-        accepted: false,
-        error: reason,
-        notificationType: 'work_started',
-      });
-      return {
-        accepted: false,
-        recipientTail: tail,
-        channel: 'session',
-        error: reason.slice(0, 300),
-        at: new Date().toISOString(),
-      };
-    }
-    try {
-      const sent = await sendTemplateMessage(phone, 'jv_mp_action_request', {
-        language: 'en',
-        bodyParameters: [
-          clean(detail.department),
-          clean(detail.title || detail.reference),
-          clean(
-            `${detail.reference}${detail.location ? ` - ${detail.location}` : ''}`,
-          ),
-          'Work Started',
-        ],
-        urlButton: detail.token ? `progress/${detail.token}` : undefined,
-      });
-      const accepted = metaAccepted(sent);
-      if (!accepted.ok)
-        throw new Error('Meta did not accept the work-started template');
-      await recordOutboundAttempt({
-        accepted: true,
-        messageId: accepted.messageId,
-        notificationType: 'work_started',
-        httpCode: 200,
-      });
-      logger.log(`Work-started template accepted for ${tail}`);
-      return {
-        accepted: true,
-        recipientTail: tail,
-        channel: 'template',
-        messageId: accepted.messageId,
-        error: null,
-        at: new Date().toISOString(),
-      };
-    } catch (templateErr) {
-      const reason =
-        templateErr instanceof Error ? templateErr.message : 'send failed';
-      logger.warn(`Work-started template failed for ${tail}: ${reason}`);
-      await recordOutboundAttempt({
-        accepted: false,
-        error: reason,
-        notificationType: 'work_started',
-      });
-      return {
-        accepted: false,
-        recipientTail: tail,
-        channel: 'template',
-        error: reason.slice(0, 300),
-        at: new Date().toISOString(),
-      };
-    }
+    const reason = err instanceof Error ? err.message : 'send failed';
+    logger.warn(`Work-started notice failed for ${tail}: ${reason}`);
+    await recordOutboundAttempt({
+      accepted: false,
+      error: reason,
+      notificationType: 'work_started',
+    });
+    return {
+      accepted: false,
+      recipientTail: tail,
+      channel: 'template',
+      error: reason.slice(0, 300),
+      at: new Date().toISOString(),
+    };
   }
 }
 
@@ -1310,7 +1246,7 @@ async function sendDepartmentActionNotice(
       try {
         const sent = await sendTemplateMessage(
           recipient.phone,
-          'jv_mp_action_request',
+          APPROVED_DYNAMIC_TEMPLATE,
           {
             language: 'en',
             bodyParameters: [

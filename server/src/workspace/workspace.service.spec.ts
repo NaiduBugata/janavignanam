@@ -480,9 +480,9 @@ describe('WorkspaceService', () => {
   });
 
   it('notifies the citizen who raised the request once work is started', async () => {
-    const spyText = jest
-      .spyOn(waSend, 'sendTextMessage')
-      .mockResolvedValue({ success: true });
+    const spyTemplate = jest
+      .spyOn(waSend, 'sendTemplateMessage')
+      .mockResolvedValue({ messages: [{ id: 'wamid.work' }] });
 
     const testToken = 'ce42a89fab851611dc';
     const records: Array<Record<string, unknown>> = [
@@ -548,30 +548,37 @@ describe('WorkspaceService', () => {
     expect(updated.status).toBe('In progress');
     expect(updated.workStartedNotifiedAt).toBeDefined();
 
-    // Verify citizen received the "Work started" message
-    expect(spyText).toHaveBeenCalled();
-    const [citizenPhone, citizenMsg] = spyText.mock.calls[0];
-    expect(citizenPhone).toContain('8885230708');
-    expect(citizenMsg.toLowerCase()).toContain('work has officially started');
-    expect(citizenMsg).toContain('Water supply');
-    expect(citizenMsg).toContain('Work Started');
+    expect(spyTemplate).toHaveBeenCalledWith(
+      expect.stringContaining('8885230708'),
+      'jv_mp_action_request',
+      expect.objectContaining({
+        language: 'en',
+        bodyParameters: [
+          'Water supply',
+          'Broken pipeline near market',
+          'gr-prog-1',
+          'Work Started',
+        ],
+        urlButton: `progress/${testToken}`,
+      }),
+    );
 
     // On subsequent progress update, citizen should NOT get duplicate notification
-    spyText.mockClear();
+    spyTemplate.mockClear();
     stages[1] = {
       name: 'Inspection',
       status: 'In progress',
       note: 'Site inspected',
     };
     await service.saveProgress(testToken, { stages });
-    expect(spyText).not.toHaveBeenCalled();
+    expect(spyTemplate).not.toHaveBeenCalled();
 
-    spyText.mockRestore();
+    spyTemplate.mockRestore();
   });
 
   it('keeps a saved progress update when the work-started WhatsApp send fails', async () => {
     jest
-      .spyOn(waSend, 'sendTextMessage')
+      .spyOn(waSend, 'sendTemplateMessage')
       .mockRejectedValue(new Error('network down'));
     const testToken = 'ce42a89fab851611dd';
     const records: Array<Record<string, unknown>> = [
