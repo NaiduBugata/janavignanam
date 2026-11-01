@@ -23,6 +23,7 @@ import {
 import type { Response } from 'express';
 import {
   CreateRecordDto,
+  ISSUE_CATEGORIES,
   LoginDto,
   RegisterDto,
   UpdateProgressDto,
@@ -504,6 +505,26 @@ export class WorkspaceController {
     const gd = gResult?.structuredData || {};
     const sd = sResult?.structuredData || {};
 
+    const rawCategories: string[] = [];
+    if (gd.category) rawCategories.push(gd.category);
+    if (sd.category) rawCategories.push(sd.category);
+    if (Array.isArray(gd.rawJson?.categories)) {
+      rawCategories.push(...gd.rawJson.categories.map(String));
+    }
+    const matchedCategories = Array.from(
+      new Set(
+        ISSUE_CATEGORIES.filter(
+          (c) =>
+            c !== 'Others' &&
+            rawCategories.some(
+              (rc) =>
+                rc.toLowerCase().includes(c.toLowerCase()) ||
+                c.toLowerCase().includes(rc.toLowerCase()),
+            ),
+        ),
+      ),
+    );
+
     const combinedData = {
       srNumber: gd.srNumber || sd.srNumber || '',
       applicantName: gd.applicantName || sd.applicantName || '',
@@ -519,6 +540,7 @@ export class WorkspaceController {
       referenceName: gd.referenceName || sd.referenceName || '',
       referenceNumber: gd.referenceNumber || sd.referenceNumber || '',
       category: gd.category || sd.category || '',
+      categories: matchedCategories,
       others: gd.others || sd.others || '',
       actionTaken: gd.actionTaken || sd.actionTaken || '',
       actionRequested: gd.actionRequested || sd.actionRequested || '',
