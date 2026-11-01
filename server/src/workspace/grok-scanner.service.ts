@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import zlib from 'node:zlib';
+import { discoverGroqApiKeys, GroqKeyRotator } from '../ai/groq-keys';
 
 const execFilePromise = promisify(execFile);
 
@@ -198,20 +199,26 @@ export class GrokScannerService {
     return Boolean(this.apiKey);
   }
 
-  getGroqApiKey(): string {
-    return (
-      this.config.get<string>('GROQ_API_KEY') ||
-      this.config.get<string>('GROQ_API_KEY_1') ||
-      this.config.get<string>('GROQ_API_KEY_2') ||
-      this.config.get<string>('GROQ_API_KEY_3') ||
-      this.config.get<string>('GROQ_API_KEY_4') ||
-      process.env.GROQ_API_KEY ||
-      process.env.GROQ_API_KEY_1 ||
-      process.env.GROQ_API_KEY_2 ||
-      process.env.GROQ_API_KEY_3 ||
-      process.env.GROQ_API_KEY_4 ||
-      ''
-    ).trim();
+  private groqKeys: string[] = [];
+  private groqRotator: GroqKeyRotator | null = null;
+
+  /**
+   * Discovers and rotates the exact same Groq API keys pool used across Telugu news summarisation,
+   * executive briefings, and report generation.
+   */
+  getGroqPool(): { rotator: GroqKeyRotator; keys: string[] } | null {
+    if (!this.groqRotator || this.groqKeys.length === 0) {
+      this.groqKeys = discoverGroqApiKeys(process.env);
+      if (this.groqKeys.length > 0) {
+        this.groqRotator = new GroqKeyRotator(this.groqKeys, 5);
+        this.logger.log(
+          `GroqScannerService connected to unified Groq API pool: ${this.groqKeys.length} keys active for news summarisation & document/report digitization.`,
+        );
+      }
+    }
+    return this.groqRotator && this.groqKeys.length > 0
+      ? { rotator: this.groqRotator, keys: this.groqKeys }
+      : null;
   }
 
   getGroqModel(): string {
@@ -300,20 +307,22 @@ export class GrokScannerService {
   }
 
   /**
-   * Parse raw OCR text into structured JSON fields using Groq text models.
+   * Parse raw OCR or document text into structured JSON fields using the same rotating Groq API keys
+   * used for news summarisation, with automatic failover and cooldown across all keys.
    */
   private async parseOcrWithGroq(
     ocrText: string,
   ): Promise<GrievanceExtractedData | null> {
-    const key = this.getGroqApiKey();
-    if (!key) return null;
+    const pool = this.getGroqPool();
+    if (!pool) return null;
+    const { rotator, keys } = pool;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 35000);
+    const maxRetries = Math.min(keys.length * 2, 6);
+    const groqModel = this.getGroqModel();
 
     const prompt =
-      'You are an AI document extractor for an official constituency grievance management system.\n' +
-      'Extract all details from this OCR text of a visitor grievance form and return a valid JSON object matching this schema:\n' +
+      'You are an AI document extractor for an official constituency grievance management system and public reports.\n' +
+      'Extract all details from this OCR text of a visitor grievance form or report and return a valid JSON object matching this schema:\n' +
       '{\n' +
       '  "srNumber": string | null (from SR. NUMBER),\n' +
       '  "applicantName": string | null (from FULL NAME),\n' +
@@ -341,79 +350,100 @@ export class GrokScannerService {
       'OCR Text:\n' +
       ocrText;
 
-    const groqModel = this.getGroqModel();
-
-    try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model: groqModel,
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are an expert structured data extractor for government grievance forms. Always output strictly valid JSON.',
-            },
-            { role: 'user', content: prompt },
-          ],
-          response_format: { type: 'json_object' },
-          temperature: 0.1,
-          max_tokens: 2048,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        this.logger.warn(`Groq chat call returned HTTP ${res.status}`);
-        return null;
+    let lastError = '';
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const index = rotator.acquire();
+      if (index == null) {
+        this.logger.warn('All Groq keys currently cooling down. Retrying in 1s...');
+        await new Promise((r) => setTimeout(r, 1000));
+        continue;
       }
+      const key = keys[index - 1];
 
-      const json = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const content = json.choices?.[0]?.message?.content;
-      if (!content) return null;
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model: groqModel,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are an expert structured data extractor for government grievance forms and official reports. Always output strictly valid JSON.',
+              },
+              { role: 'user', content: prompt },
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.1,
+            max_tokens: 2048,
+          }),
+          signal: AbortSignal.timeout(35000),
+        });
 
-      const parsed = JSON.parse(content) as Record<string, unknown>;
-      return {
-        srNumber: strOrNull(parsed.srNumber),
-        applicantName: strOrNull(parsed.applicantName),
-        contactNumber: strOrNull(parsed.contactNumber),
-        address: strOrNull(parsed.address),
-        email: strOrNull(parsed.email),
-        village: strOrNull(parsed.village),
-        mandal: strOrNull(parsed.mandal),
-        division: strOrNull(parsed.division),
-        assemblyConstituency: strOrNull(parsed.assemblyConstituency),
-        date: strOrNull(parsed.date),
-        referenceName: strOrNull(parsed.referenceName),
-        referenceNumber: strOrNull(parsed.referenceNumber),
-        category: strOrNull(parsed.category),
-        categories: Array.isArray(parsed.categories)
-          ? parsed.categories.map(String)
-          : undefined,
-        others: strOrNull(parsed.others),
-        issueSummary: strOrNull(parsed.issueSummary),
-        actionTaken: strOrNull(parsed.actionTaken),
-        actionRequested: strOrNull(parsed.actionRequested),
-        assignedOfficer: strOrNull(parsed.assignedOfficer),
-        assignedOfficerPhone: strOrNull(parsed.assignedOfficerPhone),
-        resolutionStatus: strOrNull(parsed.resolutionStatus),
-        deadline: strOrNull(parsed.deadline),
-        rawJson: parsed,
-      };
-    } catch (err: unknown) {
-      this.logger.warn(
-        `Groq OCR JSON extraction error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return null;
-    } finally {
-      clearTimeout(timeout);
+        if (!res.ok) {
+          const status = res.status;
+          this.logger.warn(`Groq key #${index} returned HTTP ${status}. Rotating to next key in pool.`);
+          if (status === 429 || status >= 500) {
+            rotator.coolDown(index);
+          }
+          lastError = `HTTP ${status}`;
+          continue;
+        }
+
+        const json = (await res.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        const content = json.choices?.[0]?.message?.content;
+        if (!content) {
+          rotator.coolDown(index);
+          continue;
+        }
+
+        const parsed = JSON.parse(content) as Record<string, unknown>;
+        this.logger.log(
+          `Document/report digitized successfully via shared Groq key #${index} (${groqModel}).`,
+        );
+        return {
+          srNumber: strOrNull(parsed.srNumber),
+          applicantName: strOrNull(parsed.applicantName),
+          contactNumber: strOrNull(parsed.contactNumber),
+          address: strOrNull(parsed.address),
+          email: strOrNull(parsed.email),
+          village: strOrNull(parsed.village),
+          mandal: strOrNull(parsed.mandal),
+          division: strOrNull(parsed.division),
+          assemblyConstituency: strOrNull(parsed.assemblyConstituency),
+          date: strOrNull(parsed.date),
+          referenceName: strOrNull(parsed.referenceName),
+          referenceNumber: strOrNull(parsed.referenceNumber),
+          category: strOrNull(parsed.category),
+          categories: Array.isArray(parsed.categories)
+            ? parsed.categories.map(String)
+            : undefined,
+          others: strOrNull(parsed.others),
+          issueSummary: strOrNull(parsed.issueSummary),
+          actionTaken: strOrNull(parsed.actionTaken),
+          actionRequested: strOrNull(parsed.actionRequested),
+          assignedOfficer: strOrNull(parsed.assignedOfficer),
+          assignedOfficerPhone: strOrNull(parsed.assignedOfficerPhone),
+          resolutionStatus: strOrNull(parsed.resolutionStatus),
+          deadline: strOrNull(parsed.deadline),
+          rawJson: parsed,
+        };
+      } catch (err: unknown) {
+        rotator.coolDown(index);
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Groq key #${index} error (${msg}). Rotating to next key.`);
+        lastError = msg;
+      }
     }
+
+    this.logger.warn(`All Groq keys attempted for digitization. Last error: ${lastError}`);
+    return null;
   }
 
   /**
@@ -879,12 +909,36 @@ export class GrokScannerService {
         };
       } catch (err) {
         this.logger.warn(
-          `Grok PDF processing failed: ${err instanceof Error ? err.message : String(err)}. Falling back to local PDF text extraction.`,
+          `Grok PDF processing failed: ${err instanceof Error ? err.message : String(err)}. Falling back to Groq shared pool.`,
         );
       }
     }
 
-    // 5. Intelligent local extraction from PDF text
+    // 5. Try Groq LLM parsing on digital PDF text using the shared rotating Groq keys pool
+    if (digitalText && digitalText.trim().length >= 20) {
+      try {
+        const groqParsed = await this.parseOcrWithGroq(digitalText);
+        if (groqParsed) {
+          const structuredData = this.normalizeGrievanceData(
+            groqParsed,
+            digitalText,
+            filename,
+          );
+          return {
+            extractedText: digitalText.trim(),
+            structuredData,
+            modelUsed: 'pdf-digital + groq-ai',
+            scannedAt: new Date().toISOString(),
+          };
+        }
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Groq PDF digital parsing error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // 6. Intelligent local extraction from PDF text
     const cleanText =
       digitalText.trim() ||
       `# Document: ${filename}\n[Scanned PDF petition received without digital text layers]`;
