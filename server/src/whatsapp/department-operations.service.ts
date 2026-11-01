@@ -559,6 +559,22 @@ export class DepartmentOperationsService {
       return;
     }
 
+    if (reply.startsWith('dept:work:')) {
+      const payload = reply.slice('dept:work:'.length);
+      const splitAt = payload.lastIndexOf(':');
+      const id = payload.slice(0, splitAt);
+      const choice = payload.slice(splitAt + 1);
+      await this.applyWorkStatus(
+        sender,
+        id,
+        choice,
+        fetchImpl,
+        env,
+        auth,
+      );
+      return;
+    }
+
     if (
       reply.startsWith('dept:g:up_pick:') ||
       reply.startsWith('gpm:up_pick:')
@@ -567,15 +583,8 @@ export class DepartmentOperationsService {
         ? reply.slice('dept:g:up_pick:'.length)
         : reply.slice('gpm:up_pick:'.length);
       session.action = 'update';
-      await this.handleGrievanceSelection(
-        sender,
-        session,
-        id,
-        fetchImpl,
-        env,
-        auth,
-        deps,
-      );
+      session.recordId = id;
+      await this.sendWorkStatusList(sender, id, fetchImpl, env, deps);
       return;
     }
 
@@ -1336,6 +1345,211 @@ export class DepartmentOperationsService {
     ];
 
     await sendReplyButtons(sender, body, buttons, fetchImpl, env);
+  }
+
+  private async sendWorkStatusList(
+    sender: string,
+    id: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+    deps: { records?: unknown },
+  ): Promise<void> {
+    const record = await this.getRecordById('grievances', id, deps);
+    if (!record) {
+      await sendTextMessage(
+        sender,
+        'The selected grievance could not be found.',
+        fetchImpl,
+        env,
+      );
+      return;
+    }
+    const body = [
+      `*UPDATE WORK*`,
+      `*${record.srNumber || record.id}* — ${clip(record.title || record.detail, 80)}`,
+      record.place || record.village
+        ? `*Location:* ${record.place || record.village}`
+        : null,
+      ``,
+      `Choose the progress. The website and the person who raised this grievance are updated from this choice.`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    const rows: MenuRow[] = [
+      {
+        id: `dept:work:${record.id}:pending`,
+        title: 'Pending',
+        description: 'Work has not started',
+      },
+      {
+        id: `dept:work:${record.id}:started`,
+        title: 'Started',
+        description: 'The department has started the work',
+      },
+      {
+        id: `dept:work:${record.id}:progress`,
+        title: 'In progress',
+        description: 'Work is currently in progress',
+      },
+      {
+        id: `dept:work:${record.id}:needtime`,
+        title: 'Need time',
+        description: 'Extend the deadline by 15 days',
+      },
+    ];
+    await sendReplyList(sender, body, rows, {
+      button: 'Menu',
+      section: 'Work status',
+      fetchImpl,
+      env,
+    });
+  }
+
+  private async applyWorkStatus(
+    sender: string,
+    id: string,
+    choice: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+    auth: DeptAuthResult,
+  ): Promise<void> {
+    if (!this.workspace) {
+      await sendTextMessage(
+        sender,
+        'The progress update could not be saved.',
+        fetchImpl,
+        env,
+      );
+      return;
+    }
+    const allowed = ['pending', 'started', 'progress', 'needtime'];
+    if (!allowed.includes(choice)) {
+      await sendTextMessage(sender, 'Choose a status from the menu.', fetchImpl, env);
+      return;
+    }
+    try {
+      const record = await this.workspace.get(id);
+      const stages: ProgressStage[] =
+        record.progressStages && record.progressStages.length
+          ? record.progressStages.map((stage) => ({ ...stage }))
+          : defaultStages();
+      while (stages.length < STAGE_NAMES.length) {
+        stages.push({
+          name: STAGE_NAMES[stages.length],
+          status: 'Pending',
+          note: '',
+        });
+      }
+      const before = JSON.stringify(stages);
+      const work = stages[0] || {
+        name: STAGE_NAMES[0],
+        status: 'Pending' as StageStatus,
+        note: '',
+      };
+      stages[0] = work;
+      const active = stages[2] || {
+        name: STAGE_NAMES[2],
+        status: 'Pending' as StageStatus,
+        note: '',
+      };
+      stages[2] = active;
+      let deadline = '';
+      let remarks = '';
+      let notifyStatus = '';
+      if (choice === 'pending') {
+        work.status = 'Pending';
+        remarks = 'Pending';
+        notifyStatus = 'Pending';
+      } else if (choice === 'started') {
+        work.status = 'In progress';
+        remarks = 'Started';
+      } else if (choice === 'progress') {
+        if (work.status === 'Pending') work.status = 'In progress';
+        active.status = 'In progress';
+        remarks = 'In progress';
+        notifyStatus = 'In progress';
+      } else {
+        deadline = extendDeadline(record.deadline);
+        remarks = 'Deadline extended by 15 days';
+        notifyStatus = 'Need time';
+      }
+      if (
+        choice !== 'needtime' &&
+        JSON.stringify(stages) === before
+      ) {
+        await sendTextMessage(
+          sender,
+          'This progress is already saved. No duplicate update was sent.',
+          fetchImpl,
+          env,
+        );
+        return;
+      }
+      const dept =
+        record.followUpDepartment ||
+        record.department ||
+        auth.department ||
+        'Department';
+      const updated = await this.workspace.saveProgress(
+        record.progressToken || record.id,
+        {
+          stages,
+          remarks,
+          department: dept,
+          ...(deadline ? { deadline } : {}),
+          ...(notifyStatus ? { notifyStatus } : {}),
+        },
+      );
+      const label =
+        choice === 'pending'
+          ? 'Pending'
+          : choice === 'started'
+            ? 'Started'
+            : choice === 'progress'
+              ? 'In progress'
+              : 'Need time';
+      const body = [
+        `*WORK UPDATED*`,
+        `*${updated.srNumber || record.srNumber || id}* — ${clip(updated.title || record.title, 80)}`,
+        `*Status:* ${label}`,
+        deadline ? `*Deadline:* ${deadline}` : null,
+        `Saved on the website. The person who raised this grievance is notified on their number.`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+      await sendReplyList(sender, body, [
+        {
+          id: `dept:g:up_pick:${id}`,
+          title: 'Update work',
+          description: 'Change the progress again',
+        },
+        {
+          id: `dept:g:pick:${id}`,
+          title: 'View details',
+          description: 'See the saved grievance',
+        },
+        {
+          id: 'dept:menu',
+          title: 'Department menu',
+          description: 'Open department operations',
+        },
+      ], {
+        button: 'Menu',
+        section: 'Next step',
+        fetchImpl,
+        env,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Work status save failed: ${err instanceof Error ? err.message : 'error'}`,
+      );
+      await sendTextMessage(
+        sender,
+        'The progress update could not be saved. Please try the menu again.',
+        fetchImpl,
+        env,
+      );
+    }
   }
 
   private async sendGrievanceStagePrompt(
@@ -2670,6 +2884,18 @@ export class DepartmentOperationsService {
     const btn = rawResp.button_reply as { id?: string } | undefined;
     return String(list?.id || btn?.id || '').trim();
   }
+}
+
+function extendDeadline(current: string | undefined): string {
+  const now = new Date();
+  const base = current ? new Date(current) : now;
+  const start =
+    !current || Number.isNaN(base.getTime()) || base.getTime() < now.getTime()
+      ? now
+      : base;
+  const next = new Date(start.getTime());
+  next.setUTCDate(next.getUTCDate() + 15);
+  return next.toISOString().slice(0, 10);
 }
 
 function isGreetingOnly(text: string): boolean {

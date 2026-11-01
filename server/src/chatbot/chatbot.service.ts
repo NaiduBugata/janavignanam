@@ -358,11 +358,20 @@ export class ChatbotService {
     }
     for (const event of messages) {
       const sender = event.sender_wa_id || '';
+      const isDept = this.deptOpsService.isDepartmentUser(sender, env);
+      const departmentAction = this.deptOpsService.isDepartmentEvent(
+        event,
+        sender,
+        env,
+      );
+      if (isDept || departmentAction) {
+        await this.enqueue(sender, () => this.replyTo(event, env, deps));
+        continue;
+      }
       if (isPersonPhone(sender)) {
         await this.enqueue(sender, () => this.fileGrievance(event, env, deps));
         continue;
       }
-      const isDept = this.deptOpsService.isDepartmentUser(sender, env);
       if (!allowed.includes(digits(sender)) && !isDept) {
         this.logger.warn(`Ignored chatbot message from ${maskPhone(sender)}.`);
         continue;

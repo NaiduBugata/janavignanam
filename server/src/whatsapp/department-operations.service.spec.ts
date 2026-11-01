@@ -258,6 +258,37 @@ describe('DepartmentOperationsService', () => {
       }
     });
 
+    it('opens the work status menu and saves the selected status', async () => {
+      const open = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:g:up_pick:gr_101',
+      });
+      await service.handleEvent(open, deptPhone, mockFetch, env);
+      const rows = sentBodies[0].interactive.action.sections[0].rows;
+      expect(sentBodies[0].interactive.type).toBe('list');
+      expect(sentBodies[0].interactive.action.button).toBe('Menu');
+      expect(rows.map((row: { title: string }) => row.title)).toEqual([
+        'Pending',
+        'Started',
+        'In progress',
+        'Need time',
+      ]);
+
+      const choose = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:work:gr_101:needtime',
+      });
+      await service.handleEvent(choose, deptPhone, mockFetch, env);
+      expect(mockWorkspace.saveProgress).toHaveBeenCalledWith(
+        'token_gr101abc',
+        expect.objectContaining({
+          remarks: 'Deadline extended by 15 days',
+          deadline: '2026-11-20',
+          notifyStatus: 'Need time',
+        }),
+      );
+    });
+
     it('still recognizes a department button so an unknown sender can be refused', () => {
       const event = createMockEvent({
         sender: '911111111111',

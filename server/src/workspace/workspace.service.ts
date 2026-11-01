@@ -33,10 +33,9 @@ import {
 import { phoneForName } from '../whatsapp/whatsapp.audience';
 import {
   recordOutboundAttempt,
-  sendReplyButtons,
+  sendReplyList,
   sendTemplateMessage,
   sendTextMessage,
-  type ReplyButton,
 } from '../whatsapp/whatsapp.send';
 import {
   CASE_SECTIONS,
@@ -81,6 +80,9 @@ export interface SaveProgressInput {
   status?: string;
   remarks?: string;
   department?: string;
+  deadline?: string;
+  /** Status label sent to the person who raised the grievance. */
+  notifyStatus?: string;
 }
 
 export interface GrievanceDocument {
@@ -839,6 +841,7 @@ export class WorkspaceService {
       progressHistory: updatedHistory,
       progressToken: token,
       ...(options.department ? { followUpDepartment: dept } : {}),
+      ...(options.deadline ? { deadline: options.deadline } : {}),
     };
 
     const filter = isToken
@@ -851,7 +854,10 @@ export class WorkspaceService {
     if (!saved)
       throw new NotFoundException('This progress link is no longer available');
 
-    if (workJustStarted) {
+    const raiserStatus = workJustStarted
+      ? 'Work Started'
+      : (options.notifyStatus || '').trim();
+    if (raiserStatus) {
       const raiser = whatsappNumber(
         existing.contactNumber ||
           text((existing as unknown as Record<string, unknown>).reporterPhone),
@@ -862,10 +868,13 @@ export class WorkspaceService {
         location: existing.place || existing.village,
         department: dept,
         token,
+        status: raiserStatus,
       });
       await this.db.collection(RECORDS).findOneAndUpdate(filter, {
         $set: {
-          ...(notice.accepted ? { workStartedNotifiedAt: now } : {}),
+          ...(workJustStarted && notice.accepted
+            ? { workStartedNotifiedAt: now }
+            : {}),
           workStartedNotice: notice,
         },
       });
@@ -1103,6 +1112,7 @@ async function notifyWorkStarted(
     location: string;
     department: string;
     token: string;
+    status?: string;
   },
 ): Promise<Record<string, unknown>> {
   const logger = new Logger('WorkStartedNotice');
@@ -1133,7 +1143,7 @@ async function notifyWorkStarted(
         clean(detail.department || 'Department'),
         clean(detail.title || detail.reference || 'your grievance'),
         reference,
-        'Work Started',
+        clean(detail.status || 'Work Started'),
       ],
       urlButton: detail.token ? `progress/${detail.token}` : undefined,
     });
@@ -1197,10 +1207,22 @@ async function sendDepartmentActionNotice(
     `*Date:* ${when}\n\n` +
     `Use the menu below to update the progress of this work.`;
 
-  const buttons: ReplyButton[] = [
-    { id: `dept:g:up_pick:${recordId}`, title: 'Update Progress' },
-    { id: `dept:g:pick:${recordId}`, title: 'View Details' },
-    { id: 'dept:menu', title: 'Department Menu' },
+  const rows = [
+    {
+      id: `dept:g:up_pick:${recordId}`,
+      title: 'Update work',
+      description: 'Pending, Started, In progress, or Need time',
+    },
+    {
+      id: `dept:g:pick:${recordId}`,
+      title: 'View details',
+      description: 'See this grievance',
+    },
+    {
+      id: 'dept:menu',
+      title: 'Department menu',
+      description: 'Open department operations',
+    },
   ];
 
   const recipients = resolveDepartmentRecipients(desk, record, env);
@@ -1216,13 +1238,12 @@ async function sendDepartmentActionNotice(
       `Department notice source=${recipient.source} tail=${recipient.phone.slice(-4)} required=${recipient.required}`,
     );
     try {
-      const sent = await sendReplyButtons(
-        recipient.phone,
-        bodyText,
-        buttons,
-        fetch,
+      const sent = await sendReplyList(recipient.phone, bodyText, rows, {
+        button: 'Menu',
+        section: 'Work progress',
+        fetchImpl: fetch,
         env,
-      );
+      });
       const accepted = metaAccepted(sent);
       if (!accepted.ok) {
         throw new Error(

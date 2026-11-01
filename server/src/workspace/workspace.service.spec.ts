@@ -125,7 +125,7 @@ describe('WorkspaceService', () => {
 
   it('approves a grievance and dispatches native WhatsApp interactive buttons instead of external web links', async () => {
     const spyButtons = jest
-      .spyOn(waSend, 'sendReplyButtons')
+      .spyOn(waSend, 'sendReplyList')
       .mockResolvedValue({ success: true });
     const spyTemplate = jest
       .spyOn(waSend, 'sendTemplateMessage')
@@ -181,23 +181,25 @@ describe('WorkspaceService', () => {
 
     // Verify native interactive buttons dispatched
     expect(spyButtons).toHaveBeenCalledTimes(1);
-    const [recipient, body, buttons] = spyButtons.mock.calls[0];
+    const [recipient, body, rows, options] = spyButtons.mock.calls[0];
     expect(recipient).toContain('8919537879');
     expect(body).toContain('UPDATE WORK PROGRESS');
     expect(body).toContain('Use the menu below to update the progress');
-    expect(buttons).toHaveLength(3);
-    expect(buttons[0]).toEqual({
-      id: 'dept:g:up_pick:gr-water-1',
-      title: 'Update Progress',
-    });
-    expect(buttons[1]).toEqual({
-      id: 'dept:g:pick:gr-water-1',
-      title: 'View Details',
-    });
-    expect(buttons[2]).toEqual({
-      id: 'dept:menu',
-      title: 'Department Menu',
-    });
+    expect(options).toEqual(expect.objectContaining({ button: 'Menu' }));
+    expect(rows).toEqual([
+      expect.objectContaining({
+        id: 'dept:g:up_pick:gr-water-1',
+        title: 'Update work',
+      }),
+      expect.objectContaining({
+        id: 'dept:g:pick:gr-water-1',
+        title: 'View details',
+      }),
+      expect.objectContaining({
+        id: 'dept:menu',
+        title: 'Department menu',
+      }),
+    ]);
 
     // Verify template with URL button was NOT called because interactive buttons succeeded
     expect(spyTemplate).not.toHaveBeenCalled();
@@ -213,7 +215,7 @@ describe('WorkspaceService', () => {
       { phone: '919440123456', role: 'user', name: 'Ramesh' },
     ]);
     const spyButtons = jest
-      .spyOn(waSend, 'sendReplyButtons')
+      .spyOn(waSend, 'sendReplyList')
       .mockResolvedValue({ success: true });
     const spyTemplate = jest
       .spyOn(waSend, 'sendTemplateMessage')
@@ -280,7 +282,7 @@ describe('WorkspaceService', () => {
 
   it('keeps the grievance unapproved when the department number is not accepted', async () => {
     const spyButtons = jest
-      .spyOn(waSend, 'sendReplyButtons')
+      .spyOn(waSend, 'sendReplyList')
       .mockRejectedValue(new Error('interactive failed'));
     const spyTemplate = jest
       .spyOn(waSend, 'sendTemplateMessage')
@@ -320,7 +322,7 @@ describe('WorkspaceService', () => {
 
   it('uses the approved template when the interactive department message is rejected', async () => {
     const spyButtons = jest
-      .spyOn(waSend, 'sendReplyButtons')
+      .spyOn(waSend, 'sendReplyList')
       .mockRejectedValue(
         new waSend.WhatsAppSendError('Re-engagement required', 400, 131047),
       );
@@ -379,7 +381,7 @@ describe('WorkspaceService', () => {
     const previous = process.env.DEPARTMENT_PHONES;
     process.env.DEPARTMENT_PHONES = '918919537879,918919537879';
     const spyButtons = jest
-      .spyOn(waSend, 'sendReplyButtons')
+      .spyOn(waSend, 'sendReplyList')
       .mockResolvedValue({ messages: [{ id: 'wamid.once' }] });
     const records: Array<Record<string, unknown>> = [
       {
@@ -427,7 +429,7 @@ describe('WorkspaceService', () => {
       { phone: '919440123456', role: 'user', name: 'Ramesh' },
     ]);
     const spyButtons = jest
-      .spyOn(waSend, 'sendReplyButtons')
+      .spyOn(waSend, 'sendReplyList')
       .mockResolvedValue({ messages: [{ id: 'wamid.inbox' }] });
     const spyText = jest
       .spyOn(waSend, 'sendTextMessage')

@@ -835,12 +835,12 @@ describe('ChatbotService', () => {
 
   it('does not save the same grievance twice', async () => {
     setStaffDirectory([
-      { phone: '918919537879', role: 'person', name: 'Balaji' },
+      { phone: '919100000099', role: 'person', name: 'Balaji' },
     ]);
     const { rows, db } = memoryRecords();
     const first: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService(undefined, db as never);
-    const body = payload('Water supply stopped', 'wamid.water', '918919537879');
+    const body = payload('Water supply stopped', 'wamid.water', '919100000099');
     await bot.handle(body, { env: env(), fetchImpl: capture(first) });
     const again: Array<Record<string, unknown>> = [];
     const retry = new ChatbotService(undefined, db as never);
@@ -881,7 +881,7 @@ describe('ChatbotService', () => {
 
   it('stores a photo from a person as a short note', async () => {
     setStaffDirectory([
-      { phone: '918919537879', role: 'person', name: 'Balaji' },
+      { phone: '919100000099', role: 'person', name: 'Balaji' },
     ]);
     const { rows, db } = memoryRecords();
     const bot = new ChatbotService(undefined, db as never);
@@ -895,7 +895,7 @@ describe('ChatbotService', () => {
                 value: {
                   messages: [
                     {
-                      from: '918919537879',
+                      from: '919100000099',
                       id: 'wamid.photo',
                       timestamp: '1',
                       type: 'image',
