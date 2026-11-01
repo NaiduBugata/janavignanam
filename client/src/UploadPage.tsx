@@ -1,7 +1,28 @@
 import { useEffect, useState } from "react";
-import { Building2, CalendarClock, ChevronRight, ClipboardList, Eye, EyeOff, LogOut, MapPin, Menu, MessageSquareWarning, Pencil, Plus, Send, Trash2, Users, X } from "lucide-react";
+import {
+  Building2,
+  CalendarClock,
+  ChevronRight,
+  ClipboardList,
+  Eye,
+  EyeOff,
+  LogOut,
+  MapPin,
+  Menu,
+  MessageSquareWarning,
+  Pencil,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2,
+  Upload,
+  Users,
+  X,
+} from "lucide-react";
 import { api } from "@/lib/api.ts";
 import { CaseRecordForm, type CaseSection } from "@/CaseRecordForm.tsx";
+import { GrievanceDocumentSection, type ScannedDocument } from "@/components/GrievanceDocumentSection.tsx";
+import { GrievanceUploadWorkflow } from "@/components/GrievanceUploadWorkflow.tsx";
 import { emptyPlace, PlaceFilters } from "@/PlaceFilters.tsx";
 import { matchesPlace } from "@/places.ts";
 import { ReportActions, ReportDownloads } from "@/ReportPage.tsx";
@@ -47,17 +68,22 @@ type RecordItem = {
   visitTime?: string;
   leadPhone?: string;
   progressStages?: { name: string; status: string; note: string }[];
+  scannedDocuments?: ScannedDocument[];
 };
 
 const UPLOAD_SESSION = "janavignanam.upload";
+const MAIN_SESSION = "janavignanam.session";
 const SLIP: CaseSection[] = ["grievances", "projects", "people", "followups"];
 
 type Session = { token: string; email: string; name: string };
 
 function readSession(): Session | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(UPLOAD_SESSION) ?? "null") as Session | null;
-    return saved?.token ? saved : null;
+    const uploadSaved = JSON.parse(localStorage.getItem(UPLOAD_SESSION) ?? "null") as Session | null;
+    if (uploadSaved?.token) return uploadSaved;
+    const mainSaved = JSON.parse(localStorage.getItem(MAIN_SESSION) ?? "null") as Session | null;
+    if (mainSaved?.token) return mainSaved;
+    return null;
   } catch {
     return null;
   }
@@ -94,6 +120,7 @@ function UploadDesk({
   onSignOut: () => void;
 }) {
   const [section, setSection] = useState<CaseSection>("grievances");
+  const [grievanceTab, setGrievanceTab] = useState<"upload" | "list">("upload");
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<RecordItem | null>(null);
@@ -107,6 +134,12 @@ function UploadDesk({
   const current = targets.find((item) => item.id === section) ?? targets[0];
   const located = section === "grievances" || section === "projects";
   const shown = located ? records.filter((item) => matchesPlace(item, place)) : records;
+
+  const updateRecordItem = (id: string, updated: Partial<RecordItem>) => {
+    setRecords((currentRows) =>
+      currentRows.map((item) => (item.id === id ? { ...item, ...updated } : item))
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +189,9 @@ function UploadDesk({
     setPendingDelete(null);
     setNotice("");
     setMenuOpen(false);
+    if (next === "grievances") {
+      setGrievanceTab("upload");
+    }
   };
 
   const save = async (body: Record<string, string | string[]>) => {
@@ -248,145 +284,217 @@ function UploadDesk({
             </div>
             <div className="flex flex-wrap gap-2">
               {(section === "grievances" || section === "projects") && <ReportDownloads token={session.token} section={section} />}
-            <button
-              onClick={() => {
-                setAdding((open) => !open);
-                setEditing(null);
-                setNotice("");
-              }}
-              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              <Plus className="size-4" />
-              Add record
-            </button>
+              <button
+                onClick={() => {
+                  if (section === "grievances") {
+                    setGrievanceTab("upload");
+                    setAdding(false);
+                    setEditing(null);
+                  } else {
+                    setAdding((open) => !open);
+                    setEditing(null);
+                  }
+                  setNotice("");
+                }}
+                className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <Plus className="size-4" />
+                {section === "grievances" ? "Upload grievance" : "Add record"}
+              </button>
             </div>
           </div>
           {notice && <p className="mb-4 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">{notice}</p>}
           {error && <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-          {adding && isSimple(section) && <SimpleRecordForm key={`add-${section}`} section={section} onSubmit={save} />}
-          {adding && !isSimple(section) && <CaseRecordForm key={`add-${section}`} section={section} onSubmit={save} />}
-          {editing && isSimple(section) && (
-            <SimpleRecordForm
-              key={editing.id}
-              section={section}
-              submitLabel="Save changes"
-              initial={{
-                title: editing.title,
-                detail: editing.detail,
-                status: editing.status || "Open",
-                place: editing.place || "",
-                visitDate: editing.visitDate || "",
-                visitTime: editing.visitTime || "",
-                leadPhone: editing.leadPhone || "",
-              }}
-              onSubmit={save}
-            />
+
+          {section === "grievances" && (
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-3 shadow-xs">
+              <div className="flex rounded-xl bg-muted p-1 text-sm font-medium">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGrievanceTab("upload");
+                    setAdding(false);
+                    setEditing(null);
+                  }}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
+                    grievanceTab === "upload" && !editing
+                      ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Sparkles className="size-4" />
+                  2-Document Grievance Upload & Review
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGrievanceTab("list");
+                    setAdding(false);
+                  }}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
+                    grievanceTab === "list" && !editing
+                      ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <ClipboardList className="size-4" />
+                  Grievance Records List ({records.length})
+                </button>
+              </div>
+            </div>
           )}
-          {editing && !isSimple(section) && (
-            <CaseRecordForm
-              key={editing.id}
-              section={section}
-              submitLabel="Save changes"
-              initial={{
-                srNumber: editing.srNumber || "",
-                fullName: editing.fullName || editing.title || "",
-                contactNumber: editing.contactNumber || "",
-                address: editing.address || "",
-                email: editing.email || "",
-                village: editing.village || "",
-                mandal: editing.mandal || "",
-                division: editing.division || "",
-                assemblyConstituency: editing.assemblyConstituency || "",
-                dateOfVisit: editing.dateOfVisit || "",
-                referenceName: editing.referenceName || "",
-                referenceNumber: editing.referenceNumber || "",
-                categories: editing.categories || [],
-                others: editing.others || "",
-                actionTaken: editing.actionTaken || "",
-                actionToBeTaken: editing.actionToBeTaken || "",
-                assignedOfficer: editing.assignedOfficer || "",
-                resolutionStatus: editing.resolutionStatus || (["Pending", "In progress", "Resolved"].includes(editing.status) ? editing.status : ""),
-                deadline: editing.deadline || "",
-              }}
-              onSubmit={save}
-            />
+
+          {section === "grievances" && grievanceTab === "upload" && !editing && (
+            <div className="mb-8">
+              <GrievanceUploadWorkflow
+                token={session.token}
+                onSuccess={(stored) => {
+                  api<RecordItem[]>(`/api/workspace/records?section=grievances`, { token: session.token })
+                    .then((rows) => setRecords(rows))
+                    .catch(() => {});
+                  setNotice(`Grievance for "${stored.fullName || 'Citizen'}" successfully submitted and stored!`);
+                }}
+                onCancel={() => setGrievanceTab("list")}
+              />
+            </div>
           )}
-          {located && <PlaceFilters value={place} onChange={setPlace} />}
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading records…</p>
-          ) : shown.length ? (
-            <div className="overflow-hidden rounded-xl border bg-card">
-              {shown.map((item) => (
-                <div key={item.id} className="border-b px-5 py-4 last:border-0">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <h2 className="truncate font-medium">{item.fullName || item.title}</h2>
-                      {item.srNumber ? <p className="mt-1 text-sm text-muted-foreground">Sr. {item.srNumber}</p> : null}
-                      <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{[item.visitTime, item.division, item.mandal, item.village, item.assemblyConstituency].filter(Boolean).join(", ") || item.detail}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2 pt-0.5">
-                      <span className="inline-flex h-6 items-center rounded-full bg-primary/10 px-2.5 text-xs font-medium text-primary">{item.status}</span>
-                      <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{formatWhen(item.date)}</span>
-                    </div>
-                  </div>
-                  {item.categories?.length ? <p className="mt-2 truncate text-sm">{item.categories.map((category) => (category === "Others" && item.others ? item.others : category)).join(", ")}</p> : null}
-                  {item.actionToBeTaken ? <p className="mt-1 truncate text-sm">Action to be taken: {item.actionToBeTaken}</p> : null}
-                  {item.assignedOfficer ? <p className="mt-1 truncate text-sm">Assigned officer: {item.assignedOfficer}</p> : null}
-                  {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
-                  {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
-                  <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                    {(section === "grievances" || section === "projects") && <ReportActions token={session.token} section={section} id={item.id} />}
-                    {section === "grievances" && !isSample(item) && item.status !== "Approved" && (
-                      <button type="button" disabled={approving === item.id} onClick={() => void approve(item.id)} className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                        {approving === item.id ? "Approving…" : "Approve"}
-                      </button>
-                    )}
-                    {isSample(item) ? (
-                      <span className="text-xs text-muted-foreground">Sample</span>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditing(item);
-                            setAdding(false);
-                            setPendingDelete(null);
-                            setNotice("");
-                          }}
-                          className="inline-flex h-8 items-center gap-1 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-muted"
-                        >
-                          <Pencil className="size-3.5" />
-                          Edit
-                        </button>
-                        {pendingDelete === item.id ? (
-                          <span className="inline-flex items-center gap-2">
-                            <button type="button" onClick={() => void remove(item.id)} className="inline-flex h-8 items-center rounded-lg bg-destructive px-3 text-xs font-medium text-white">Delete</button>
-                            <button type="button" onClick={() => setPendingDelete(null)} className="inline-flex h-8 items-center rounded-lg border bg-background px-3 text-xs font-medium">Cancel</button>
-                          </span>
-                        ) : (
-                          <button type="button" onClick={() => setPendingDelete(item.id)} className="inline-flex h-8 items-center gap-1 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-muted">
-                            <Trash2 className="size-3.5" />
-                            Delete
+
+          {(section !== "grievances" || grievanceTab === "list" || editing) && (
+            <>
+              {adding && isSimple(section) && <SimpleRecordForm key={`add-${section}`} section={section} onSubmit={save} />}
+              {adding && !isSimple(section) && <CaseRecordForm key={`add-${section}`} section={section} token={session.token} onSubmit={save} />}
+              {editing && isSimple(section) && (
+                <SimpleRecordForm
+                  key={editing.id}
+                  section={section}
+                  submitLabel="Save changes"
+                  initial={{
+                    title: editing.title,
+                    detail: editing.detail,
+                    status: editing.status || "Open",
+                    place: editing.place || "",
+                    visitDate: editing.visitDate || "",
+                    visitTime: editing.visitTime || "",
+                    leadPhone: editing.leadPhone || "",
+                  }}
+                  onSubmit={save}
+                />
+              )}
+              {editing && !isSimple(section) && (
+                <CaseRecordForm
+                  key={editing.id}
+                  section={section}
+                  token={session.token}
+                  submitLabel="Save changes"
+                  initial={{
+                    srNumber: editing.srNumber || "",
+                    fullName: editing.fullName || editing.title || "",
+                    contactNumber: editing.contactNumber || "",
+                    address: editing.address || "",
+                    email: editing.email || "",
+                    village: editing.village || "",
+                    mandal: editing.mandal || "",
+                    division: editing.division || "",
+                    assemblyConstituency: editing.assemblyConstituency || "",
+                    dateOfVisit: editing.dateOfVisit || "",
+                    referenceName: editing.referenceName || "",
+                    referenceNumber: editing.referenceNumber || "",
+                    categories: editing.categories || [],
+                    others: editing.others || "",
+                    actionTaken: editing.actionTaken || "",
+                    actionToBeTaken: editing.actionToBeTaken || "",
+                    assignedOfficer: editing.assignedOfficer || "",
+                    resolutionStatus: editing.resolutionStatus || (["Pending", "In progress", "Resolved"].includes(editing.status) ? editing.status : ""),
+                    deadline: editing.deadline || "",
+                  }}
+                  onSubmit={save}
+                />
+              )}
+              {located && <PlaceFilters value={place} onChange={setPlace} />}
+              {loading ? (
+                <p className="text-sm text-muted-foreground">Loading records…</p>
+              ) : shown.length ? (
+                <div className="overflow-hidden rounded-xl border bg-card">
+                  {shown.map((item) => (
+                    <div key={item.id} className="border-b px-5 py-4 last:border-0">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <h2 className="truncate font-medium">{item.fullName || item.title}</h2>
+                          {item.srNumber ? <p className="mt-1 text-sm text-muted-foreground">Sr. {item.srNumber}</p> : null}
+                          <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{[item.visitTime, item.division, item.mandal, item.village, item.assemblyConstituency].filter(Boolean).join(", ") || item.detail}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                          <span className="inline-flex h-6 items-center rounded-full bg-primary/10 px-2.5 text-xs font-medium text-primary">{item.status}</span>
+                          <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{formatWhen(item.date)}</span>
+                        </div>
+                      </div>
+                      {item.categories?.length ? <p className="mt-2 truncate text-sm">{item.categories.map((category) => (category === "Others" && item.others ? item.others : category)).join(", ")}</p> : null}
+                      {item.actionToBeTaken ? <p className="mt-1 truncate text-sm">Action to be taken: {item.actionToBeTaken}</p> : null}
+                      {item.assignedOfficer ? <p className="mt-1 truncate text-sm">Assigned officer: {item.assignedOfficer}</p> : null}
+                      {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
+                      {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
+                      {section === "grievances" && !isSample(item) && (
+                        <GrievanceDocumentSection
+                          record={item}
+                          token={session.token}
+                          onUpdateRecord={(updated) => updateRecordItem(item.id, updated)}
+                        />
+                      )}
+                      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                        {(section === "grievances" || section === "projects") && <ReportActions token={session.token} section={section} id={item.id} />}
+                        {section === "grievances" && !isSample(item) && item.status !== "Approved" && (
+                          <button type="button" disabled={approving === item.id} onClick={() => void approve(item.id)} className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                            {approving === item.id ? "Approving…" : "Approve"}
                           </button>
                         )}
-                      </>
-                    )}
-                  </div>
+                        {isSample(item) ? (
+                          <span className="text-xs text-muted-foreground">Sample</span>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditing(item);
+                                setAdding(false);
+                                setPendingDelete(null);
+                                setNotice("");
+                              }}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-muted"
+                            >
+                              <Pencil className="size-3.5" />
+                              Edit
+                            </button>
+                            {pendingDelete === item.id ? (
+                              <span className="inline-flex items-center gap-2">
+                                <button type="button" onClick={() => void remove(item.id)} className="inline-flex h-8 items-center rounded-lg bg-destructive px-3 text-xs font-medium text-white">Delete</button>
+                                <button type="button" onClick={() => setPendingDelete(null)} className="inline-flex h-8 items-center rounded-lg border bg-background px-3 text-xs font-medium">Cancel</button>
+                              </span>
+                            ) : (
+                              <button type="button" onClick={() => setPendingDelete(item.id)} className="inline-flex h-8 items-center gap-1 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-muted">
+                                <Trash2 className="size-3.5" />
+                                Delete
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : records.length ? (
-            <div className="rounded-xl border border-dashed p-12 text-center">
-              <current.icon className="mx-auto size-8 text-muted-foreground" />
-              <h2 className="mt-3 font-medium">No records in this place</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Choose another division, mandal, or village.</p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed p-12 text-center">
-              <current.icon className="mx-auto size-8 text-muted-foreground" />
-              <h2 className="mt-3 font-medium">Nothing saved yet</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Add a record and it is stored in the database.</p>
-            </div>
+              ) : records.length ? (
+                <div className="rounded-xl border border-dashed p-12 text-center">
+                  <current.icon className="mx-auto size-8 text-muted-foreground" />
+                  <h2 className="mt-3 font-medium">No records in this place</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Choose another division, mandal, or village.</p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed p-12 text-center">
+                  <current.icon className="mx-auto size-8 text-muted-foreground" />
+                  <h2 className="mt-3 font-medium">Nothing saved yet</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Add a record and it is stored in the database.</p>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>

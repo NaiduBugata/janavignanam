@@ -471,6 +471,10 @@ export class WorkspaceService {
       mimetype: string;
       size: number;
     },
+    preScanned?: {
+      extractedText?: string;
+      structuredData?: GrievanceExtractedData;
+    },
   ): Promise<{ document: GrievanceDocument; record: WorkspaceRecord }> {
     await this.ready();
     const raw = await this.storedRecord(id);
@@ -510,14 +514,23 @@ export class WorkspaceService {
     let scanResult: GrokScanResult | null = null;
     let scanError: string | null = null;
 
-    try {
-      scanResult = await this.grokScanner.scanDocument({
-        buffer: file.buffer,
-        mimeType: file.mimetype,
-        filename: file.originalname,
-      });
-    } catch (err) {
-      scanError = err instanceof Error ? err.message : String(err);
+    if (preScanned?.extractedText) {
+      scanResult = {
+        extractedText: preScanned.extractedText,
+        structuredData: preScanned.structuredData || {},
+        modelUsed: 'pre-scanned',
+        scannedAt: now,
+      };
+    } else {
+      try {
+        scanResult = await this.grokScanner.scanDocument({
+          buffer: file.buffer,
+          mimeType: file.mimetype,
+          filename: file.originalname,
+        });
+      } catch (err) {
+        scanError = err instanceof Error ? err.message : String(err);
+      }
     }
 
     const finalDoc: Record<string, unknown> = {

@@ -20,6 +20,7 @@ import {
   Search,
   Send,
   Settings,
+  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -28,6 +29,7 @@ import { api, ApiError } from "@/lib/api.ts";
 import NewsDesk from "@/news/NewsDesk.tsx";
 import { CaseRecordForm, type CaseSection } from "@/CaseRecordForm.tsx";
 import { ConstituencyDirectory } from "@/ConstituencyDirectory.tsx";
+import { GrievanceUploadWorkflow } from "@/components/GrievanceUploadWorkflow.tsx";
 import { emptyPlace, PlaceFilters } from "@/PlaceFilters.tsx";
 import { matchesPlace } from "@/places.ts";
 import { ReportActions, ReportDownloads } from "@/ReportPage.tsx";
@@ -259,7 +261,37 @@ function App() {
           <div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-primary font-display font-bold text-primary-foreground">JV</div><div><p className="font-display font-semibold">JanaVignanam</p><p className="text-xs text-muted-foreground">Constituency database</p></div></div>
           <button className="md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu"><X className="size-5" /></button>
         </div>
-        <nav className="flex-1 space-y-1 overflow-y-auto p-4">{nav.map((item) => { const Icon = item.icon; return <NavLink key={item.id} to={item.path} end={item.path === "/"} onClick={() => setSidebarOpen(false)} className={({ isActive }) => `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${isActive ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"}`}><Icon className="size-4" />{item.label}</NavLink>; })}</nav>
+        <nav className="flex-1 space-y-1 overflow-y-auto p-4">
+          {nav.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.id}
+                to={item.path}
+                end={item.path === "/"}
+                onClick={() => setSidebarOpen(false)}
+                className={({ isActive }) =>
+                  `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    isActive
+                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+                  }`
+                }
+              >
+                <Icon className="size-4" />
+                {item.label}
+              </NavLink>
+            );
+          })}
+          <NavLink
+            to="/upload"
+            onClick={() => setSidebarOpen(false)}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-primary transition-colors hover:bg-sidebar-accent/60"
+          >
+            <Sparkles className="size-4" />
+            Upload Grievance Desk
+          </NavLink>
+        </nav>
         <div className="border-t p-4"><div className="mb-3 flex items-center gap-3"><div className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{session.name.slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{session.name}</p><p className="truncate text-xs text-muted-foreground">{session.email}</p></div></div><button onClick={signOut} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"><LogOut className="size-4" />Sign out</button></div>
       </aside>
       <main className="md:pl-72">
@@ -331,6 +363,7 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
 function Workspace({ section, records, summary, stats, token, onAdd, onApprove, onUpdateRecord }: { section: Section; records: RecordItem[]; summary: Summary | null; stats: NewsStats | null; token: string; onAdd: (body: Record<string, string | string[]>) => Promise<void>; onApprove: (id: string) => Promise<string>; onUpdateRecord: (id: string, updated: Partial<RecordItem>) => void }) {
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
+  const [showUploadWorkflow, setShowUploadWorkflow] = useState(false);
   const [approving, setApproving] = useState("");
   const [approveNote, setApproveNote] = useState("");
   const [place, setPlace] = useState(emptyPlace);
@@ -339,7 +372,10 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
   const located = section === "grievances" || section === "projects";
   const shown = located ? records.filter((item) => matchesPlace(item, place)) : records;
   const open = shown.filter((item) => item.status === "Open" || item.status === "Pending" || item.status === "In progress").length;
-  useEffect(() => setPlace(emptyPlace), [section]);
+  useEffect(() => {
+    setPlace(emptyPlace);
+    setShowUploadWorkflow(false);
+  }, [section]);
   const tracked = useMemo(() => (summary ? Object.values(summary.counts).reduce((sum, value) => sum + value, 0) : 0), [summary]);
 
   if (section === "news") {
@@ -392,10 +428,42 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <SectionHeading meta={meta} />
         <div className="flex flex-wrap gap-2">
+          {section === "grievances" && (
+            <button
+              onClick={() => {
+                setShowUploadWorkflow(!showUploadWorkflow);
+                setShowForm(false);
+              }}
+              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90"
+            >
+              <Sparkles className="size-4" />
+              Upload & Digitize (2-Doc AI)
+            </button>
+          )}
           {(section === "grievances" || section === "projects") && <ReportDownloads token={token} section={section} />}
-          <button onClick={() => setShowForm(!showForm)} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"><Plus className="size-4" />Add record</button>
+          <button
+            onClick={() => {
+              setShowForm(!showForm);
+              setShowUploadWorkflow(false);
+            }}
+            className="flex h-10 items-center justify-center gap-2 rounded-lg border bg-background px-4 text-sm font-medium hover:bg-muted"
+          >
+            <Plus className="size-4" />
+            Add record
+          </button>
         </div>
       </div>
+      {showUploadWorkflow && section === "grievances" && (
+        <div className="mb-8">
+          <GrievanceUploadWorkflow
+            token={token}
+            onSuccess={() => {
+              setShowUploadWorkflow(false);
+            }}
+            onCancel={() => setShowUploadWorkflow(false)}
+          />
+        </div>
+      )}
       {showForm && section === "campaigns" && <SimpleRecordForm key={section} section="campaigns" onSubmit={onAdd} />}
       {showForm && isListSection(section) && section !== "campaigns" && <CaseRecordForm key={section} section={section} token={token} onSubmit={onAdd} />}
       {located && <PlaceFilters value={place} onChange={setPlace} />}

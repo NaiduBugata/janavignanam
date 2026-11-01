@@ -13,9 +13,13 @@ import {
   Res,
   UnauthorizedException,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   CreateRecordDto,
@@ -209,6 +213,11 @@ export class WorkspaceController {
       mimetype?: string;
       size?: number;
     },
+    @Body()
+    body?: {
+      extractedText?: string;
+      structuredData?: string;
+    },
     @Headers('authorization') authorization?: string,
   ) {
     await this.workspace.me(bearer(authorization));
@@ -230,12 +239,32 @@ export class WorkspaceController {
       );
     }
     try {
-      return await this.workspace.addDocumentToGrievance(id, {
-        buffer: file.buffer,
-        originalname: file.originalname || 'document',
-        mimetype: file.mimetype || 'application/octet-stream',
-        size: file.size || file.buffer.length,
-      });
+      let preScanned: { extractedText?: string; structuredData?: any } | undefined;
+      if (body?.extractedText) {
+        let parsedStruct: any = undefined;
+        if (body.structuredData) {
+          try {
+            parsedStruct =
+              typeof body.structuredData === 'string'
+                ? JSON.parse(body.structuredData)
+                : body.structuredData;
+          } catch {}
+        }
+        preScanned = {
+          extractedText: body.extractedText,
+          structuredData: parsedStruct,
+        };
+      }
+      return await this.workspace.addDocumentToGrievance(
+        id,
+        {
+          buffer: file.buffer,
+          originalname: file.originalname || 'document',
+          mimetype: file.mimetype || 'application/octet-stream',
+          size: file.size || file.buffer.length,
+        },
+        preScanned,
+      );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Document upload error for grievance ${id}: ${msg}`);
@@ -356,6 +385,170 @@ export class WorkspaceController {
         modelUsed: 'local-fallback',
       };
     }
+  }
+
+  @Post('documents/scan-batch')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'grievanceFile', maxCount: 1 },
+        { name: 'supportingFile', maxCount: 1 },
+      ],
+      {
+        limits: { fileSize: 10 * 1024 * 1024 },
+      },
+    ),
+  )
+  async scanBatch(
+    @UploadedFiles()
+    files: {
+      grievanceFile?: Array<{
+        buffer?: Buffer;
+        originalname?: string;
+        mimetype?: string;
+        size?: number;
+      }>;
+      supportingFile?: Array<{
+        buffer?: Buffer;
+        originalname?: string;
+        mimetype?: string;
+        size?: number;
+      }>;
+    },
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.workspace.me(bearer(authorization));
+    const gFile = files?.grievanceFile?.[0];
+    const sFile = files?.supportingFile?.[0];
+
+    if (!gFile && !sFile) {
+      throw new BadRequestException(
+        'Please select at least one document to scan.',
+      );
+    }
+
+    const validMimes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/jpg',
+    ];
+
+    const validateFile = (f: { originalname?: string; mimetype?: string }) => {
+      const isMimeValid =
+        f.mimetype && validMimes.includes(f.mimetype.toLowerCase());
+      const isExtValid = /\.(pdf|jpe?g|png)$/i.test(f.originalname || '');
+      return isMimeValid || isExtValid;
+    };
+
+    if (gFile && !validateFile(gFile)) {
+      throw new BadRequestException(
+        'Primary grievance document has unsupported format.',
+      );
+    }
+    if (sFile && !validateFile(sFile)) {
+      throw new BadRequestException(
+        'Supporting document has unsupported format.',
+      );
+    }
+
+    let gResult: any = null;
+    let sResult: any = null;
+
+    if (gFile?.buffer) {
+      try {
+        gResult = await this.grokScanner.scanDocument({
+          buffer: gFile.buffer,
+          mimeType: gFile.mimetype || 'application/octet-stream',
+          filename: gFile.originalname || 'grievance-document',
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Primary doc scan fallback: ${msg}`);
+        const fb = this.grokScanner.heuristicExtraction(
+          '',
+          gFile.originalname || 'document',
+        );
+        gResult = {
+          extractedText: `[Primary: ${gFile.originalname}]\nScanned. Notice: ${msg}`,
+          structuredData: fb,
+          modelUsed: 'local-fallback',
+        };
+      }
+    }
+
+    if (sFile?.buffer) {
+      try {
+        sResult = await this.grokScanner.scanDocument({
+          buffer: sFile.buffer,
+          mimeType: sFile.mimetype || 'application/octet-stream',
+          filename: sFile.originalname || 'supporting-document',
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Supporting doc scan fallback: ${msg}`);
+        const fb = this.grokScanner.heuristicExtraction(
+          '',
+          sFile.originalname || 'document',
+        );
+        sResult = {
+          extractedText: `[Supporting: ${sFile.originalname}]\nScanned. Notice: ${msg}`,
+          structuredData: fb,
+          modelUsed: 'local-fallback',
+        };
+      }
+    }
+
+    const gd = gResult?.structuredData || {};
+    const sd = sResult?.structuredData || {};
+
+    const combinedData = {
+      applicantName: gd.applicantName || sd.applicantName || '',
+      contactNumber: gd.contactNumber || sd.contactNumber || '',
+      referenceNumber: gd.referenceNumber || sd.referenceNumber || '',
+      date: gd.date || sd.date || '',
+      category: gd.category || sd.category || '',
+      village: gd.village || sd.village || '',
+      mandal: gd.mandal || sd.mandal || '',
+      division: gd.division || sd.division || '',
+      assemblyConstituency:
+        gd.assemblyConstituency || sd.assemblyConstituency || '',
+      assignedOfficer: gd.assignedOfficer || sd.assignedOfficer || '',
+      actionRequested: gd.actionRequested || sd.actionRequested || '',
+      issueSummary: [
+        gd.issueSummary,
+        sd.issueSummary
+          ? `[Supporting Enclosure Notes]: ${sd.issueSummary}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    };
+
+    return {
+      structuredData: combinedData,
+      grievanceDoc: gFile
+        ? {
+            filename: gFile.originalname,
+            mimeType: gFile.mimetype,
+            sizeBytes: gFile.size || gFile.buffer?.length,
+            extractedText: gResult?.extractedText || '',
+            structuredData: gd,
+            modelUsed: gResult?.modelUsed || 'grok-ai',
+          }
+        : null,
+      supportingDoc: sFile
+        ? {
+            filename: sFile.originalname,
+            mimeType: sFile.mimetype,
+            sizeBytes: sFile.size || sFile.buffer?.length,
+            extractedText: sResult?.extractedText || '',
+            structuredData: sd,
+            modelUsed: sResult?.modelUsed || 'grok-ai',
+          }
+        : null,
+      modelUsed: gResult?.modelUsed || sResult?.modelUsed || 'grok-ai',
+    };
   }
 
 }
