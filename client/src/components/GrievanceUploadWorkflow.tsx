@@ -353,13 +353,15 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
         if (foundConst) detectedConstituency = foundConst;
       }
 
-      // Match categories
-      const matchedCategories = OFFICIAL_SLIP_CATEGORIES.filter((c) =>
-        d.category && (
-          d.category.toLowerCase().includes(c.toLowerCase()) ||
-          c.toLowerCase().includes(d.category.toLowerCase())
-        )
-      );
+      // Match categories (supports array from scan-batch and string from category field)
+      const extractedCategoryList = Array.isArray(d.categories) && d.categories.length > 0
+        ? d.categories
+        : OFFICIAL_SLIP_CATEGORIES.filter((c) =>
+            d.category && (
+              d.category.toLowerCase().includes(c.toLowerCase()) ||
+              c.toLowerCase().includes(d.category.toLowerCase())
+            )
+          );
 
       const visitDate = d.date || new Date().toISOString().split("T")[0];
       const targetDeadline = d.deadline || (() => {
@@ -383,7 +385,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
         mandal: detectedMandal || current.mandal,
         village: detectedVillage || current.village,
         assemblyConstituency: detectedConstituency || current.assemblyConstituency,
-        categories: matchedCategories.length ? matchedCategories : current.categories,
+        categories: extractedCategoryList.length ? extractedCategoryList : current.categories,
         others: d.others || current.others,
         issueDetail: d.issueSummary || current.issueDetail,
         actionTaken: d.actionTaken || current.actionTaken,
