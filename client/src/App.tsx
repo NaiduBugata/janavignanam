@@ -184,16 +184,21 @@ function App() {
   useEffect(() => {
     if (!session || !isListSection(section)) return;
     let cancelled = false;
-    api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
-      .then((rows) => {
-        if (!cancelled) setRecords(rows);
-      })
-      .catch((err: unknown) => {
-        if (cancelled || expireOn401(err)) return;
-        setNotice(err instanceof Error ? err.message : "Could not load records");
-      });
+    const load = () => {
+      api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
+        .then((rows) => {
+          if (!cancelled) setRecords(rows);
+        })
+        .catch((err: unknown) => {
+          if (cancelled || expireOn401(err)) return;
+          setNotice(err instanceof Error ? err.message : "Could not load records");
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 15000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [session, section]);
 
@@ -497,7 +502,7 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
               ) : null}
               {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
               {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
-              {item.progressRemarks ? <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">Remarks:</span> {item.progressRemarks}</p> : null}
+              {item.progressRemarks ? <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">Work update:</span> {item.progressRemarks}</p> : null}
               {item.status === "Reviewed" && item.followUpDepartment ? <p className="mt-1 text-sm text-muted-foreground">Follow up sent to {item.followUpDepartment}.</p> : null}
               {item.status === "Approved" && item.followUpDepartment ? <p className="mt-1 text-sm text-muted-foreground">The department, the leader, and the person who raised it were messaged.</p> : null}
 {section === "grievances" && !item.id.startsWith("demo-") && (

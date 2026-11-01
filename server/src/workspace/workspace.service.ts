@@ -745,7 +745,7 @@ export class WorkspaceService {
       department: row.department,
       place: row.place,
       leader: row.leader,
-      status: record.status,
+      status: shownWorkStatus(record),
       stages: row.stages,
       remarks: record.progressRemarks || record.remarks || '',
       updatedAt: record.progressUpdatedAt || row.updatedAt,
@@ -819,6 +819,8 @@ export class WorkspaceService {
         'Open',
         'Reviewed',
         'Approved',
+        'Started',
+        'Need time',
       ];
       if (!validStatuses.includes(options.status.trim())) {
         throw new BadRequestException(`Invalid status: ${options.status}`);
@@ -1588,7 +1590,7 @@ function reportOf(record: WorkspaceRecord): ReportRow {
   return {
     title: record.fullName || record.title,
     detail: issue,
-    status: record.status,
+    status: shownWorkStatus(record),
     department: record.followUpDepartment || desk.department,
     place:
       [record.village, record.mandal, record.assemblyConstituency]
@@ -1600,11 +1602,38 @@ function reportOf(record: WorkspaceRecord): ReportRow {
     officer: record.assignedOfficer,
     action: record.actionToBeTaken,
     deadline: record.deadline,
+    remarks: record.progressRemarks || record.remarks || '',
     stages: record.progressStages.length
       ? record.progressStages
       : defaultStages(),
     updatedAt: record.progressUpdatedAt,
   };
+}
+
+function shownWorkStatus(record: WorkspaceRecord): string {
+  const status = (record.status || '').trim();
+  const note = (record.progressRemarks || '').trim();
+  const chosen = [
+    'Pending',
+    'Started',
+    'In progress',
+    'Need time',
+    'Completed',
+    'Resolved',
+  ];
+  if (chosen.includes(status)) return status;
+  if (note === 'Work Started') return 'Started';
+  if (chosen.includes(note)) return note;
+  const active = (record.progressStages || []).some(
+    (stage) => stage.status === 'In progress' || stage.status === 'Completed',
+  );
+  if (
+    active &&
+    (status === 'Approved' || status === 'Reviewed' || status === 'Open')
+  ) {
+    return 'In progress';
+  }
+  return status || 'Open';
 }
 
 function fileName(title: string, extension: string): string {

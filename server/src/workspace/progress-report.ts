@@ -24,6 +24,7 @@ export interface ReportRow {
   officer?: string;
   action?: string;
   deadline?: string;
+  remarks?: string;
   stages: ProgressStage[];
   updatedAt: string;
 }
@@ -125,6 +126,7 @@ function paintReport(doc: ReportDocument, row: ReportRow): void {
   ];
   if (row.officer) fields.push(['Assigned officer', row.officer]);
   if (row.deadline) fields.push(['Deadline', formatWhen(row.deadline)]);
+  if (row.remarks) fields.push(['Work update', row.remarks]);
   doc.fields(fields);
   doc.progress(counts);
   doc.paragraph('Issue', row.detail || '—');
@@ -458,6 +460,7 @@ export async function recordsWorkbook(rows: ReportRow[]): Promise<Buffer> {
     { header: 'Location', key: 'place', width: 24 },
     { header: 'Leader', key: 'leader', width: 22 },
     { header: 'Status', key: 'status', width: 16 },
+    { header: 'Work update', key: 'remarks', width: 28 },
     { header: 'Completed', key: 'completed', width: 14 },
     { header: 'In progress', key: 'active', width: 14 },
     { header: 'Pending', key: 'pending', width: 12 },
@@ -474,6 +477,7 @@ export async function recordsWorkbook(rows: ReportRow[]): Promise<Buffer> {
       place: row.place,
       leader: row.leader,
       status: row.status,
+      remarks: row.remarks || '',
       completed: counts.completed,
       active: counts.active,
       pending: counts.pending,

@@ -223,7 +223,8 @@ export class DepartmentOperationsService {
       textMsg === 'start' ||
       textMsg === 'help' ||
       textMsg === 'operations' ||
-      textMsg === 'department'
+      textMsg === 'department' ||
+      Boolean(workChoice(textMsg))
     ) {
       return true;
     }
@@ -585,6 +586,7 @@ export class DepartmentOperationsService {
         : reply.slice('gpm:up_pick:'.length);
       session.action = 'update';
       session.recordId = id;
+      session.step = 'SELECT_GRIEVANCE_STATUS';
       await this.sendWorkStatusList(sender, id, fetchImpl, env, deps);
       return;
     }
@@ -865,6 +867,23 @@ export class DepartmentOperationsService {
           session.selectedStageIndex,
           session.selectedStatus,
           remarks,
+          fetchImpl,
+          env,
+          auth,
+        );
+        return;
+      }
+
+      const typedChoice = workChoice(textMsg);
+      if (
+        typedChoice &&
+        session.step === 'SELECT_GRIEVANCE_STATUS' &&
+        session.recordId
+      ) {
+        await this.applyWorkStatus(
+          sender,
+          session.recordId,
+          typedChoice,
           fetchImpl,
           env,
           auth,
@@ -1482,24 +1501,40 @@ export class DepartmentOperationsService {
       let deadline = '';
       let remarks = '';
       let notifyStatus = '';
+      let nextStatus = '';
       if (choice === 'pending') {
         work.status = 'Pending';
+        work.note = 'Pending';
         remarks = 'Pending';
         notifyStatus = 'Pending';
+        nextStatus = 'Pending';
       } else if (choice === 'started') {
         work.status = 'In progress';
+        work.note = 'Started';
         remarks = 'Started';
+        nextStatus = 'Started';
       } else if (choice === 'progress') {
-        if (work.status === 'Pending') work.status = 'In progress';
+        if (work.status === 'Pending') {
+          work.status = 'In progress';
+          work.note = 'Started';
+        }
         active.status = 'In progress';
+        active.note = 'In progress';
         remarks = 'In progress';
         notifyStatus = 'In progress';
+        nextStatus = 'In progress';
       } else {
         deadline = extendDeadline(record.deadline);
         remarks = 'Deadline extended by 15 days';
         notifyStatus = 'Need time';
+        nextStatus = 'Need time';
       }
-      if (choice !== 'needtime' && JSON.stringify(stages) === before) {
+      const unchanged =
+        choice !== 'needtime' &&
+        JSON.stringify(stages) === before &&
+        record.status === nextStatus &&
+        (record.progressRemarks || '') === remarks;
+      if (unchanged) {
         await this.sendWorkLoop(
           sender,
           id,
@@ -1509,21 +1544,13 @@ export class DepartmentOperationsService {
         );
         return;
       }
-      const dept =
-        record.followUpDepartment ||
-        record.department ||
-        auth.department ||
-        'Department';
-      const updated = await this.workspace.saveProgress(
-        record.progressToken || record.id,
-        {
-          stages,
-          remarks,
-          department: dept,
-          ...(deadline ? { deadline } : {}),
-          ...(notifyStatus ? { notifyStatus } : {}),
-        },
-      );
+      const updated = await this.workspace.saveProgress(record.id, {
+        stages,
+        remarks,
+        status: nextStatus,
+        ...(deadline ? { deadline } : {}),
+        ...(notifyStatus ? { notifyStatus } : {}),
+      });
       const label =
         choice === 'pending'
           ? 'Pending'
@@ -2887,6 +2914,15 @@ export class DepartmentOperationsService {
     const btn = rawResp.button_reply as { id?: string } | undefined;
     return String(list?.id || btn?.id || '').trim();
   }
+}
+
+function workChoice(value: string): string {
+  const text = value.trim().toLowerCase();
+  if (text === 'pending') return 'pending';
+  if (text === 'started') return 'started';
+  if (text === 'in progress' || text === 'progress') return 'progress';
+  if (text === 'need time' || text === 'needtime') return 'needtime';
+  return '';
 }
 
 function extendDeadline(current: string | undefined): string {

@@ -70,6 +70,7 @@ type RecordItem = {
   visitTime?: string;
   leadPhone?: string;
   progressStages?: { name: string; status: string; note: string }[];
+  progressRemarks?: string;
   scannedDocuments?: ScannedDocument[];
 };
 
@@ -145,23 +146,30 @@ function UploadDesk({
 
   useEffect(() => {
     let cancelled = false;
-    setRecords([]);
-    setLoading(true);
-    api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
-      .then((rows) => {
-        if (!cancelled) {
-          setRecords(rows);
-          setError("");
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load records");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const load = (first: boolean) => {
+      if (first) {
+        setRecords([]);
+        setLoading(true);
+      }
+      api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
+        .then((rows) => {
+          if (!cancelled) {
+            setRecords(rows);
+            setError("");
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : "Could not load records");
+        })
+        .finally(() => {
+          if (!cancelled && first) setLoading(false);
+        });
+    };
+    load(true);
+    const timer = window.setInterval(() => load(false), 15000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [section, session.token]);
 
@@ -443,6 +451,7 @@ function UploadDesk({
                       ) : null}
                       {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
                       {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
+                      {item.progressRemarks ? <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">Work update:</span> {item.progressRemarks}</p> : null}
                       {section === "grievances" && !isSample(item) && (
                         <GrievanceDocumentSection
                           record={item}

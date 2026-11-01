@@ -280,11 +280,12 @@ describe('DepartmentOperationsService', () => {
       });
       await service.handleEvent(choose, deptPhone, mockFetch, env);
       expect(mockWorkspace.saveProgress).toHaveBeenCalledWith(
-        'token_gr101abc',
+        'gr_101',
         expect.objectContaining({
           remarks: 'Deadline extended by 15 days',
           deadline: '2026-11-20',
           notifyStatus: 'Need time',
+          status: 'Need time',
         }),
       );
       const next = sentBodies[1].interactive.action.sections[0].rows;
@@ -292,6 +293,29 @@ describe('DepartmentOperationsService', () => {
         'Update work',
         'View details',
       ]);
+    });
+
+    it('saves In progress onto the website record', async () => {
+      const choose = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:work:gr_101:progress',
+      });
+      await service.handleEvent(choose, deptPhone, mockFetch, env);
+      expect(mockWorkspace.saveProgress).toHaveBeenCalledWith(
+        'gr_101',
+        expect.objectContaining({
+          status: 'In progress',
+          remarks: 'In progress',
+          notifyStatus: 'In progress',
+        }),
+      );
+      const stages = mockWorkspace.saveProgress.mock.calls[0][1].stages;
+      expect(stages[2]).toEqual(
+        expect.objectContaining({
+          name: 'Work in progress',
+          status: 'In progress',
+        }),
+      );
     });
 
     it('still recognizes a department button so an unknown sender can be refused', () => {

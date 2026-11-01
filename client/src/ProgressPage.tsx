@@ -24,7 +24,7 @@ type Progress = {
 };
 
 const STAGE_STATUSES: StageStatus[] = ["Pending", "In progress", "Completed"];
-const RECORD_STATUSES = ["Pending", "In progress", "Completed", "Resolved"];
+const RECORD_STATUSES = ["Pending", "Started", "In progress", "Need time", "Completed", "Resolved"];
 
 export default function ProgressPage() {
   const { token = "" } = useParams();

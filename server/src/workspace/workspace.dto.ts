@@ -309,6 +309,8 @@ export const PROGRESS_STATUSES = [
   'Open',
   'Reviewed',
   'Approved',
+  'Started',
+  'Need time',
 ] as const;
 
 export class ProgressStageDto {
