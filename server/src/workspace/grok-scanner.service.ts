@@ -230,9 +230,102 @@ export class GrokScannerService {
     ).trim();
   }
 
+  getGroqVisionModel(): string {
+    return (
+      this.config.get<string>('GROQ_VISION_MODEL') ||
+      process.env.GROQ_VISION_MODEL ||
+      'qwen/qwen3.8-27b'
+    ).trim();
+  }
+
   /**
-   * Scans a document (PDF, JPG, JPEG, PNG).
-   * Uses xAI Grok Vision/Chat API when available; falls back to local intelligent
+   * Extract all visible text from an image dataUrl using Groq Vision (qwen/qwen3.8-27b),
+   * rotating across keys in the pool if needed.
+   */
+  async extractTextWithGroqVision(dataUrl: string): Promise<string | null> {
+    const pool = this.getGroqPool();
+    if (!pool) return null;
+    const { rotator, keys } = pool;
+
+    const maxRetries = Math.min(keys.length * 2, 6);
+    const model = this.getGroqVisionModel();
+    const instruction =
+      'Extract all visible text exactly as written. Preserve line breaks, spelling, punctuation, and the original script. Return only the extracted text. If a word cannot be read, write [illegible].';
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const index = rotator.acquire();
+      if (index == null) {
+        this.logger.warn('All Groq keys currently cooling down. Retrying Groq Vision in 1s...');
+        await new Promise((r) => setTimeout(r, 1000));
+        continue;
+      }
+      const key = keys[index - 1];
+
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0,
+            max_tokens: 2048,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: instruction },
+                  { type: 'image_url', image_url: { url: dataUrl } },
+                ],
+              },
+            ],
+          }),
+          signal: AbortSignal.timeout(45000),
+        });
+
+        if (!response.ok) {
+          const status = response.status;
+          this.logger.warn(`Groq Vision key #${index} returned HTTP ${status}. Rotating to next key.`);
+          if (status === 429 || status >= 500) {
+            rotator.coolDown(index);
+          }
+          continue;
+        }
+
+        const data = (await response.json()) as {
+          choices?: Array<{ message?: { content?: unknown } }>;
+        };
+        const content = data.choices?.[0]?.message?.content;
+        let text = '';
+        if (typeof content === 'string') {
+          text = content.trim();
+        } else if (Array.isArray(content)) {
+          text = content
+            .map((part) => (typeof part === 'string' ? part : (part as any)?.text || ''))
+            .join('')
+            .trim();
+        }
+
+        if (text) {
+          this.logger.log(`Groq Vision (${model}) successfully extracted ${text.length} chars using key #${index}.`);
+          return text;
+        }
+        rotator.coolDown(index);
+      } catch (err: unknown) {
+        rotator.coolDown(index);
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Groq Vision key #${index} call failed: ${msg}. Rotating to next key.`);
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Scans a document (PDF, JPG, JPEG, PNG, WEBP, GIF).
+   * Uses Groq Vision (qwen/qwen3.8-27b) as the primary extractor; falls back to local intelligent
    * extraction so the workflow never crashes or throws 500 errors.
    */
   async scanDocument(input: {
@@ -246,11 +339,11 @@ export class GrokScannerService {
       input.filename.toLowerCase().endsWith('.pdf');
     const isImage =
       normalizedMime.startsWith('image/') ||
-      /\.(jpe?g|png)$/i.test(input.filename);
+      /\.(jpe?g|png|webp|gif)$/i.test(input.filename);
 
     if (!isPdf && !isImage) {
       throw new Error(
-        `Unsupported document format "${input.mimeType}". Please upload a PDF, JPG, JPEG, or PNG file.`,
+        `Unsupported document format "${input.mimeType}". Please upload a PDF, JPG, JPEG, PNG, WebP, or GIF file.`,
       );
     }
 
@@ -384,7 +477,7 @@ export class GrokScannerService {
       const tesseract = await import('tesseract.js');
       const worker = await tesseract.createWorker('eng');
       try {
-        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+        await worker.setParameters({ tessedit_pageseg_mode: '6' as any });
       } catch {
         // The installed reader still recognizes the page with its default layout.
       }
@@ -418,13 +511,15 @@ export class GrokScannerService {
     const groqModel = this.getGroqModel();
 
     const prompt =
-      'You are an AI document extractor for an official constituency visitor grievance slip.\n' +
-      'Map each printed label to the JSON field. Copy the handwritten value. Do not substitute a different person, address, or sample record.\n' +
-      'Dates on the slip are DD-MM-YYYY. A slash standing in for the digit 1 means 31-10-2026, not 03-10-2026.\n' +
-      'Keep name initials, for example K. Ramesh Naidu.\n' +
+      'You are an AI document extractor for an official constituency visitor grievance slip and public administration reports.\n' +
+      'Map each printed label to the JSON field. Copy the handwritten or printed value. Do not substitute a different person, address, or sample record.\n' +
+      'Dates on the slip are DD-MM-YYYY. Always convert to YYYY-MM-DD. For example 31-10-2026 becomes 2026-10-31, 15-11-2026 becomes 2026-11-15.\n' +
+      'Keep name initials, for example B. Praveen Kumar or K. Ramesh Naidu.\n' +
       'The address is only the ADDRESS line. Village, mandal, and constituency stay in their own fields.\n' +
-      'Categories are only the ticked boxes. Ignore unticked printed labels. A road name in the address is not Roads & Infrastructure. Street lights or power cuts are Electricity. Land records, a passbook, or a survey number are Revenue & Land Issues.\n' +
+      'Category checkboxes: [x], [X], [✓], [✔], or marked box means ticked/checked. [ ] means unchecked. Include all ticked categories in the "categories" array. If no category is ticked, identify from the representation text.\n' +
+      'Others field: Copy any text written after "Others:" into the "others" field (e.g. "Internal Road Repair").\n' +
       'Copy the full representation, action taken, and action to be taken sentences. Do not shorten them.\n' +
+      'Assigned officer & phone: If a 10-digit phone number is written next to the assigned officer (e.g. 88852 30708), place the phone number into "assignedOfficerPhone" and keep only the officer designation/department (e.g. "AE, R&B (Narasaraopet)") in "assignedOfficer". Do NOT append the phone number to "actionRequested".\n' +
       'Resolution status is the ticked one: Pending, In progress, or Resolved.\n' +
       'Return a valid JSON object matching this schema:\n' +
       '{\n' +
@@ -583,11 +678,47 @@ export class GrokScannerService {
     mimeType: string,
     filename: string,
   ): Promise<GrokScanResult> {
-    const validMime = mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+    let validMime = 'image/jpeg';
+    if (mimeType === 'image/png' || /\.png$/i.test(filename)) validMime = 'image/png';
+    else if (mimeType === 'image/webp' || /\.webp$/i.test(filename)) validMime = 'image/webp';
+    else if (mimeType === 'image/gif' || /\.gif$/i.test(filename)) validMime = 'image/gif';
+
     const base64Data = buffer.toString('base64');
     const dataUrl = `data:${validMime};base64,${base64Data}`;
 
-    // 1. Try xAI Grok Vision API if configured
+    // 1. Primary: Groq Vision (qwen/qwen3.8-27b) using the rotating Groq API key pool
+    try {
+      this.logger.log(
+        `Invoking Groq Vision (${this.getGroqVisionModel()}) for "${filename}"...`,
+      );
+      const groqVisionText = await this.extractTextWithGroqVision(dataUrl);
+      if (groqVisionText && groqVisionText.trim().length > 20) {
+        this.logger.log(
+          `Groq Vision extracted ${groqVisionText.trim().length} chars from "${filename}". Digitizing structured fields...`,
+        );
+
+        // Parse extracted visible text into structured JSON fields via Groq
+        const groqParsed = await this.parseOcrWithGroq(groqVisionText);
+        const structuredData = this.normalizeGrievanceData(
+          groqParsed || this.heuristicExtraction(groqVisionText, filename),
+          groqVisionText,
+          filename,
+        );
+
+        return {
+          extractedText: groqVisionText.trim(),
+          structuredData,
+          modelUsed: `groq-vision (${this.getGroqVisionModel()})`,
+          scannedAt: new Date().toISOString(),
+        };
+      }
+    } catch (visionErr: unknown) {
+      this.logger.warn(
+        `Groq Vision failed: ${visionErr instanceof Error ? visionErr.message : String(visionErr)}. Falling back to secondary extractors.`,
+      );
+    }
+
+    // 2. Secondary: Try xAI Grok Vision API if configured
     if (this.apiKey) {
       try {
         const prompt = this.buildExtractionPrompt();
@@ -781,7 +912,20 @@ export class GrokScannerService {
       }
     }
 
-    // 4. Call Grok Chat Completion if key configured
+    // 4. Try Groq AI parsing on extracted digital text
+    if (digitalText && digitalText.trim().length > 20) {
+      const groqParsed = await this.parseOcrWithGroq(digitalText);
+      if (groqParsed) {
+        return {
+          extractedText: digitalText.trim(),
+          structuredData: this.normalizeGrievanceData(groqParsed, digitalText, filename),
+          modelUsed: `groq-ai (${this.getGroqModel()})`,
+          scannedAt: new Date().toISOString(),
+        };
+      }
+    }
+
+    // 5. Call Grok Chat Completion if key configured
     if (this.apiKey) {
       try {
         const prompt = `${this.buildExtractionPrompt()}\n\n---\nDOCUMENT RAW CONTENT FROM "${filename}":\n${digitalText || '(No digital text found; scanned petition)'}`;
@@ -1445,11 +1589,16 @@ export function tickedCategories(text: string): string[] {
   for (const name of ISSUE_CATEGORIES) {
     if (name === 'Others') continue;
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const bracketRegex = new RegExp(`\\[\\s*([xX✓✔*v])\\s*\\]\\s*${escaped}`, 'i');
+    if (bracketRegex.test(text)) {
+      found.push(name);
+      continue;
+    }
     const match = new RegExp(`([^\\n]{0,14})${escaped}`, 'i').exec(text);
     if (!match) continue;
     const tail = match[1].slice(-8);
-    const emptyBox = /\(\s*[0oO©.]?\s*\)|©|\bCO\b/.test(tail);
-    const marked = /[wW✓✔☑&]/.test(tail);
+    const emptyBox = /\(\s*[0oO©.]?\s*\)|\[\s*\]|©|\bCO\b/.test(tail);
+    const marked = /[xXwW✓✔☑&*v]/.test(tail);
     if (marked && !emptyBox) found.push(name);
   }
   return matchIssueCategories(found);
@@ -1532,22 +1681,26 @@ function alignSlipFields(clean: GrievanceExtractedData, text: string): void {
   }
 
   if (
-    /j\s*in\s*progress|[wW✓✔☑%][^\n]{0,12}in\s*progress|\(\s*[yYxX✓✔][^\n]{0,6}in\s*progress/i.test(
+    /\[\s*[xX✓✔*v]\s*\]\s*in\s*progress|j\s*in\s*progress|[wW✓✔☑%][^\n]{0,12}in\s*progress|\(\s*[yYxX✓✔][^\n]{0,6}in\s*progress/i.test(
       text,
     )
   ) {
     clean.resolutionStatus = 'In progress';
+  } else if (/\[\s*[xX✓✔*v]\s*\]\s*pending/i.test(text)) {
+    clean.resolutionStatus = 'Pending';
+  } else if (/\[\s*[xX✓✔*v]\s*\]\s*resolved/i.test(text)) {
+    clean.resolutionStatus = 'Resolved';
   }
 
   const ticked = tickedCategories(text);
   const fromRequest = categoriesFromRequest(
     `${clean.issueSummary || ''}\n${clean.actionTaken || ''}\n${clean.actionRequested || ''}\n${clean.others || ''}`,
   );
-  const chosen = fromRequest.length
-    ? fromRequest
-    : ticked.length
-      ? ticked
-      : clean.categories || [];
+  const chosen = ticked.length
+    ? ticked
+    : clean.categories && clean.categories.length
+      ? clean.categories
+      : fromRequest;
   if (chosen.length) {
     clean.categories = chosen;
     clean.category = chosen.join(', ');

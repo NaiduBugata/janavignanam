@@ -48,6 +48,7 @@ client/dist/
 dist/
 .vite/
 *.local
+*.traineddata
 
 # ---- Editor / OS ----
 .DS_Store
