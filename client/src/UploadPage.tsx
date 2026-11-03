@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Building2,
   CalendarClock,
@@ -138,22 +138,32 @@ function UploadDesk({
   const located = section === "grievances" || section === "projects";
   const shown = located ? records.filter((item) => matchesPlace(item, place)) : records;
 
+  const recordsCacheRef = useRef<Record<string, RecordItem[]>>({});
+
   const updateRecordItem = (id: string, updated: Partial<RecordItem>) => {
-    setRecords((currentRows) =>
-      currentRows.map((item) => (item.id === id ? { ...item, ...updated } : item))
-    );
+    setRecords((currentRows) => {
+      const next = currentRows.map((item) => (item.id === id ? { ...item, ...updated } : item));
+      recordsCacheRef.current[section] = next;
+      return next;
+    });
   };
 
   useEffect(() => {
     let cancelled = false;
-    const load = (first: boolean) => {
-      if (first) {
-        setRecords([]);
-        setLoading(true);
-      }
+    const cached = recordsCacheRef.current[section];
+    if (cached) {
+      setRecords(cached);
+      setLoading(false);
+    } else {
+      setRecords([]);
+      setLoading(true);
+    }
+
+    const load = (isFirst: boolean) => {
       api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
         .then((rows) => {
           if (!cancelled) {
+            recordsCacheRef.current[section] = rows;
             setRecords(rows);
             setError("");
           }
@@ -162,10 +172,10 @@ function UploadDesk({
           if (!cancelled) setError(err instanceof Error ? err.message : "Could not load records");
         })
         .finally(() => {
-          if (!cancelled && first) setLoading(false);
+          if (!cancelled && isFirst) setLoading(false);
         });
     };
-    load(true);
+    load(!cached);
     const timer = window.setInterval(() => load(false), 15000);
     return () => {
       cancelled = true;
@@ -221,7 +231,11 @@ function UploadDesk({
         token: session.token,
         body: payload,
       });
-      setRecords((currentRows) => currentRows.map((item) => (item.id === row.id ? row : item)));
+      setRecords((currentRows) => {
+        const next = currentRows.map((item) => (item.id === row.id ? row : item));
+        recordsCacheRef.current[section] = next;
+        return next;
+      });
       const name = row.fullName || row.title || "Record";
       setEditing(null);
       setNotice(`Updated "${name}" successfully.`);
@@ -232,7 +246,11 @@ function UploadDesk({
       token: session.token,
       body: payload,
     });
-    setRecords((currentRows) => [row, ...currentRows]);
+    setRecords((currentRows) => {
+      const next = [row, ...currentRows];
+      recordsCacheRef.current[section] = next;
+      return next;
+    });
     setAdding(false);
     setNotice(`Saved to ${current.label}.`);
   };
@@ -240,7 +258,11 @@ function UploadDesk({
   const remove = async (id: string) => {
     try {
       await api(`/api/workspace/records/${id}`, { method: "DELETE", token: session.token });
-      setRecords((currentRows) => currentRows.filter((item) => item.id !== id));
+      setRecords((currentRows) => {
+        const next = currentRows.filter((item) => item.id !== id);
+        recordsCacheRef.current[section] = next;
+        return next;
+      });
       setPendingDelete(null);
       setNotice("Record deleted.");
     } catch (err) {

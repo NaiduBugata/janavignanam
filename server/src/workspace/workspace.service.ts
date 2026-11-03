@@ -977,24 +977,73 @@ export class WorkspaceService {
     mongo: boolean;
   }> {
     await this.ready();
-    const counts = {} as Record<WorkspaceSection, number>;
-    for (const section of WORKSPACE_SECTIONS) {
-      counts[section] = await this.db
-        .collection(RECORDS)
-        .countDocuments({ section });
-    }
-    const open = await this.db
-      .collection(RECORDS)
-      .countDocuments({ status: { $in: ['Open', 'Pending', 'In progress'] } });
-    let news = 0;
+
     try {
-      news = await this.db
-        .collection(this.db.articlesCollectionName)
-        .countDocuments({});
+      const rows = await this.db.query<{
+        section_counts: Record<string, number> | null;
+        open_count: number | string;
+        news_count: number | string;
+      }>(
+        `
+        SELECT
+          (SELECT json_object_agg(COALESCE(section, 'unknown'), cnt) FROM (
+            SELECT doc->>'section' AS section, count(*)::int AS cnt
+            FROM mediasphere.documents
+            WHERE collection = $1
+            GROUP BY doc->>'section'
+          ) s) AS section_counts,
+          (SELECT count(*)::int FROM mediasphere.documents 
+           WHERE collection = $1 
+           AND doc->>'status' IN ('Open', 'Pending', 'In progress')
+          ) AS open_count,
+          (SELECT count(*)::int FROM mediasphere.documents 
+           WHERE collection = $2
+          ) AS news_count
+        `,
+        [RECORDS, this.db.articlesCollectionName],
+      );
+
+      const row = rows[0];
+      const counts = {} as Record<WorkspaceSection, number>;
+      for (const s of WORKSPACE_SECTIONS) {
+        counts[s] = Number(row?.section_counts?.[s] || 0);
+      }
+      return {
+        counts,
+        open: Number(row?.open_count || 0),
+        news: Number(row?.news_count || 0),
+        mongo: true,
+      };
     } catch {
-      news = 0;
+      const sectionCountPromises = WORKSPACE_SECTIONS.map(async (section) => {
+        const count = await this.db
+          .collection(RECORDS)
+          .countDocuments({ section });
+        return [section, count] as const;
+      });
+
+      const openCountPromise = this.db
+        .collection(RECORDS)
+        .countDocuments({ status: { $in: ['Open', 'Pending', 'In progress'] } });
+
+      const newsCountPromise = this.db
+        .collection(this.db.articlesCollectionName)
+        .countDocuments({})
+        .catch(() => 0);
+
+      const [sectionEntries, open, news] = await Promise.all([
+        Promise.all(sectionCountPromises),
+        openCountPromise,
+        newsCountPromise,
+      ]);
+
+      const counts = Object.fromEntries(sectionEntries) as Record<
+        WorkspaceSection,
+        number
+      >;
+
+      return { counts, open, news, mongo: true };
     }
-    return { counts, open, news, mongo: true };
   }
 
   private async ready(): Promise<void> {

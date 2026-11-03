@@ -4,16 +4,20 @@ import { sortByDateDesc } from '../utils/format';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
+let cachedNewsArticles = null;
+let cachedDataRevision = null;
+
 export function useNews() {
-  const [articles, setArticles] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [articles, setArticles] = useState(() => cachedNewsArticles || []);
+  const [loading, setLoading] = useState(() => !cachedNewsArticles);
   const [error, setError] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [dataRevision, setDataRevision] = useState(null);
-  const dataRevisionRef = useRef(null);
+  const [lastUpdated, setLastUpdated] = useState(() => cachedNewsArticles ? new Date() : null);
+  const [dataRevision, setDataRevision] = useState(() => cachedDataRevision);
+  const dataRevisionRef = useRef(cachedDataRevision);
 
   const fetchNews = useCallback(async (options = {}) => {
-    const { silent = false } = options;
+    const isCached = cachedNewsArticles !== null;
+    const { silent = isCached } = options;
     if (!silent) {
       setLoading(true);
     }
@@ -24,7 +28,10 @@ export function useNews() {
       const revisionChanged =
         nextRevision != null && nextRevision !== dataRevisionRef.current;
 
-      setArticles(sortByDateDesc(data.articles || []));
+      const sorted = sortByDateDesc(data.articles || []);
+      cachedNewsArticles = sorted;
+      cachedDataRevision = nextRevision;
+      setArticles(sorted);
       setLastUpdated(new Date());
       if (nextRevision != null) {
         dataRevisionRef.current = nextRevision;

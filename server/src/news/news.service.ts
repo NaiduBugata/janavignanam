@@ -348,7 +348,10 @@ export class NewsService implements OnModuleInit {
   async listNews(
     sourceOrFilters: string | ReportFilterOptions = 'all',
   ): Promise<NewsListResponse> {
-    const docs = await this.constituencyDocs();
+    const [docs, data_revision] = await Promise.all([
+      this.constituencyDocs(),
+      this.pipelineState.getDataRevision().catch(() => null),
+    ]);
     let articles = this.sortNewestFirst(
       docs.map((d) => this.normalizeArticle(d)),
     );
@@ -357,13 +360,6 @@ export class NewsService implements OnModuleInit {
       articles = this.filterArticles(articles, { source: sourceOrFilters });
     } else if (sourceOrFilters && typeof sourceOrFilters === 'object') {
       articles = this.filterArticles(articles, sourceOrFilters);
-    }
-
-    let data_revision: string | null = null;
-    try {
-      data_revision = await this.pipelineState.getDataRevision();
-    } catch {
-      data_revision = null;
     }
 
     return { articles, count: articles.length, data_revision };
@@ -461,18 +457,15 @@ export class NewsService implements OnModuleInit {
   async getStats(
     filters: ReportFilterOptions = {},
   ): Promise<NewsStatsResponse & { by_segment: Record<string, number> }> {
-    const docs = await this.constituencyDocs();
+    const [docs, data_revision] = await Promise.all([
+      this.constituencyDocs(),
+      this.pipelineState.getDataRevision().catch(() => null),
+    ]);
     let articles = docs.map((d) => this.normalizeArticle(d));
     if (Object.keys(filters).length) {
       articles = this.filterArticles(articles, filters);
     }
     const stats = this.computeStats(articles);
-    let data_revision: string | null = null;
-    try {
-      data_revision = await this.pipelineState.getDataRevision();
-    } catch {
-      data_revision = null;
-    }
     return {
       ...stats,
       generated_at: new Date().toISOString(),

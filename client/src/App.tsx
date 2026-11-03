@@ -1,5 +1,5 @@
 import { GrievanceDocumentSection, type ScannedDocument } from "@/components/GrievanceDocumentSection.tsx";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   BarChart3,
@@ -181,13 +181,23 @@ function App() {
     };
   }, [session, records.length]);
 
+  const sectionCacheRef = useRef<Record<string, RecordItem[]>>({});
+
   useEffect(() => {
     if (!session || !isListSection(section)) return;
     let cancelled = false;
+    const cached = sectionCacheRef.current[section];
+    if (cached) {
+      setRecords(cached);
+    }
+
     const load = () => {
       api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
         .then((rows) => {
-          if (!cancelled) setRecords(rows);
+          if (!cancelled) {
+            sectionCacheRef.current[section] = rows;
+            setRecords(rows);
+          }
         })
         .catch((err: unknown) => {
           if (cancelled || expireOn401(err)) return;
@@ -214,24 +224,36 @@ function App() {
       method: "POST",
       token: session.token,
     });
-    setRecords((current) => current.map((item) => (item.id === id ? { ...item, ...result.record } : item)));
+    setRecords((current) => {
+      const next = current.map((item) => (item.id === id ? { ...item, ...result.record } : item));
+      if (isListSection(section)) sectionCacheRef.current[section] = next;
+      return next;
+    });
     return result.notice;
   };
 
   const updateRecordItem = (id: string, updated: Partial<RecordItem>) => {
-    setRecords((current) =>
-      current.map((item) => (item.id === id ? { ...item, ...updated } : item))
-    );
+    setRecords((current) => {
+      const next = current.map((item) => (item.id === id ? { ...item, ...updated } : item));
+      if (isListSection(section)) sectionCacheRef.current[section] = next;
+      return next;
+    });
   };
 
-    const addRecord = async (target: CaseSection, body: Record<string, string | string[]>) => {
+  const addRecord = async (target: CaseSection, body: Record<string, string | string[]>) => {
     try {
       const row = await api<RecordItem>("/api/workspace/records", {
         method: "POST",
         token: session.token,
         body: { section: target, ...body },
       });
-      if (section === target) setRecords((current) => [row, ...current]);
+      if (section === target) {
+        setRecords((current) => {
+          const next = [row, ...current];
+          sectionCacheRef.current[target] = next;
+          return next;
+        });
+      }
     } catch (err) {
       if (!expireOn401(err)) throw err;
     }
