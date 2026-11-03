@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import {
   Send,
-  Search,
   BookOpen,
   ChevronDown,
   ChevronUp,
@@ -10,10 +9,8 @@ import {
   Check,
   RefreshCw,
   ExternalLink,
-  HelpCircle,
   FileText,
   ShieldCheck,
-  Hash,
 } from "lucide-react";
 
 interface SourceReference {
@@ -32,25 +29,6 @@ interface QueryResponse {
   has_context: boolean;
   engine?: string;
 }
-
-const QUICK_TOPICS = [
-  { label: "SP", query: "SP", desc: "Superintendent of Police briefing" },
-  { label: "CMRF", query: "CMRF", desc: "Medical assistance & relief" },
-  { label: "Water", query: "water", desc: "Drinking water & pipelines" },
-  { label: "Roads", query: "roads", desc: "Infrastructure & R&B works" },
-  { label: "Theft", query: "theft", desc: "Police crime & recoveries" },
-  { label: "Yashoda", query: "Yashoda", desc: "Cancer camp & health" },
-  { label: "Chirala", query: "Chirala", desc: "RTC bus routes & roads" },
-  { label: "Macherla", query: "Macherla", desc: "Constituency updates" },
-  { label: "Sanitation", query: "sanitation", desc: "Drainage & civic issues" },
-];
-
-const SAMPLE_QUESTIONS = [
-  "What are the major drinking water problems in Narasaraopet?",
-  "Summarize key infrastructure and road works in Palnadu",
-  "What are the top public grievances and pending actions?",
-  "Recent constituency news and public sentiment summary",
-];
 
 export function MpRetrievalWindow() {
   const [question, setQuestion] = useState("");
@@ -141,50 +119,6 @@ export function MpRetrievalWindow() {
 
       {!isCollapsed && (
         <div className="mt-4 space-y-4">
-          {/* Quick Small-Word Topic Chips */}
-          <div>
-            <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Hash className="size-3.5 text-primary" />
-              Instant Topic & Keyword Search:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {QUICK_TOPICS.map((topic) => (
-                <button
-                  key={topic.label}
-                  type="button"
-                  title={topic.desc}
-                  onClick={() => handleAsk(topic.query)}
-                  disabled={loading}
-                  className="inline-flex items-center gap-1 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-medium text-foreground hover:border-primary/50 hover:bg-primary/10 transition disabled:opacity-50"
-                >
-                  <Search className="size-3 text-primary" />
-                  <span>{topic.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Suggested Longer Questions */}
-          <div>
-            <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <HelpCircle className="size-3.5 text-primary" />
-              Suggested MP Queries:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {SAMPLE_QUESTIONS.map((sample) => (
-                <button
-                  key={sample}
-                  type="button"
-                  onClick={() => handleAsk(sample)}
-                  disabled={loading}
-                  className="rounded-lg border border-border/60 bg-background/70 px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/40 hover:bg-primary/5 hover:text-foreground transition disabled:opacity-50 text-left"
-                >
-                  "{sample}"
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Question Input Box */}
           <form
             onSubmit={(e) => {
@@ -211,9 +145,6 @@ export function MpRetrievalWindow() {
                     : "Grounded with multi-field search & source verification"}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="hidden sm:inline text-[10px] text-muted-foreground/60">
-                    <kbd className="rounded border border-border/60 bg-muted/50 px-1 py-0.5 font-mono text-[9px]">Enter ↵</kbd> to ask, <kbd className="rounded border border-border/60 bg-muted/50 px-1 py-0.5 font-mono text-[9px]">Shift+Enter</kbd> for new line
-                  </span>
                   {question && (
                     <button
                       type="button"

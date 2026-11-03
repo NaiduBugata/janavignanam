@@ -409,11 +409,6 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
 
         {/* MP Retrieval Engine & Intelligence Desk */}
         <MpRetrievalWindow />
-
-        <div className="mt-8 rounded-xl border bg-card p-6">
-          <h2 className="font-display text-lg font-semibold">Open a workflow</h2>
-          <div className="mt-5 grid gap-2 sm:grid-cols-2">{nav.slice(1, 6).map((item) => <button key={item.id} onClick={() => navigate(item.path)} className="flex items-center justify-between rounded-lg border p-3 text-left text-sm hover:bg-muted"><span className="flex items-center gap-2"><item.icon className="size-4 text-primary" />{item.label}</span><ChevronRight className="size-4 text-muted-foreground" /></button>)}</div>
-        </div>
       </>
     );
   }
