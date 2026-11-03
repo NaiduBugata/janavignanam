@@ -173,6 +173,15 @@ function UploadDesk({
     };
   }, [section, session.token]);
 
+  useEffect(() => {
+    if (editing?.id) {
+      const el = document.getElementById(`record-edit-${editing.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }
+  }, [editing?.id]);
+
   const approve = async (id: string) => {
     setApproving(id);
     setNotice("");
@@ -213,8 +222,9 @@ function UploadDesk({
         body: payload,
       });
       setRecords((currentRows) => currentRows.map((item) => (item.id === row.id ? row : item)));
+      const name = row.fullName || row.title || "Record";
       setEditing(null);
-      setNotice("Changes saved.");
+      setNotice(`Updated "${name}" successfully.`);
       return;
     }
     const row = await api<RecordItem>("/api/workspace/records", {
@@ -327,7 +337,7 @@ function UploadDesk({
                     setEditing(null);
                   }}
                   className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
-                    grievanceTab === "upload" && !editing
+                    grievanceTab === "upload"
                       ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
@@ -342,7 +352,7 @@ function UploadDesk({
                     setAdding(false);
                   }}
                   className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
-                    grievanceTab === "list" && !editing
+                    grievanceTab === "list"
                       ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
@@ -354,7 +364,7 @@ function UploadDesk({
             </div>
           )}
 
-          {section === "grievances" && grievanceTab === "upload" && !editing && (
+          {section === "grievances" && grievanceTab === "upload" && (
             <div className="mb-8">
               <GrievanceUploadWorkflow
                 token={session.token}
@@ -369,57 +379,23 @@ function UploadDesk({
             </div>
           )}
 
-          {(section !== "grievances" || grievanceTab === "list" || editing) && (
+          {(section !== "grievances" || grievanceTab === "list") && (
             <>
-              {adding && isSimple(section) && <SimpleRecordForm key={`add-${section}`} section={section} onSubmit={save} />}
-              {adding && !isSimple(section) && <CaseRecordForm key={`add-${section}`} section={section} token={session.token} onSubmit={save} />}
-              {editing && isSimple(section) && (
+              {adding && isSimple(section) && (
                 <SimpleRecordForm
-                  key={editing.id}
+                  key={`add-${section}`}
                   section={section}
-                  submitLabel="Save changes"
-                  initial={{
-                    title: editing.title,
-                    detail: editing.detail,
-                    status: editing.status || "Open",
-                    place: editing.place || "",
-                    visitDate: editing.visitDate || "",
-                    visitTime: editing.visitTime || "",
-                    leadPhone: editing.leadPhone || "",
-                  }}
                   onSubmit={save}
+                  onCancel={() => setAdding(false)}
                 />
               )}
-              {editing && !isSimple(section) && (
+              {adding && !isSimple(section) && (
                 <CaseRecordForm
-                  key={editing.id}
+                  key={`add-${section}`}
                   section={section}
                   token={session.token}
-                  submitLabel="Save changes"
-                  initial={{
-                    srNumber: editing.srNumber || "",
-                    fullName: editing.fullName || editing.title || "",
-                    contactNumber: editing.contactNumber || "",
-                    address: editing.address || "",
-                    email: editing.email || "",
-                    village: editing.village || "",
-                    mandal: editing.mandal || "",
-                    division: editing.division || "",
-                    assemblyConstituency: editing.assemblyConstituency || "",
-                    dateOfVisit: editing.dateOfVisit || "",
-                    referenceName: editing.referenceName || "",
-                    referenceNumber: editing.referenceNumber || "",
-                    categories: editing.categories || [],
-                    others: editing.others || "",
-                    issueDetail: editing.issueDetail || editing.detail || "",
-                    actionTaken: editing.actionTaken || "",
-                    actionToBeTaken: editing.actionToBeTaken || "",
-                    assignedOfficer: editing.assignedOfficer || "",
-                    assignedOfficerPhone: editing.assignedOfficerPhone || "",
-                    resolutionStatus: editing.resolutionStatus || (["Pending", "In progress", "Resolved"].includes(editing.status) ? editing.status : ""),
-                    deadline: editing.deadline || "",
-                  }}
                   onSubmit={save}
+                  onCancel={() => setAdding(false)}
                 />
               )}
               {located && <PlaceFilters value={place} onChange={setPlace} />}
@@ -427,78 +403,172 @@ function UploadDesk({
                 <p className="text-sm text-muted-foreground">Loading records…</p>
               ) : shown.length ? (
                 <div className="overflow-hidden rounded-xl border bg-card">
-                  {shown.map((item) => (
-                    <div key={item.id} className="border-b px-5 py-4 last:border-0">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <h2 className="truncate font-medium">{item.fullName || item.title}</h2>
-                          {item.srNumber ? <p className="mt-1 text-sm text-muted-foreground">Sr. {item.srNumber}</p> : null}
-                          <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{[item.visitTime, item.division, item.mandal, item.village, item.assemblyConstituency].filter(Boolean).join(", ") || item.detail}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2 pt-0.5">
-                          <span className="inline-flex h-6 items-center rounded-full bg-primary/10 px-2.5 text-xs font-medium text-primary">{item.status}</span>
-                          <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{formatWhen(item.date)}</span>
-                        </div>
-                      </div>
-                      {item.categories?.length ? <p className="mt-2 truncate text-sm">{item.categories.map((category) => (category === "Others" && item.others ? item.others : category)).join(", ")}</p> : null}
-                      {item.actionTaken ? <p className="mt-1 truncate text-sm">Action taken: {item.actionTaken}</p> : null}
-                      {item.actionToBeTaken ? <p className="mt-1 truncate text-sm">Action to be taken: {item.actionToBeTaken}</p> : null}
-                      {item.assignedOfficer ? (
-                        <p className="mt-1 truncate text-sm">
-                          Assigned officer: {item.assignedOfficer}
-                          {item.assignedOfficerPhone ? ` (${item.assignedOfficerPhone})` : ""}
-                        </p>
-                      ) : null}
-                      {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
-                      {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
-                      {item.progressRemarks ? <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">Work update:</span> {item.progressRemarks}</p> : null}
-                      {section === "grievances" && !isSample(item) && (
-                        <GrievanceDocumentSection
-                          record={item}
-                          token={session.token}
-                          onUpdateRecord={(updated) => updateRecordItem(item.id, updated)}
-                        />
-                      )}
-                      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                        {(section === "grievances" || section === "projects") && <ReportActions token={session.token} section={section} id={item.id} />}
-                        {section === "grievances" && !isSample(item) && item.status !== "Approved" && (
-                          <button type="button" disabled={approving === item.id} onClick={() => void approve(item.id)} className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
-                            {approving === item.id ? "Approving…" : "Approve"}
-                          </button>
-                        )}
-                        {isSample(item) ? (
-                          <span className="text-xs text-muted-foreground">Sample</span>
-                        ) : (
-                          <>
+                  {shown.map((item) => {
+                    const isEditing = editing?.id === item.id;
+                    if (isEditing) {
+                      return (
+                        <div
+                          key={item.id}
+                          id={`record-edit-${item.id}`}
+                          className="border-b bg-muted/20 p-4 sm:p-6 last:border-0"
+                        >
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                            <div className="flex items-center gap-2.5">
+                              <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                <Pencil className="size-4" />
+                              </span>
+                              <div>
+                                <h3 className="text-sm font-semibold text-foreground">
+                                  Editing: {item.fullName || item.title || "Record"}
+                                </h3>
+                                <p className="text-xs text-muted-foreground">
+                                  {item.srNumber ? `Sr. ${item.srNumber} • ` : ""}Edit record details directly below and click Save changes
+                                </p>
+                              </div>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => {
-                                setEditing(item);
-                                setAdding(false);
-                                setPendingDelete(null);
-                                setNotice("");
-                              }}
-                              className="inline-flex h-8 items-center gap-1 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-muted"
+                              onClick={() => setEditing(null)}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-background px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                             >
-                              <Pencil className="size-3.5" />
-                              Edit
+                              <X className="size-3.5" />
+                              Cancel
                             </button>
-                            {pendingDelete === item.id ? (
-                              <span className="inline-flex items-center gap-2">
-                                <button type="button" onClick={() => void remove(item.id)} className="inline-flex h-8 items-center rounded-lg bg-destructive px-3 text-xs font-medium text-white">Delete</button>
-                                <button type="button" onClick={() => setPendingDelete(null)} className="inline-flex h-8 items-center rounded-lg border bg-background px-3 text-xs font-medium">Cancel</button>
-                              </span>
-                            ) : (
-                              <button type="button" onClick={() => setPendingDelete(item.id)} className="inline-flex h-8 items-center gap-1 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-muted">
-                                <Trash2 className="size-3.5" />
-                                Delete
-                              </button>
-                            )}
-                          </>
+                          </div>
+
+                          {isSimple(section) ? (
+                            <SimpleRecordForm
+                              key={item.id}
+                              section={section}
+                              submitLabel="Save changes"
+                              className="space-y-4 rounded-xl border bg-card p-4 sm:p-5 shadow-xs"
+                              onCancel={() => setEditing(null)}
+                              initial={{
+                                title: item.title,
+                                detail: item.detail,
+                                status: item.status || "Open",
+                                place: item.place || "",
+                                visitDate: item.visitDate || "",
+                                visitTime: item.visitTime || "",
+                                leadPhone: item.leadPhone || "",
+                              }}
+                              onSubmit={save}
+                            />
+                          ) : (
+                            <CaseRecordForm
+                              key={item.id}
+                              section={section}
+                              token={session.token}
+                              submitLabel="Save changes"
+                              className={
+                                section === "grievances"
+                                  ? "space-y-6 rounded-2xl border-2 border-border/80 bg-card p-4 sm:p-6 shadow-xs"
+                                  : "space-y-6 rounded-xl border bg-card p-4 sm:p-6 shadow-xs"
+                              }
+                              onCancel={() => setEditing(null)}
+                              initial={{
+                                srNumber: item.srNumber || "",
+                                fullName: item.fullName || item.title || "",
+                                contactNumber: item.contactNumber || "",
+                                address: item.address || "",
+                                email: item.email || "",
+                                village: item.village || "",
+                                mandal: item.mandal || "",
+                                division: item.division || "",
+                                assemblyConstituency: item.assemblyConstituency || "",
+                                dateOfVisit: item.dateOfVisit || "",
+                                referenceName: item.referenceName || "",
+                                referenceNumber: item.referenceNumber || "",
+                                categories: item.categories || [],
+                                others: item.others || "",
+                                issueDetail: item.issueDetail || item.detail || "",
+                                actionTaken: item.actionTaken || "",
+                                actionToBeTaken: item.actionToBeTaken || "",
+                                assignedOfficer: item.assignedOfficer || "",
+                                assignedOfficerPhone: item.assignedOfficerPhone || "",
+                                resolutionStatus: item.resolutionStatus || (["Pending", "In progress", "Resolved"].includes(item.status) ? item.status : ""),
+                                deadline: item.deadline || "",
+                              }}
+                              onSubmit={save}
+                            />
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={item.id} className="border-b px-5 py-4 last:border-0">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <h2 className="truncate font-medium">{item.fullName || item.title}</h2>
+                            {item.srNumber ? <p className="mt-1 text-sm text-muted-foreground">Sr. {item.srNumber}</p> : null}
+                            <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{[item.visitTime, item.division, item.mandal, item.village, item.assemblyConstituency].filter(Boolean).join(", ") || item.detail}</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                            <span className="inline-flex h-6 items-center rounded-full bg-primary/10 px-2.5 text-xs font-medium text-primary">{item.status}</span>
+                            <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{formatWhen(item.date)}</span>
+                          </div>
+                        </div>
+                        {item.categories?.length ? <p className="mt-2 truncate text-sm">{item.categories.map((category) => (category === "Others" && item.others ? item.others : category)).join(", ")}</p> : null}
+                        {item.actionTaken ? <p className="mt-1 truncate text-sm">Action taken: {item.actionTaken}</p> : null}
+                        {item.actionToBeTaken ? <p className="mt-1 truncate text-sm">Action to be taken: {item.actionToBeTaken}</p> : null}
+                        {item.assignedOfficer ? (
+                          <p className="mt-1 truncate text-sm">
+                            Assigned officer: {item.assignedOfficer}
+                            {item.assignedOfficerPhone ? ` (${item.assignedOfficerPhone})` : ""}
+                          </p>
+                        ) : null}
+                        {item.deadline ? <p className="mt-1 text-sm">Deadline: {formatWhen(item.deadline)}</p> : null}
+                        {item.progressStages?.length ? <p className="mt-1 text-sm text-muted-foreground">{stageSummary(item.progressStages)}</p> : null}
+                        {item.progressRemarks ? <p className="mt-1 text-sm text-muted-foreground"><span className="font-medium text-foreground">Work update:</span> {item.progressRemarks}</p> : null}
+                        {section === "grievances" && !isSample(item) && (
+                          <GrievanceDocumentSection
+                            record={item}
+                            token={session.token}
+                            onUpdateRecord={(updated) => updateRecordItem(item.id, updated)}
+                          />
                         )}
+                        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                          {(section === "grievances" || section === "projects") && <ReportActions token={session.token} section={section} id={item.id} />}
+                          {section === "grievances" && !isSample(item) && item.status !== "Approved" && (
+                            <button type="button" disabled={approving === item.id} onClick={() => void approve(item.id)} className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+                              {approving === item.id ? "Approving…" : "Approve"}
+                            </button>
+                          )}
+                          {isSample(item) ? (
+                            <span className="text-xs text-muted-foreground">Sample</span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditing((curr) => (curr?.id === item.id ? null : item));
+                                  setAdding(false);
+                                  setPendingDelete(null);
+                                  setNotice("");
+                                }}
+                                className="inline-flex h-8 items-center gap-1 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-muted"
+                              >
+                                <Pencil className="size-3.5" />
+                                Edit
+                              </button>
+                              {pendingDelete === item.id ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <button type="button" onClick={() => void remove(item.id)} className="inline-flex h-8 items-center rounded-lg bg-destructive px-3 text-xs font-medium text-white">Delete</button>
+                                  <button type="button" onClick={() => setPendingDelete(null)} className="inline-flex h-8 items-center rounded-lg border bg-background px-3 text-xs font-medium">Cancel</button>
+                                </span>
+                              ) : (
+                                <button type="button" onClick={() => setPendingDelete(item.id)} className="inline-flex h-8 items-center gap-1 rounded-lg border bg-background px-3 text-xs font-medium hover:bg-muted">
+                                  <Trash2 className="size-3.5" />
+                                  Delete
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : records.length ? (
                 <div className="rounded-xl border border-dashed p-12 text-center">

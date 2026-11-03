@@ -174,12 +174,16 @@ export function CaseRecordForm({
   submitLabel,
   token,
   onSubmit,
+  onCancel,
+  className,
 }: {
   section: CaseSection;
   initial?: Partial<Draft>;
   submitLabel?: string;
   token?: string;
   onSubmit: (body: Record<string, string | string[]>) => Promise<void>;
+  onCancel?: () => void;
+  className?: string;
 }) {
   const located = section === "grievances" || section === "projects";
   const [draft, setDraft] = useState<Draft>(() => {
@@ -334,7 +338,7 @@ export function CaseRecordForm({
     return (
       <form
         onSubmit={(event) => void submit(event)}
-        className="mb-6 space-y-6 rounded-2xl border-2 border-border/80 bg-card p-5 sm:p-7 shadow-sm"
+        className={className || "mb-6 space-y-6 rounded-2xl border-2 border-border/80 bg-card p-5 sm:p-7 shadow-sm"}
       >
         {token && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3.5">
@@ -699,6 +703,16 @@ export function CaseRecordForm({
 
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex items-center justify-end gap-3 pt-2">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={saving}
+              className="h-10 rounded-xl border bg-background hover:bg-muted px-5 text-sm font-semibold transition-colors disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          )}
           <button
             disabled={saving}
             className="h-10 rounded-xl bg-amber-600 hover:bg-amber-700 px-6 text-sm font-bold text-white shadow-sm transition-colors disabled:opacity-60"
@@ -714,7 +728,7 @@ export function CaseRecordForm({
   return (
     <form
       onSubmit={(event) => void submit(event)}
-      className="mb-6 space-y-6 rounded-xl border bg-card p-5"
+      className={className || "mb-6 space-y-6 rounded-xl border bg-card p-5"}
     >
       <SectionTitle>Record information</SectionTitle>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -900,12 +914,24 @@ export function CaseRecordForm({
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <button
-        disabled={saving}
-        className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-      >
-        {saving ? "Saving…" : submitLabel || SAVE_LABEL[section]}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          disabled={saving}
+          className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+        >
+          {saving ? "Saving…" : submitLabel || SAVE_LABEL[section]}
+        </button>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="h-10 rounded-lg border bg-background px-4 text-sm font-medium hover:bg-muted disabled:opacity-60"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
     </form>
   );
 }

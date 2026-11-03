@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import {
-  Sparkles,
   Send,
   Search,
   BookOpen,
@@ -11,7 +10,6 @@ import {
   Check,
   RefreshCw,
   ExternalLink,
-  Bot,
   HelpCircle,
   FileText,
   ShieldCheck,
@@ -89,6 +87,16 @@ export function MpRetrievalWindow() {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      if (e.nativeEvent.isComposing) return;
+      e.preventDefault();
+      if (!loading && question.trim()) {
+        void handleAsk();
+      }
+    }
+  };
+
   const copyToClipboard = () => {
     if (!response?.answer) return;
     navigator.clipboard.writeText(response.answer);
@@ -103,9 +111,6 @@ export function MpRetrievalWindow() {
       {/* Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/50">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <Sparkles className="size-5" />
-          </div>
           <div>
             <h2 className="font-display text-lg font-semibold tracking-tight text-foreground">
               MP Constituency Intelligence Desk
@@ -192,12 +197,13 @@ export function MpRetrievalWindow() {
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder="Ask any question or type a keyword (e.g., SP, CMRF, water, roads, Yashoda, theft)..."
                 rows={2}
                 disabled={loading}
                 className="w-full resize-none bg-transparent px-3.5 py-2.5 text-sm outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
               />
-              <div className="flex items-center justify-between border-t border-border/40 bg-muted/20 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-3 py-2">
                 <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                   <ShieldCheck className="size-3.5 text-emerald-500" />
                   {isSmallWord
@@ -205,6 +211,9 @@ export function MpRetrievalWindow() {
                     : "Grounded with multi-field search & source verification"}
                 </span>
                 <div className="flex items-center gap-2">
+                  <span className="hidden sm:inline text-[10px] text-muted-foreground/60">
+                    <kbd className="rounded border border-border/60 bg-muted/50 px-1 py-0.5 font-mono text-[9px]">Enter ↵</kbd> to ask, <kbd className="rounded border border-border/60 bg-muted/50 px-1 py-0.5 font-mono text-[9px]">Shift+Enter</kbd> for new line
+                  </span>
                   {question && (
                     <button
                       type="button"
@@ -221,7 +230,7 @@ export function MpRetrievalWindow() {
                   <button
                     type="submit"
                     disabled={loading || !question.trim()}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition cursor-pointer"
                   >
                     {loading ? (
                       <>
@@ -252,7 +261,7 @@ export function MpRetrievalWindow() {
             <div className="rounded-xl border border-primary/20 bg-background/95 p-4 shadow-sm animate-in fade-in duration-200">
               <div className="mb-2 flex items-center justify-between border-b border-border/40 pb-2">
                 <div className="flex items-center gap-2">
-                  <Bot className="size-4 text-primary" />
+                  <ShieldCheck className="size-4 text-primary" />
                   <span className="text-xs font-semibold uppercase tracking-wider text-primary">
                     Verified Answer: "{lastQuery}"
                   </span>
