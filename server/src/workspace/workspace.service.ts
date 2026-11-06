@@ -134,6 +134,8 @@ export interface WorkspaceRecord {
   visitDate: string;
   visitTime: string;
   leadPhone: string;
+  designation?: string;
+  followUpKind?: string;
   progressToken: string;
   progressStages: ProgressStage[];
   progressUpdatedAt: string;
@@ -172,6 +174,8 @@ type CaseInput = {
   visitDate?: string;
   visitTime?: string;
   leadPhone?: string;
+  designation?: string;
+  followUpKind?: string;
 };
 
 @Injectable()
@@ -1616,6 +1620,18 @@ function simpleStored(
     visitDate: input.visitDate || '',
     visitTime: input.visitTime || '',
     leadPhone: input.leadPhone || '',
+    fullName: input.fullName || input.title || '',
+    contactNumber: input.contactNumber || '',
+    designation: input.designation || '',
+    village: input.village || '',
+    mandal: input.mandal || '',
+    division: input.division || '',
+    assemblyConstituency: input.assemblyConstituency || '',
+    dateOfVisit: input.dateOfVisit || input.visitDate || '',
+    categories: input.categories || [],
+    actionToBeTaken: input.actionToBeTaken || '',
+    assignedOfficer: input.assignedOfficer || '',
+    followUpKind: input.followUpKind || '',
   };
 }
 
@@ -1651,6 +1667,8 @@ function storedCase(input: CaseInput): Record<string, unknown> {
     actionToBeTaken: input.actionToBeTaken || '',
     assignedOfficer: input.assignedOfficer || '',
     assignedOfficerPhone: input.assignedOfficerPhone || '',
+    designation: input.designation || '',
+    followUpKind: input.followUpKind || '',
     issueDetail: input.issueDetail || '',
     resolutionStatus: input.resolutionStatus || '',
     deadline: input.deadline || '',
@@ -1713,6 +1731,8 @@ function toRecord(doc: Record<string, unknown>): WorkspaceRecord {
     visitDate: text(doc.visitDate) || text(doc.dateOfVisit),
     visitTime: text(doc.visitTime),
     leadPhone: text(doc.leadPhone),
+    designation: text(doc.designation),
+    followUpKind: text(doc.followUpKind),
     progressToken: text(doc.progressToken),
     progressStages: stagesOf(doc.progressStages),
     progressUpdatedAt: text(doc.progressUpdatedAt),

@@ -172,6 +172,8 @@ export class WorkspaceController {
       visitDate: body.visitDate,
       visitTime: body.visitTime,
       leadPhone: body.leadPhone,
+      designation: body.designation,
+      followUpKind: body.followUpKind,
     });
   }
 

@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Eye,
   EyeOff,
+  HeartHandshake,
   LogOut,
   MapPin,
   Menu,
@@ -26,6 +27,7 @@ import { GrievanceUploadWorkflow } from "@/components/GrievanceUploadWorkflow.ts
 import { emptyPlace, PlaceFilters } from "@/PlaceFilters.tsx";
 import { matchesPlace } from "@/places.ts";
 import { ReportActions, ReportDownloads } from "@/ReportPage.tsx";
+import { EventRecordForm } from "@/EventRecordForm.tsx";
 import { SimpleRecordForm, type SimpleSection } from "@/SimpleRecordForm.tsx";
 
 const targets: { id: CaseSection; label: string; icon: typeof Users }[] = [
@@ -33,6 +35,7 @@ const targets: { id: CaseSection; label: string; icon: typeof Users }[] = [
   { id: "projects", label: "Projects & reports", icon: Building2 },
   { id: "people", label: "Constituency", icon: Users },
   { id: "campaigns", label: "Campaigns", icon: Send },
+  { id: "events", label: "Events", icon: HeartHandshake },
   { id: "followups", label: "Follow ups", icon: ClipboardList },
   { id: "schedules", label: "Schedules", icon: CalendarClock },
   { id: "visits", label: "Visits", icon: MapPin },
@@ -69,6 +72,8 @@ type RecordItem = {
   visitDate?: string;
   visitTime?: string;
   leadPhone?: string;
+  designation?: string;
+  followUpKind?: string;
   progressStages?: { name: string; status: string; note: string }[];
   progressRemarks?: string;
   scannedDocuments?: ScannedDocument[];
@@ -322,7 +327,7 @@ function UploadDesk({
             <div>
               <p className="mb-2 text-sm font-medium uppercase tracking-wider text-primary">Upload data</p>
               <h1 className="font-display text-3xl font-semibold tracking-tight">{current.label}</h1>
-              <p className="mt-2 text-muted-foreground">{section === "campaigns" ? "Title, details, and status." : isSimple(section) ? "Date, time, place, and details." : "Visitor slip for this record."}</p>
+              <p className="mt-2 text-muted-foreground">{section === "events" ? "Person, phone, designation, and the benefit given. These counts show on the MP dashboard." : section === "followups" ? "Name, designation, phone, place, and whether they are frequently contacted, recently contacted, or not followed up." : section === "schedules" || section === "visits" ? "Visit or task, date, place, person, and the things to be done." : section === "campaigns" ? "Title, details, and status." : "Visitor slip for this record."}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {(section === "grievances" || section === "projects") && <ReportDownloads token={session.token} section={section} />}
@@ -403,6 +408,9 @@ function UploadDesk({
 
           {(section !== "grievances" || grievanceTab === "list") && (
             <>
+              {adding && section === "events" && (
+                <EventRecordForm onSubmit={save} onCancel={() => setAdding(false)} />
+              )}
               {adding && isSimple(section) && (
                 <SimpleRecordForm
                   key={`add-${section}`}
@@ -411,7 +419,7 @@ function UploadDesk({
                   onCancel={() => setAdding(false)}
                 />
               )}
-              {adding && !isSimple(section) && (
+              {adding && !isSimple(section) && section !== "events" && (
                 <CaseRecordForm
                   key={`add-${section}`}
                   section={section}
@@ -458,7 +466,27 @@ function UploadDesk({
                             </button>
                           </div>
 
-                          {isSimple(section) ? (
+                          {section === "events" ? (
+                            <EventRecordForm
+                              key={item.id}
+                              submitLabel="Save changes"
+                              className="space-y-4 rounded-xl border bg-card p-4 sm:p-5 shadow-xs"
+                              onCancel={() => setEditing(null)}
+                              initial={{
+                                fullName: item.fullName || item.title,
+                                contactNumber: item.contactNumber || "",
+                                designation: item.designation || "",
+                                benefit: item.status || "CMRF / Medical Assistance",
+                                division: item.division || "",
+                                mandal: item.mandal || "",
+                                village: item.village || "",
+                                assemblyConstituency: item.assemblyConstituency || "",
+                                dateOfVisit: item.dateOfVisit || "",
+                                detail: item.detail || "",
+                              }}
+                              onSubmit={save}
+                            />
+                          ) : isSimple(section) ? (
                             <SimpleRecordForm
                               key={item.id}
                               section={section}
@@ -473,6 +501,13 @@ function UploadDesk({
                                 visitDate: item.visitDate || "",
                                 visitTime: item.visitTime || "",
                                 leadPhone: item.leadPhone || "",
+                                assemblyConstituency: item.assemblyConstituency || "",
+                                division: item.division || "",
+                                mandal: item.mandal || "",
+                                village: item.village || "",
+                                assignedOfficer: item.assignedOfficer || "",
+                                designation: item.designation || "",
+                                actionToBeTaken: item.actionToBeTaken || "",
                               }}
                               onSubmit={save}
                             />
@@ -508,6 +543,8 @@ function UploadDesk({
                                 actionToBeTaken: item.actionToBeTaken || "",
                                 assignedOfficer: item.assignedOfficer || "",
                                 assignedOfficerPhone: item.assignedOfficerPhone || "",
+                                designation: item.designation || "",
+                                followUpKind: item.followUpKind || "pending",
                                 resolutionStatus: item.resolutionStatus || (["Pending", "In progress", "Resolved"].includes(item.status) ? item.status : ""),
                                 deadline: item.deadline || "",
                               }}
@@ -528,7 +565,7 @@ function UploadDesk({
                             <div className="min-w-0">
                             <h2 className="truncate font-medium">{item.fullName || item.title}</h2>
                             {item.srNumber ? <p className="mt-1 text-sm text-muted-foreground">Sr. {item.srNumber}</p> : null}
-                            <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{[item.visitTime, item.division, item.mandal, item.village, item.assemblyConstituency].filter(Boolean).join(", ") || item.detail}</p>
+                            <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{[item.designation, item.contactNumber || item.leadPhone, item.visitTime, item.division, item.mandal, item.village, item.assemblyConstituency].filter(Boolean).join(", ") || item.detail}</p>
                             </div>
                           </div>
                           <div className="flex shrink-0 items-center gap-2 pt-0.5">

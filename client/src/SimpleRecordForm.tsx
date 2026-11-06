@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { ASSEMBLY_CONSTITUENCIES } from "@/CaseRecordForm.tsx";
+import { divisionNames, mandalNames, villageNames, withCurrent } from "@/places.ts";
 
 export type SimpleSection = "campaigns" | "schedules" | "visits";
 
@@ -12,9 +14,31 @@ type Draft = {
   visitDate: string;
   visitTime: string;
   leadPhone: string;
+  assemblyConstituency: string;
+  division: string;
+  mandal: string;
+  village: string;
+  assignedOfficer: string;
+  designation: string;
+  actionToBeTaken: string;
 };
 
-const empty = (): Draft => ({ title: "", detail: "", status: "Open", place: "", visitDate: "", visitTime: "", leadPhone: "" });
+const empty = (): Draft => ({
+  title: "",
+  detail: "",
+  status: "Open",
+  place: "",
+  visitDate: "",
+  visitTime: "",
+  leadPhone: "",
+  assemblyConstituency: "",
+  division: "",
+  mandal: "",
+  village: "",
+  assignedOfficer: "",
+  designation: "",
+  actionToBeTaken: "",
+});
 
 const inputClass = "h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring";
 
@@ -45,7 +69,11 @@ export function SimpleRecordForm({
   onCancel?: () => void;
   className?: string;
 }) {
-  const [draft, setDraft] = useState<Draft>(() => ({ ...empty(), ...initial }));
+  const [draft, setDraft] = useState<Draft>(() => ({
+    ...empty(),
+    status: section === "schedules" ? "To do" : section === "visits" ? "Visit" : "Open",
+    ...initial,
+  }));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const visit = section === "schedules" || section === "visits";
@@ -61,8 +89,24 @@ export function SimpleRecordForm({
       await onSubmit({
         title: draft.title,
         detail: draft.detail,
-        status: section === "campaigns" ? draft.status : "Open",
-        ...(visit ? { place: draft.place, visitDate: draft.visitDate, visitTime: draft.visitTime, leadPhone: section === "visits" ? draft.leadPhone : "" } : {}),
+        status: section === "campaigns" ? draft.status : section === "visits" ? "Visit" : draft.status || "To do",
+        ...(visit
+          ? {
+              place: draft.place,
+              visitDate: draft.visitDate,
+              visitTime: draft.visitTime,
+              leadPhone: draft.leadPhone,
+              assemblyConstituency: draft.assemblyConstituency,
+              division: draft.division,
+              mandal: draft.mandal,
+              village: draft.village,
+              assignedOfficer: draft.assignedOfficer,
+              designation: draft.designation,
+              actionToBeTaken: draft.actionToBeTaken,
+              fullName: draft.assignedOfficer,
+              contactNumber: draft.leadPhone,
+            }
+          : {}),
       });
       if (!initial) setDraft(empty());
     } catch (err) {
@@ -87,6 +131,14 @@ export function SimpleRecordForm({
             </select>
           </Field>
         )}
+        {section === "schedules" && (
+          <Field label="Type" required>
+            <select value={draft.status === "Visit" ? "Visit" : "To do"} onChange={set("status")} required className={inputClass}>
+              <option value="Visit">Visit</option>
+              <option value="To do">To do</option>
+            </select>
+          </Field>
+        )}
         {visit && (
           <>
             <Field label="Date" required>
@@ -98,14 +150,47 @@ export function SimpleRecordForm({
             <Field label="Place" required>
               <input value={draft.place} onChange={set("place")} required className={inputClass} />
             </Field>
+            <Field label="Constituency" required>
+              <select value={draft.assemblyConstituency} onChange={(event) => setDraft((current) => ({ ...current, assemblyConstituency: event.target.value }))} required className={inputClass}>
+                <option value="">Select constituency</option>
+                {ASSEMBLY_CONSTITUENCIES.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </Field>
+            <Field label="Division">
+              <select value={draft.division} onChange={(event) => setDraft((current) => ({ ...current, division: event.target.value, mandal: "", village: "" }))} className={inputClass}>
+                <option value="">Select division</option>
+                {divisionNames().map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </Field>
+            <Field label="Mandal">
+              <select value={draft.mandal} onChange={(event) => setDraft((current) => ({ ...current, mandal: event.target.value, village: "" }))} className={inputClass}>
+                <option value="">Select mandal</option>
+                {withCurrent(mandalNames(draft.division), draft.mandal).map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </Field>
+            <Field label="Village">
+              <select value={draft.village} onChange={set("village")} className={inputClass}>
+                <option value="">Select village</option>
+                {withCurrent(villageNames(draft.division, draft.mandal), draft.village).map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </Field>
+            <Field label="Person">
+              <input value={draft.assignedOfficer} onChange={set("assignedOfficer")} className={inputClass} />
+            </Field>
+            <Field label="Designation">
+              <input value={draft.designation} onChange={set("designation")} className={inputClass} />
+            </Field>
+            <Field label="Phone">
+              <input value={draft.leadPhone} onChange={set("leadPhone")} inputMode="tel" pattern="(\+?91[\s-]?)?\d{10}" title="10-digit phone number" className={inputClass} />
+            </Field>
           </>
         )}
-        {section === "visits" && (
-          <Field label="Lead phone">
-            <input value={draft.leadPhone} onChange={set("leadPhone")} inputMode="tel" pattern="(\+?91[\s-]?)?\d{10}" title="10-digit phone number" className={inputClass} />
-          </Field>
-        )}
       </div>
+      {visit && (
+        <Field label="Things to be done">
+          <textarea value={draft.actionToBeTaken} onChange={set("actionToBeTaken")} rows={3} className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
+        </Field>
+      )}
       <Field label="Details" required={section === "campaigns"}>
         <textarea value={draft.detail} onChange={set("detail")} required={section === "campaigns"} rows={3} className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
       </Field>

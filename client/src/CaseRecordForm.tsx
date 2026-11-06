@@ -55,7 +55,8 @@ export type CaseSection =
   | "campaigns"
   | "followups"
   | "schedules"
-  | "visits";
+  | "visits"
+  | "events";
 
 const SAVE_LABEL: Record<CaseSection, string> = {
   grievances: "Save grievance",
@@ -65,6 +66,7 @@ const SAVE_LABEL: Record<CaseSection, string> = {
   followups: "Save follow up",
   schedules: "Save schedule",
   visits: "Save visit",
+  events: "Save benefit",
 };
 
 export type Draft = {
@@ -89,6 +91,8 @@ export type Draft = {
   assignedOfficerPhone?: string;
   resolutionStatus: string;
   deadline: string;
+  designation: string;
+  followUpKind: string;
 };
 
 const empty = (): Draft => ({
@@ -113,6 +117,8 @@ const empty = (): Draft => ({
   assignedOfficerPhone: "",
   resolutionStatus: "Pending",
   deadline: "",
+  designation: "",
+  followUpKind: "pending",
 });
 
 const inputClass =
@@ -185,14 +191,21 @@ export function CaseRecordForm({
   onCancel?: () => void;
   className?: string;
 }) {
-  const located = section === "grievances" || section === "projects";
+  const located =
+    section === "grievances" ||
+    section === "projects" ||
+    section === "followups";
   const [draft, setDraft] = useState<Draft>(() => {
     const base = {
       ...empty(),
       ...initial,
       categories: initial?.categories ?? [],
     };
-    if (section === "grievances" || section === "projects") {
+    if (
+      section === "grievances" ||
+      section === "projects" ||
+      section === "followups"
+    ) {
       const place = alignPlace(base);
       base.division = place.division;
       base.mandal = place.mandal;
@@ -752,6 +765,31 @@ export function CaseRecordForm({
             className={inputClass}
           />
         </Field>
+        {section === "followups" && (
+          <>
+            <Field label="Designation">
+              <input
+                value={draft.designation}
+                onChange={set("designation")}
+                required
+                placeholder="Sarpanch, teacher, party worker"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Follow-up group">
+              <select
+                value={draft.followUpKind}
+                onChange={set("followUpKind")}
+                required
+                className={inputClass}
+              >
+                <option value="frequent">Frequently contacted</option>
+                <option value="recent">Recently contacted</option>
+                <option value="pending">Not followed up</option>
+              </select>
+            </Field>
+          </>
+        )}
         <Field label="Email" optional>
           <input
             type="email"

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  CalendarClock,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -20,7 +21,6 @@ import {
   Search,
   Send,
   Settings,
-  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -37,8 +37,9 @@ import { SimpleRecordForm } from "@/SimpleRecordForm.tsx";
 import { NewsProvider } from "@/mediasphere/context/NewsContext.jsx";
 import AnalyticsDashboard from "@/mediasphere/components/analytics/AnalyticsDashboard.tsx";
 import { MpRetrievalWindow } from "@/components/MpRetrievalWindow.tsx";
+import { OutreachDesk } from "@/OutreachDesk.tsx";
 
-type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics";
+type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics" | "outreach";
 type ListSection = "grievances" | "projects" | "people" | "campaigns";
 type RecordItem = {
   id: string;
@@ -88,6 +89,7 @@ const nav: { id: Section; path: string; label: string; icon: typeof LayoutDashbo
   { id: "news", path: "/news", label: "News", icon: Newspaper },
   { id: "people", path: "/people", label: "Constituency", icon: Users },
   { id: "campaigns", path: "/campaigns", label: "Campaigns", icon: Send },
+  { id: "outreach", path: "/outreach", label: "Events & Follow ups, Schedule", icon: CalendarClock },
   { id: "analytics", path: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -103,6 +105,7 @@ const labels: Record<Section, { title: string; description: string; icon: typeof
   news: { title: "News", description: "Constituency articles from the news database.", icon: Newspaper },
   people: { title: "Constituency", description: "Palnadu contacts from the master sheet, by division, assembly, and role.", icon: Users },
   campaigns: { title: "Campaigns", description: "Campaign plans saved in the database. Messages are not sent from this screen.", icon: Send },
+  outreach: { title: "Events, follow ups and schedule", description: "Benefits, follow ups, and the visit schedule uploaded from the upload page.", icon: CalendarClock },
   analytics: { title: "Analytics", description: "Article totals from the news database.", icon: BarChart3 },
 };
 
@@ -240,6 +243,16 @@ function App() {
     });
   };
 
+  const refreshSection = () => {
+    if (!isListSection(section)) return;
+    api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
+      .then((rows) => {
+        sectionCacheRef.current[section] = rows;
+        setRecords(rows);
+      })
+      .catch(() => {});
+  };
+
   const addRecord = async (target: CaseSection, body: Record<string, string | string[]>) => {
     try {
       const row = await api<RecordItem>("/api/workspace/records", {
@@ -312,14 +325,6 @@ function App() {
               </NavLink>
             );
           })}
-          <NavLink
-            to="/upload"
-            onClick={() => setSidebarOpen(false)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-primary transition-colors hover:bg-sidebar-accent/60"
-          >
-            <Sparkles className="size-4" />
-            Upload Grievance Desk
-          </NavLink>
         </nav>
         <div className="border-t p-4"><div className="mb-3 flex items-center gap-3"><div className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{session.name.slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{session.name}</p><p className="truncate text-xs text-muted-foreground">{session.email}</p></div></div><button onClick={signOut} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"><LogOut className="size-4" />Sign out</button></div>
       </aside>
@@ -336,7 +341,7 @@ function App() {
         {panel && <div className="border-b bg-card px-5 py-3 text-sm whitespace-pre-line text-muted-foreground md:px-10">{panelBody}</div>}
         {notice && <div className="border-b bg-destructive/10 px-5 py-3 text-sm text-destructive md:px-10">{notice}</div>}
         <div className={section === "news" ? "h-[calc(100vh-5rem)]" : "mx-auto max-w-7xl p-5 md:p-10"}>
-          <Workspace section={section} records={visible} summary={summary} stats={stats} token={session.token} onAdd={(body) => addRecord(section as CaseSection, body)} onApprove={approveRecord} onUpdateRecord={updateRecordItem} />
+          <Workspace section={section} records={visible} summary={summary} stats={stats} token={session.token} onAdd={(body) => addRecord(section as CaseSection, body)} onApprove={approveRecord} onUpdateRecord={updateRecordItem} onUploaded={refreshSection} />
         </div>
       </main>
     </div>
@@ -389,7 +394,7 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
   );
 }
 
-function Workspace({ section, records, summary, stats, token, onAdd, onApprove, onUpdateRecord }: { section: Section; records: RecordItem[]; summary: Summary | null; stats: NewsStats | null; token: string; onAdd: (body: Record<string, string | string[]>) => Promise<void>; onApprove: (id: string) => Promise<string>; onUpdateRecord: (id: string, updated: Partial<RecordItem>) => void }) {
+function Workspace({ section, records, summary, stats, token, onAdd, onApprove, onUpdateRecord, onUploaded }: { section: Section; records: RecordItem[]; summary: Summary | null; stats: NewsStats | null; token: string; onAdd: (body: Record<string, string | string[]>) => Promise<void>; onApprove: (id: string) => Promise<string>; onUpdateRecord: (id: string, updated: Partial<RecordItem>) => void; onUploaded: () => void }) {
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [showUploadWorkflow, setShowUploadWorkflow] = useState(false);
@@ -439,6 +444,10 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
     return <ConstituencyDirectory token={token} />;
   }
 
+  if (section === "outreach") {
+    return <OutreachDesk token={token} />;
+  }
+
   if (section === "analytics") {
     return (
       <NewsProvider>
@@ -452,25 +461,18 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <SectionHeading meta={meta} />
         <div className="flex flex-wrap gap-2">
-          {section === "grievances" && (
-            <button
-              onClick={() => {
-                setShowUploadWorkflow(!showUploadWorkflow);
-                setShowForm(false);
-              }}
-              className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-xs hover:bg-primary/90"
-            >
-              <Sparkles className="size-4" />
-              Upload & Digitize (2-Doc AI)
-            </button>
-          )}
           {(section === "grievances" || section === "projects") && <ReportDownloads token={token} section={section} />}
           <button
             onClick={() => {
-              setShowForm(!showForm);
+              if (section === "grievances") {
+                setShowUploadWorkflow((open) => !open);
+                setShowForm(false);
+                return;
+              }
+              setShowForm((open) => !open);
               setShowUploadWorkflow(false);
             }}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border bg-background px-4 text-sm font-medium hover:bg-muted"
+            className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="size-4" />
             Add record
@@ -483,13 +485,14 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
             token={token}
             onSuccess={() => {
               setShowUploadWorkflow(false);
+              onUploaded();
             }}
             onCancel={() => setShowUploadWorkflow(false)}
           />
         </div>
       )}
       {showForm && section === "campaigns" && <SimpleRecordForm key={section} section="campaigns" onSubmit={onAdd} />}
-      {showForm && isListSection(section) && section !== "campaigns" && <CaseRecordForm key={section} section={section} token={token} onSubmit={onAdd} />}
+      {showForm && isListSection(section) && section !== "campaigns" && section !== "grievances" && <CaseRecordForm key={section} section={section} token={token} onSubmit={onAdd} />}
       {located && <PlaceFilters value={place} onChange={setPlace} />}
       <div className="mb-4 flex items-center gap-4 text-sm text-muted-foreground"><span>{shown.length} records</span><span>{open} active</span></div>
       {approveNote && <p className="mb-4 rounded-lg bg-primary/10 px-3 py-2 text-sm">{approveNote}</p>}

@@ -22,6 +22,7 @@ export const WORKSPACE_SECTIONS = [
   'followups',
   'schedules',
   'visits',
+  'events',
 ] as const;
 export type WorkspaceSection = (typeof WORKSPACE_SECTIONS)[number];
 
@@ -73,6 +74,19 @@ export const RESOLUTION_STATUSES = [
   'In progress',
   'Resolved',
 ] as const;
+
+export const BENEFIT_KINDS = [
+  'CMRF / Medical Assistance',
+  'MPLADS',
+  'Housing',
+  'Education / Fee Concession',
+  'Pension & Social Welfare',
+  'TTD Recommendation Letter',
+  'Nominated Posts',
+  'Other benefit',
+] as const;
+
+export const FOLLOW_UP_KINDS = ['frequent', 'recent', 'pending'] as const;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PHONE = /^(?:\+?91[\s-]?)?\d{10}$/;
@@ -298,6 +312,16 @@ export class CreateRecordDto {
   @Transform(({ value }) => trim(value))
   @Matches(PHONE, { message: 'Lead phone must be a 10-digit number' })
   leadPhone?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => trim(value))
+  @IsString()
+  @MaxLength(80)
+  designation?: string;
+
+  @IsOptional()
+  @IsIn(FOLLOW_UP_KINDS)
+  followUpKind?: (typeof FOLLOW_UP_KINDS)[number];
 }
 
 export const STAGE_STATUSES = ['Pending', 'In progress', 'Completed'] as const;
