@@ -224,6 +224,47 @@ export interface GrievanceDesk {
   place: string;
 }
 
+/** Button labels and greetings that were stored as grievances. They are not visitor slips. */
+const MENU_FILING_TITLES = new Set([
+  'hi',
+  'hii',
+  'hiii',
+  'hlo',
+  'hloo',
+  'hello',
+  'hey',
+  'hai',
+  'helo',
+  'namaste',
+  'namasthe',
+  'namaskaram',
+  'namaskar',
+  'department menu',
+  'view details',
+  'update progress',
+  'update work',
+  'grievances',
+  'main menu',
+  'menu',
+  'projects & reports',
+  'projects and reports',
+  'grievance menu',
+  'select grievance',
+]);
+
+/** A chatbot menu tap or greeting, with no serial number and no separate visitor name. */
+export function isMenuFiling(record: {
+  title?: string;
+  fullName?: string;
+  srNumber?: string;
+}): boolean {
+  const title = (record.title || '').trim().toLowerCase();
+  if (!title || !MENU_FILING_TITLES.has(title)) return false;
+  if ((record.srNumber || '').trim()) return false;
+  const name = (record.fullName || '').trim().toLowerCase();
+  return !name || name === title;
+}
+
 /** Sample department and leader for a grievance. Every department is reached on the same follow-up number. */
 export function assignDesk(value: string): GrievanceDesk {
   const hay = understood(value);

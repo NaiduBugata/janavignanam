@@ -32,6 +32,8 @@ export interface WhatsAppEvent {
   error_codes: Array<Record<string, unknown>>;
   media_ids: string[];
   interactive_response: Record<string, unknown> | null;
+  /** Message id of the template this reply answers, when WhatsApp sends one. */
+  context_message_id?: string | null;
   template_status: Record<string, unknown> | null;
   raw_change: Record<string, unknown>;
 }
@@ -163,6 +165,11 @@ function parseMessage(
         : {};
     event.message_text = `lat=${location.latitude}, lng=${location.longitude}, name=${location.name}, address=${location.address}`;
   }
+  const context =
+    message.context && typeof message.context === 'object'
+      ? (message.context as Record<string, unknown>)
+      : null;
+  if (context?.id) event.context_message_id = String(context.id);
   if (event.event_type === 'unknown' && !event.message_text)
     event.message_text = JSON.stringify(message);
   return event;

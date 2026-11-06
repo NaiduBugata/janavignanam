@@ -24,6 +24,7 @@ import {
 import {
   assignDesk,
   DEPARTMENT_WHATSAPP,
+  isMenuFiling,
   DESKS,
   GENERAL_DESK,
   leaderApproval,
@@ -36,6 +37,7 @@ import {
   sendReplyList,
   sendTemplateMessage,
   sendTextMessage,
+  WhatsAppSendError,
 } from '../whatsapp/whatsapp.send';
 import {
   CASE_SECTIONS,
@@ -250,7 +252,18 @@ export class WorkspaceService {
       section === 'projects' && isDemoDataEnabled() && visible.length === 0
         ? demoProjectDocs()
         : visible;
-    return shown.map(toRecord);
+    const cases =
+      section === 'grievances'
+        ? shown.filter(
+            (row) =>
+              !isMenuFiling({
+                title: String(row.title || ''),
+                fullName: String(row.fullName || ''),
+                srNumber: String(row.srNumber || ''),
+              }),
+          )
+        : shown;
+    return cases.map(toRecord);
   }
 
   async create(
@@ -404,14 +417,22 @@ export class WorkspaceService {
     );
     const leaderPhone = phoneForName(desk.leader);
 
-    let departmentInteractive = false;
+    let departmentNotice: { template: boolean; interactive: boolean } = {
+      template: false,
+      interactive: false,
+    };
+    const prompts: WorkPrompt[] = [];
     try {
-      departmentInteractive = await sendDepartmentActionNotice(
+      departmentNotice = await sendDepartmentActionNotice(
         desk,
         issue,
         String(id),
         token,
         record,
+        process.env,
+        (prompt) => {
+          prompts.push(prompt);
+        },
       );
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'send failed';
@@ -447,6 +468,7 @@ export class WorkspaceService {
     const saved = await this.db
       .collection(RECORDS)
       .findOneAndUpdate({ _id: asId(id) }, { $set: patch });
+    await this.rememberWorkPrompts(prompts);
     const notice = [
       'Approved.',
       raiserSent
@@ -457,14 +479,48 @@ export class WorkspaceService {
           ? `${desk.leader} was messaged.`
           : `${desk.leader} is not in the contact list.`
         : 'Leader notifications are paused.',
-      departmentInteractive
+      departmentNotice.interactive
         ? 'The department was sent the WhatsApp operations menu.'
-        : 'Meta accepted the department template notification.',
-    ].join(' ');
+        : '',
+      departmentNotice.template
+        ? `The ${desk.department} department was sent a work-update template. It can arrive at any time.`
+        : departmentNotice.interactive
+          ? ''
+          : 'Meta accepted the department template notification.',
+    ]
+      .filter(Boolean)
+      .join(' ');
     return {
       record: toRecord({ ...existing, ...(saved || {}), ...patch }),
       notice,
     };
+  }
+
+  /** The template reply can arrive days later. Remember which grievance it belongs to. */
+  private async rememberWorkPrompts(prompts: WorkPrompt[]): Promise<void> {
+    const at = new Date().toISOString();
+    for (const prompt of prompts) {
+      if (!prompt.messageId || !prompt.recordId || !prompt.phone) continue;
+      try {
+        const collection = this.db.collection('dept_work_prompts');
+        if (typeof collection.updateOne !== 'function') continue;
+        await collection.updateOne(
+          { _id: prompt.messageId },
+          {
+            $set: {
+              phone: prompt.phone,
+              recordId: prompt.recordId,
+              messageId: prompt.messageId,
+              department: prompt.department,
+              at,
+            },
+          },
+          { upsert: true },
+        );
+      } catch {
+        // A missing prompt store must not undo an accepted department message.
+      }
+    }
   }
 
   async addDocumentToGrievance(
@@ -1198,8 +1254,17 @@ function metaAccepted(result: unknown): {
   return { ok: false, messageId: null };
 }
 
-/** Approved dynamic template already on this WhatsApp account. Do not add another. */
+/** Approved dynamic template already on this WhatsApp account. */
 const APPROVED_DYNAMIC_TEMPLATE = 'jv_mp_action_request';
+/** Utility template for a department work update. It can be delivered after the 24-hour window. */
+const WORK_UPDATE_TEMPLATE = 'jv_dept_work_update';
+
+export interface WorkPrompt {
+  phone: string;
+  recordId: string;
+  messageId: string;
+  department: string;
+}
 
 async function notifyWorkStarted(
   phone: string,
@@ -1280,6 +1345,33 @@ async function notifyWorkStarted(
   }
 }
 
+function templateNotReady(err: unknown): boolean {
+  const code =
+    err instanceof WhatsAppSendError ? err.metaErrorCode : undefined;
+  if (
+    code === 132000 ||
+    code === 132001 ||
+    code === 132005 ||
+    code === 132007 ||
+    code === 132012 ||
+    code === 132015 ||
+    code === 132016
+  )
+    return true;
+  const text = (err instanceof Error ? err.message : '').toLowerCase();
+  return (
+    text.includes('template') &&
+    (text.includes('not approved') ||
+      text.includes('does not exist') ||
+      text.includes('pending') ||
+      text.includes('in review') ||
+      text.includes('unavailable') ||
+      text.includes('132001') ||
+      text.includes('132015') ||
+      text.includes('132016'))
+  );
+}
+
 async function sendDepartmentActionNotice(
   desk: { department: string; place: string; leader: string },
   issue: string,
@@ -1287,7 +1379,8 @@ async function sendDepartmentActionNotice(
   token: string,
   record?: WorkspaceRecord,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<boolean> {
+  onPrompt?: (prompt: WorkPrompt) => void,
+): Promise<{ template: boolean; interactive: boolean }> {
   const logger = new Logger('DepartmentNotice');
   const when = new Date().toLocaleDateString('en-IN', {
     day: 'numeric',
@@ -1333,12 +1426,48 @@ async function sendDepartmentActionNotice(
   }
   let requiredAccepted = false;
   let usedInteractive = false;
+  let usedTemplate = false;
   let lastError: unknown = null;
+  const status = clean(record?.resolutionStatus || record?.status || 'Pending');
 
   for (const recipient of recipients) {
     logger.log(
       `Department notice source=${recipient.source} tail=${recipient.phone.slice(-4)} required=${recipient.required}`,
     );
+    let templateMessageId: string | null = null;
+    try {
+      templateMessageId = await sendWorkUpdateTemplate(
+        recipient.phone,
+        {
+          department: clean(desk.department),
+          work: clean(issue),
+          location: clean(desk.place || record?.village || 'Palnadu'),
+          status,
+          when,
+          token,
+        },
+        env,
+      );
+      if (recipient.required) {
+        requiredAccepted = true;
+        usedTemplate = true;
+      }
+      if (templateMessageId && onPrompt) {
+        onPrompt({
+          phone: recipient.phone,
+          recordId,
+          messageId: templateMessageId,
+          department: desk.department,
+        });
+      }
+    } catch (err) {
+      lastError = err;
+      const reason = err instanceof Error ? err.message : 'send failed';
+      logger.warn(
+        `Department template failed source=${recipient.source} tail=${recipient.phone.slice(-4)}: ${reason}`,
+      );
+    }
+
     try {
       const sent = await sendReplyList(recipient.phone, bodyText, rows, {
         button: 'Update work',
@@ -1362,46 +1491,13 @@ async function sendDepartmentActionNotice(
         requiredAccepted = true;
         usedInteractive = true;
       }
-      continue;
-    } catch (interactiveErr) {
-      try {
-        const sent = await sendTemplateMessage(
-          recipient.phone,
-          APPROVED_DYNAMIC_TEMPLATE,
-          {
-            language: 'en',
-            bodyParameters: [
-              clean(desk.department),
-              clean(issue),
-              clean(`${desk.place} - ${desk.department}`),
-              when,
-            ],
-            urlButton: `progress/${token}`,
-            env,
-          },
-        );
-        const accepted = metaAccepted(sent);
-        if (!accepted.ok) {
-          throw new Error('Meta did not accept the department template');
-        }
-        await sendQuiet(
-          recipient.phone,
-          `📲 *Native WhatsApp Operations Menu*\n\n` +
-            `Reply *MENU* or *OPERATIONS* at any time to open the Department Operations Menu directly in WhatsApp.`,
-        );
-        await recordOutboundAttempt({
-          accepted: true,
-          messageId: accepted.messageId,
-          httpCode: 200,
-          notificationType: 'department_approval',
-        });
-        if (recipient.required) requiredAccepted = true;
-      } catch (err) {
-        lastError = err || interactiveErr;
-        const reason = err instanceof Error ? err.message : 'send failed';
-        logger.warn(
-          `Department notice failed source=${recipient.source} tail=${recipient.phone.slice(-4)}: ${reason}`,
-        );
+    } catch (err) {
+      if (!templateMessageId) lastError = lastError || err;
+      const reason = err instanceof Error ? err.message : 'send failed';
+      logger.warn(
+        `Department menu failed source=${recipient.source} tail=${recipient.phone.slice(-4)}: ${reason}`,
+      );
+      if (!templateMessageId) {
         await recordOutboundAttempt({
           accepted: false,
           error: reason,
@@ -1418,7 +1514,59 @@ async function sendDepartmentActionNotice(
         : 'The department WhatsApp number did not accept the notification.';
     throw new Error(reason);
   }
-  return usedInteractive;
+  return { template: usedTemplate, interactive: usedInteractive };
+}
+
+/** The utility template is delivered at any time. The older template covers the review period. */
+async function sendWorkUpdateTemplate(
+  phone: string,
+  detail: {
+    department: string;
+    work: string;
+    location: string;
+    status: string;
+    when: string;
+    token: string;
+  },
+  env: NodeJS.ProcessEnv,
+): Promise<string | null> {
+  const attempt = async (
+    name: string,
+    bodyParameters: string[],
+    urlButton?: string,
+  ) => {
+    const sent = await sendTemplateMessage(phone, name, {
+      language: 'en',
+      bodyParameters,
+      ...(urlButton ? { urlButton } : {}),
+      env,
+    });
+    const accepted = metaAccepted(sent);
+    if (!accepted.ok)
+      throw new Error('Meta did not accept the department template');
+    await recordOutboundAttempt({
+      accepted: true,
+      messageId: accepted.messageId,
+      httpCode: 200,
+      notificationType: 'department_work_update',
+    });
+    return accepted.messageId;
+  };
+  try {
+    return await attempt(WORK_UPDATE_TEMPLATE, [
+      detail.department,
+      detail.work,
+      detail.location,
+      detail.status,
+    ]);
+  } catch (err) {
+    if (!templateNotReady(err)) throw err;
+    return attempt(
+      APPROVED_DYNAMIC_TEMPLATE,
+      [detail.department, detail.work, detail.location, detail.when],
+      detail.token ? `progress/${detail.token}` : undefined,
+    );
+  }
 }
 
 /** Backward-compatible alias */

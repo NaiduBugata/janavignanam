@@ -425,7 +425,7 @@ function UploadDesk({
                 <p className="text-sm text-muted-foreground">Loading records…</p>
               ) : shown.length ? (
                 <div className="overflow-hidden rounded-xl border bg-card">
-                  {shown.map((item) => {
+                  {shown.map((item, index) => {
                     const isEditing = editing?.id === item.id;
                     if (isEditing) {
                       return (
@@ -441,7 +441,7 @@ function UploadDesk({
                               </span>
                               <div>
                                 <h3 className="text-sm font-semibold text-foreground">
-                                  Editing: {item.fullName || item.title || "Record"}
+                                  S.No {index + 1} · Editing: {item.fullName || item.title || "Record"}
                                 </h3>
                                 <p className="text-xs text-muted-foreground">
                                   {item.srNumber ? `Sr. ${item.srNumber} • ` : ""}Edit record details directly below and click Save changes
@@ -521,10 +521,15 @@ function UploadDesk({
                     return (
                       <div key={item.id} className="border-b px-5 py-4 last:border-0">
                         <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <span className="mt-0.5 flex h-6 min-w-8 shrink-0 items-center justify-center rounded-md bg-muted px-1.5 text-xs font-semibold tabular-nums text-muted-foreground" title="S.No">
+                              {index + 1}
+                            </span>
+                            <div className="min-w-0">
                             <h2 className="truncate font-medium">{item.fullName || item.title}</h2>
                             {item.srNumber ? <p className="mt-1 text-sm text-muted-foreground">Sr. {item.srNumber}</p> : null}
                             <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{[item.visitTime, item.division, item.mandal, item.village, item.assemblyConstituency].filter(Boolean).join(", ") || item.detail}</p>
+                            </div>
                           </div>
                           <div className="flex shrink-0 items-center gap-2 pt-0.5">
                             <span className="inline-flex h-6 items-center rounded-full bg-primary/10 px-2.5 text-xs font-medium text-primary">{item.status}</span>

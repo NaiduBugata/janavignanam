@@ -426,9 +426,10 @@ export function ConstituencyDirectory({ token }: { token: string }) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border bg-card shadow-sm">
-          <table className="w-full min-w-[1180px] text-left text-sm">
+          <table className="w-full min-w-[1240px] text-left text-sm">
             <thead className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
+                <th className="w-16 px-3.5 py-3 font-semibold">S.No</th>
                 {[
                   "Name",
                   "Phone",
@@ -454,6 +455,9 @@ export function ConstituencyDirectory({ token }: { token: string }) {
                   key={`${row.phone}-${row.name}-${index}`}
                   className="border-b align-top last:border-0 hover:bg-muted/30 transition-colors"
                 >
+                  <td className="px-3.5 py-3 tabular-nums font-semibold text-muted-foreground">
+                    {((data?.page || 1) - 1) * (data?.pageSize || 40) + index + 1}
+                  </td>
                   <td className="px-3.5 py-3">
                     <p className="font-semibold text-foreground">{row.name || "—"}</p>
                     {marked(row.important) ? (

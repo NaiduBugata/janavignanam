@@ -279,11 +279,16 @@ describe('DepartmentOperationsService', () => {
         listId: 'dept:work:gr_101:needtime',
       });
       await service.handleEvent(choose, deptPhone, mockFetch, env);
+      const now = new Date();
+      const current = new Date(sampleGrievance.deadline);
+      const start = current.getTime() < now.getTime() ? now : current;
+      const extended = new Date(start.getTime());
+      extended.setUTCDate(extended.getUTCDate() + 15);
       expect(mockWorkspace.saveProgress).toHaveBeenCalledWith(
         'gr_101',
         expect.objectContaining({
           remarks: 'Deadline extended by 15 days',
-          deadline: '2026-11-20',
+          deadline: extended.toISOString().slice(0, 10),
           notifyStatus: 'Need time',
           status: 'Need time',
         }),
@@ -293,6 +298,92 @@ describe('DepartmentOperationsService', () => {
         'Update work',
         'View details',
       ]);
+    });
+
+    it('does not save a menu tap and asks for the website grievance', async () => {
+      const menuFiling: WorkspaceRecord = {
+        ...sampleGrievance,
+        id: 'menu_1',
+        title: 'Department Menu',
+        detail: 'Department Menu',
+        fullName: '',
+        srNumber: '',
+        status: 'Open',
+        progressRemarks: '',
+      };
+      mockWorkspace.list.mockImplementation(async (section: string) => {
+        if (section === 'grievances') return [menuFiling, sampleGrievance];
+        return [];
+      });
+      mockWorkspace.get.mockImplementation(async (id: string) => {
+        if (id === 'menu_1') return menuFiling;
+        if (id === sampleGrievance.id) return sampleGrievance;
+        return null;
+      });
+
+      const listed = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:g:update',
+      });
+      await service.handleEvent(listed, deptPhone, mockFetch, env);
+      const listedIds = sentBodies[0].interactive.action.sections[0].rows.map(
+        (row: { id: string }) => row.id,
+      );
+      expect(listedIds.join(' ')).not.toContain('menu_1');
+      expect(listedIds.join(' ')).toContain('dept:g:up_pick:gr_101');
+
+      const stale = createMockEvent({
+        sender: deptPhone,
+        listId: 'dept:work:menu_1:progress',
+      });
+      await service.handleEvent(stale, deptPhone, mockFetch, env);
+      expect(mockWorkspace.saveProgress).not.toHaveBeenCalled();
+      expect(sentBodies[1].text.body).toContain('not a grievance on the website');
+      const offered = sentBodies[2].interactive.action.sections[0].rows.map(
+        (row: { id: string }) => row.id,
+      );
+      expect(offered.join(' ')).toContain('dept:g:up_pick:gr_101');
+    });
+
+    it('saves a template status button onto the grievance it was sent for', async () => {
+      const prompts = [
+        {
+          phone: deptPhone,
+          recordId: 'gr_101',
+          messageId: 'wamid.prompt',
+          department: 'Water supply',
+          at: new Date().toISOString(),
+        },
+      ];
+      const db = {
+        collection: () => ({
+          find: () => ({
+            sort: () => ({
+              limit: () => ({
+                toArray: async () => prompts,
+              }),
+            }),
+          }),
+        }),
+      };
+      service = new DepartmentOperationsService(
+        mockWorkspace,
+        db as never,
+      );
+      const event = createMockEvent({
+        sender: deptPhone,
+        text: 'In progress',
+      });
+      event.event_type = 'button';
+      event.context_message_id = 'wamid.prompt';
+      await service.handleEvent(event, deptPhone, mockFetch, env);
+      expect(mockWorkspace.saveProgress).toHaveBeenCalledWith(
+        'gr_101',
+        expect.objectContaining({
+          status: 'In progress',
+          remarks: 'In progress',
+        }),
+      );
     });
 
     it('saves In progress onto the website record', async () => {

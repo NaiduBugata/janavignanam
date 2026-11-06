@@ -43,6 +43,7 @@ import {
 } from './followup-contacts';
 import {
   assignDesk,
+  isMenuFiling,
   classifyGrievance,
   departmentOrder,
   grievanceReceipt,
@@ -429,7 +430,7 @@ export class ChatbotService {
 
   private async saveGrievance(
     event: WhatsAppEvent,
-  ): Promise<'saved' | 'duplicate' | 'unavailable'> {
+  ): Promise<'saved' | 'duplicate' | 'unavailable' | 'ignored'> {
     if (!this.db) return 'unavailable';
     const ok = await this.db.ensureConnected();
     if (!ok) return 'unavailable';
@@ -438,8 +439,16 @@ export class ChatbotService {
       .collection(RECORDS)
       .findOne({ section: 'grievances', sourceMessageId: messageId });
     if (existing) return 'duplicate';
-    const name = personName(event.sender_wa_id || '') || 'Person';
     const detail = grievanceDetail(event);
+    if (
+      event.event_type === 'interactive' ||
+      event.event_type === 'button' ||
+      isGreetingOnly(detail) ||
+      isMenuFiling({ title: detail })
+    ) {
+      return 'ignored';
+    }
+    const name = personName(event.sender_wa_id || '') || 'Person';
     const { priority } = classifyGrievance(detail);
     const desk = assignDesk(detail);
     await this.db.collection(RECORDS).insertOne({

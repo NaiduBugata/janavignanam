@@ -833,6 +833,35 @@ describe('ChatbotService', () => {
     expect(JSON.stringify(sent)).not.toContain('"type":"list"');
   });
 
+  it('does not store a greeting or a menu label as a grievance', async () => {
+    setStaffDirectory([
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
+    ]);
+    const { rows, db } = memoryRecords();
+    const bot = new ChatbotService(undefined, db as never);
+    const sent: Array<Record<string, unknown>> = [];
+    await bot.handle(payload('Hi', 'wamid.hi', '918885230708'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    await bot.handle(
+      payload('Department Menu', 'wamid.menu', '918885230708'),
+      {
+        env: env(),
+        fetchImpl: capture(sent),
+      },
+    );
+    await bot.handle(
+      payload('Update Progress', 'wamid.progress', '918885230708'),
+      {
+        env: env(),
+        fetchImpl: capture(sent),
+      },
+    );
+    expect(rows).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
   it('does not save the same grievance twice', async () => {
     setStaffDirectory([
       { phone: '919100000099', role: 'person', name: 'Balaji' },

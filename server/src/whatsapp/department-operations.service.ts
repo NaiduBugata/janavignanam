@@ -31,6 +31,7 @@ import {
   assignDesk,
   DESKS,
   GENERAL_DESK,
+  isMenuFiling,
 } from '../chatbot/grievance-priority';
 import type { WhatsAppEvent } from './whatsapp.parser';
 
@@ -875,20 +876,35 @@ export class DepartmentOperationsService {
       }
 
       const typedChoice = workChoice(textMsg);
-      if (
-        typedChoice &&
-        session.step === 'SELECT_GRIEVANCE_STATUS' &&
-        session.recordId
-      ) {
-        await this.applyWorkStatus(
-          sender,
-          session.recordId,
-          typedChoice,
-          fetchImpl,
-          env,
-          auth,
-        );
-        return;
+      if (typedChoice) {
+        let recordId =
+          session.step === 'SELECT_GRIEVANCE_STATUS'
+            ? session.recordId || ''
+            : '';
+        if (
+          !recordId &&
+          (event.event_type === 'button' ||
+            session.step === 'IDLE' ||
+            session.step === 'SELECT_GRIEVANCE' ||
+            session.step === 'SELECT_GRIEVANCE_STATUS')
+        ) {
+          recordId = await this.promptRecord(sender, event.context_message_id);
+        }
+        if (recordId) {
+          session.module = 'grievances';
+          session.action = 'update';
+          session.recordId = recordId;
+          session.step = 'SELECT_GRIEVANCE_STATUS';
+          await this.applyWorkStatus(
+            sender,
+            recordId,
+            typedChoice,
+            fetchImpl,
+            env,
+            auth,
+          );
+          return;
+        }
       }
 
       // 5. Default keyword / reference number search fallback
@@ -1280,14 +1296,8 @@ export class DepartmentOperationsService {
     deps: { records?: unknown },
   ): Promise<void> {
     const record = await this.getRecordById('grievances', id, deps);
-    if (!record) {
-      await sendTextMessage(
-        sender,
-        '⚠️ The selected grievance could not be found or is no longer available.',
-        fetchImpl,
-        env,
-      );
-      await this.sendGrievancesMenu(sender, fetchImpl, env, auth);
+    if (!record || isMenuFiling(record)) {
+      await this.askForRealGrievance(sender, fetchImpl, env, auth);
       return;
     }
 
@@ -1473,7 +1483,21 @@ export class DepartmentOperationsService {
       return;
     }
     try {
-      const record = await this.workspace.get(id);
+      let record: WorkspaceRecord | null = null;
+      try {
+        record = await this.workspace.get(id);
+      } catch (err) {
+        const name = err instanceof Error ? err.name : '';
+        const status =
+          err && typeof err === 'object' && 'status' in err
+            ? Number((err as { status?: number }).status)
+            : 0;
+        if (name !== 'NotFoundException' && status !== 404) throw err;
+      }
+      if (!record || isMenuFiling(record)) {
+        await this.askForRealGrievance(sender, fetchImpl, env, auth);
+        return;
+      }
       const stages: ProgressStage[] =
         record.progressStages && record.progressStages.length
           ? record.progressStages.map((stage) => ({ ...stage }))
@@ -2699,9 +2723,15 @@ export class DepartmentOperationsService {
       }
     }
 
-    // Filter closed/rejected for grievances by default
+    // Filter closed/rejected for grievances by default.
+    // Menu taps and greetings are not visitor slips, so they cannot be updated.
     if (section === 'grievances') {
-      all = all.filter((g) => g.status !== 'Closed' && g.status !== 'Rejected');
+      all = all.filter(
+        (g) =>
+          g.status !== 'Closed' &&
+          g.status !== 'Rejected' &&
+          !isMenuFiling(g),
+      );
     }
 
     // Role-based Department Scope Filtering
@@ -2722,6 +2752,65 @@ export class DepartmentOperationsService {
       }
       return assignedDept.includes(deptLower);
     });
+  }
+
+  /** A template button can arrive long after the 15-minute chat session. */
+  private async promptRecord(
+    sender: string,
+    contextId?: string | null,
+  ): Promise<string> {
+    if (!this.db || typeof this.db.collection !== 'function') return '';
+    try {
+      const collection = this.db.collection('dept_work_prompts');
+      if (!collection || typeof collection.find !== 'function') return '';
+      const rows = await collection
+        .find({})
+        .sort({ at: -1 })
+        .limit(50)
+        .toArray();
+      const fresh = (Array.isArray(rows) ? rows : []).filter((row) => {
+        const at = Date.parse(String(row.at || ''));
+        return Number.isFinite(at) && Date.now() - at < 30 * 24 * 60 * 60 * 1000;
+      });
+      const phone = digits(sender);
+      if (contextId) {
+        const exact = fresh.find(
+          (row) => String(row.messageId || row._id || '') === contextId,
+        );
+        if (exact?.recordId) return String(exact.recordId);
+      }
+      const latest = fresh.find(
+        (row) => digits(String(row.phone || '')) === phone,
+      );
+      return latest?.recordId ? String(latest.recordId) : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /** A stale menu button is not a website grievance. Ask for the real record. */
+  private async askForRealGrievance(
+    sender: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+    auth: DeptAuthResult,
+  ): Promise<void> {
+    const session = this.getOrCreateSession(sender);
+    session.module = 'grievances';
+    session.action = 'update';
+    session.step = 'SELECT_GRIEVANCE';
+    session.page = 1;
+    session.searchQuery = undefined;
+    session.recordId = undefined;
+    session.recordTitle = undefined;
+    session.record = undefined;
+    await sendTextMessage(
+      sender,
+      'That choice is not a grievance on the website. Choose the grievance, then set Pending, Started, In progress, or Need time. That record is what the website and the download show.',
+      fetchImpl,
+      env,
+    );
+    await this.sendGrievanceList(sender, session, fetchImpl, env, auth, {});
   }
 
   private async getRecordById(

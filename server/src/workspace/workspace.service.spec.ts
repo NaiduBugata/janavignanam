@@ -178,6 +178,7 @@ describe('WorkspaceService', () => {
     expect(result.notice).toContain(
       'The department was sent the WhatsApp operations menu.',
     );
+    expect(result.notice).toContain('any time');
 
     // Verify native interactive buttons dispatched
     expect(spyButtons).toHaveBeenCalledTimes(1);
@@ -205,8 +206,19 @@ describe('WorkspaceService', () => {
       }),
     ]);
 
-    // Verify template with URL button was NOT called because interactive buttons succeeded
-    expect(spyTemplate).not.toHaveBeenCalled();
+    expect(spyTemplate).toHaveBeenCalledWith(
+      expect.stringContaining('8919537879'),
+      'jv_dept_work_update',
+      expect.objectContaining({
+        language: 'en',
+        bodyParameters: [
+          expect.any(String),
+          expect.stringContaining('water'),
+          expect.any(String),
+          'Open',
+        ],
+      }),
+    );
 
     spyButtons.mockRestore();
     spyTemplate.mockRestore();
@@ -332,6 +344,13 @@ describe('WorkspaceService', () => {
       );
     const spyTemplate = jest
       .spyOn(waSend, 'sendTemplateMessage')
+      .mockRejectedValueOnce(
+        new waSend.WhatsAppSendError(
+          'Template is pending and not approved',
+          400,
+          132001,
+        ),
+      )
       .mockResolvedValue({ messages: [{ id: 'wamid.dept.1' }] });
     jest.spyOn(waSend, 'sendTextMessage').mockResolvedValue({ success: true });
     const records: Array<Record<string, unknown>> = [
