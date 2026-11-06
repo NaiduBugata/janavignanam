@@ -2,7 +2,6 @@ import React, { useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Copy,
@@ -77,9 +76,7 @@ export function GrievanceDocumentSection({
   const [uploadError, setUploadError] = useState("");
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [applyingDocId, setApplyingDocId] = useState<string | null>(null);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
-  const [applyNotice, setApplyNotice] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -94,7 +91,6 @@ export function GrievanceDocumentSection({
 
   const uploadFile = async (file: File) => {
     setUploadError("");
-    setApplyNotice(null);
 
     const validExtensions = /\.(pdf|jpe?g|png)$/i;
     const validMimes = [
@@ -145,25 +141,6 @@ export function GrievanceDocumentSection({
     void navigator.clipboard.writeText(textToCopy);
     setCopiedId(docId);
     setTimeout(() => setCopiedId(null), 2500);
-  };
-
-  const applyExtracted = async (docId: string) => {
-    setApplyingDocId(docId);
-    setApplyNotice(null);
-    try {
-      const updated = await api<GrievanceItemLike>(
-        `/api/workspace/records/${encodeURIComponent(record.id)}/documents/${encodeURIComponent(docId)}/apply`,
-        { method: "POST", token },
-      );
-      onUpdateRecord(updated);
-      setApplyNotice("Extracted details successfully applied to grievance record!");
-    } catch (err: unknown) {
-      setUploadError(
-        err instanceof Error ? err.message : "Failed to apply extracted data to record.",
-      );
-    } finally {
-      setApplyingDocId(null);
-    }
   };
 
   const deleteDoc = async (docId: string) => {
@@ -257,13 +234,6 @@ export function GrievanceDocumentSection({
       )}
 
       {/* Success Notification */}
-      {applyNotice && (
-        <div className="mt-2.5 flex items-center gap-2 rounded-md bg-emerald-500/10 p-2 text-emerald-700 dark:text-emerald-400">
-          <CheckCircle2 className="size-3.5 shrink-0" />
-          <p>{applyNotice}</p>
-        </div>
-      )}
-
       {/* Documents List */}
       {docs.length > 0 ? (
         <div className="mt-3 space-y-2.5">
@@ -295,13 +265,6 @@ export function GrievanceDocumentSection({
                       ({formatBytes(doc.sizeBytes)})
                     </span>
 
-                    {/* Status Badge */}
-                    {doc.status === "completed" && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                        <Check className="size-2.5" />
-                        Grok Scanned
-                      </span>
-                    )}
                     {doc.status === "processing" && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-400">
                         <Loader2 className="size-2.5 animate-spin" />
@@ -328,23 +291,6 @@ export function GrievanceDocumentSection({
                       <ExternalLink className="size-3" />
                       View Original
                     </a>
-
-                    {doc.status === "completed" && (
-                      <button
-                        type="button"
-                        disabled={applyingDocId === doc.id}
-                        onClick={() => applyExtracted(doc.id)}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-emerald-700 hover:bg-emerald-500/10 disabled:opacity-50 dark:text-emerald-400"
-                        title="Auto-fill empty fields on grievance record using extracted data"
-                      >
-                        {applyingDocId === doc.id ? (
-                          <Loader2 className="size-3 animate-spin" />
-                        ) : (
-                          <Sparkles className="size-3" />
-                        )}
-                        Apply Details
-                      </button>
-                    )}
 
                     <button
                       type="button"

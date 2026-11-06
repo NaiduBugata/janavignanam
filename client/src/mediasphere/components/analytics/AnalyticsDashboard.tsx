@@ -42,6 +42,8 @@ import {
 import { useNewsContext } from '../../context/NewsContext';
 import { divisionNames, divisionForMandal } from '@/places';
 import { downloadNewsReport, type ReportExportParams } from '../../services/reportsApi';
+import { api } from '@/lib/api';
+import { downloadFile } from '@/ReportPage';
 import CategoryChip from '../common/CategoryChip';
 import SentimentBadge from '../common/SentimentBadge';
 import SourceBadge from '../common/SourceBadge';
@@ -419,7 +421,20 @@ function AnalyticsTwoCharts({
   );
 }
 
-export default function AnalyticsDashboard() {
+type Briefing = {
+  news: { articles: number; problemsCollected: number; byCategory: { name: string; count: number }[] };
+  grievances: {
+    total: number;
+    pending: number;
+    inProgress: number;
+    completed: number;
+    notApproved: number;
+    byCategory: { name: string; count: number; pending: number; inProgress: number; completed: number; notApproved: number }[];
+  };
+  benefits: { people: number; byKind: { name: string; count: number }[] };
+};
+
+export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
   const context = (useNewsContext?.() || {}) as NewsContextType;
   const initialArticles: ArticleData[] = useMemo(() => (context.articles || []), [context.articles]);
   const loading = context.loading;
@@ -565,6 +580,9 @@ export default function AnalyticsDashboard() {
   const [modalArticle, setModalArticle] = useState<ArticleData | null>(null);
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [briefing, setBriefing] = useState<Briefing | null>(null);
+  const [briefingError, setBriefingError] = useState('');
+  const [onePageBusy, setOnePageBusy] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
 
   // Administrative Divisions
@@ -808,6 +826,37 @@ export default function AnalyticsDashboard() {
     return filteredArticles.slice(start, start + itemsPerPage);
   }, [filteredArticles, currentPage]);
 
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    api<Briefing>('/api/workspace/reports/briefing', { token })
+      .then((row) => {
+        if (!cancelled) {
+          setBriefing(row);
+          setBriefingError('');
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setBriefingError(err instanceof Error ? err.message : 'Could not load grievances');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const downloadOnePage = async () => {
+    if (!token) return;
+    setOnePageBusy(true);
+    setDownloadStatus('');
+    try {
+      await downloadFile('/api/workspace/reports/briefing?format=pdf', token, 'one-page-report.pdf');
+    } catch (err: unknown) {
+      setDownloadStatus(err instanceof Error ? err.message : 'One page report failed');
+    } finally {
+      setOnePageBusy(false);
+    }
+  };
+
   // Top Action Bar Download Report (Maintains existing complete dataset download functionality)
   const handleExport = async (format: 'pdf' | 'xlsx' | 'csv') => {
     try {
@@ -855,14 +904,9 @@ export default function AnalyticsDashboard() {
       {/* SECTION 1: HEADER & OVERVIEW / ACTIONS */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground font-display">
-              Analytics Dashboard
-            </h1>
-            <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-              Live DB
-            </span>
-          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-display">
+            Analytics Dashboard
+          </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             Constituency trends, grievance tracking, and periodic legislative analysis
           </p>
@@ -870,6 +914,15 @@ export default function AnalyticsDashboard() {
 
         {/* Action Controls & Download Button */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => void downloadOnePage()}
+            disabled={onePageBusy || !token}
+            className="inline-flex items-center gap-2 rounded-lg border bg-background px-3.5 py-2 text-sm font-medium hover:bg-muted transition-colors shadow-sm disabled:opacity-60"
+          >
+            {onePageBusy ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />}
+            <span>{onePageBusy ? 'Preparing...' : 'One page report'}</span>
+          </button>
           {/* Download Dropdown */}
           <div className="relative">
             <button
@@ -1046,6 +1099,7 @@ export default function AnalyticsDashboard() {
               <p className="mt-1 text-xs text-muted-foreground">Official releases & statements</p>
             </div>
           </div>
+          <GrievanceBriefing briefing={briefing} error={briefingError} />
         </div>
       ) : (
         /* STATE B: Compact Horizontal Animated Navigation Bar */
@@ -1513,12 +1567,6 @@ export default function AnalyticsDashboard() {
               </div>
             )}
 
-            {/* Period record count */}
-            <div className="text-xs text-muted-foreground pt-1 border-t flex items-center justify-between">
-              <span>
-                Found <strong className="text-foreground">{periodicReportData.total}</strong> articles in this period
-              </span>
-            </div>
           </div>
 
           {/* Period Summary Metric Cards */}
@@ -1783,5 +1831,76 @@ export default function AnalyticsDashboard() {
         />
       )}
     </div>
+  );
+}
+
+function GrievanceBriefing({ briefing, error }: { briefing: Briefing | null; error: string }) {
+  return (
+    <section className="mt-4 rounded-xl border bg-card p-4 shadow-xs">
+      <h2 className="font-display text-lg font-semibold">Grievances and benefits</h2>
+      <p className="text-sm text-muted-foreground">Problems collected from news, grievance progress, and people who received a benefit.</p>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      {!briefing && !error ? <p className="mt-3 text-sm text-muted-foreground">Loading grievance categories…</p> : null}
+      {briefing ? (
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Count label="Problems collected" value={briefing.news.problemsCollected} />
+            <Count label="Pending" value={briefing.grievances.pending} />
+            <Count label="In progress" value={briefing.grievances.inProgress} />
+            <Count label="Completed" value={briefing.grievances.completed} />
+            <Count label="Not approved" value={briefing.grievances.notApproved} />
+            <Count label="People benefited" value={briefing.benefits.people} />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <h3 className="text-sm font-semibold">News problems by category</h3>
+              <CategoryList rows={briefing.news.byCategory} empty="No problem articles collected." />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold">People benefited</h3>
+              <CategoryList rows={briefing.benefits.byKind.filter((row) => row.count > 0)} empty="No benefits recorded yet." />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold">Grievances by category</h3>
+            {briefing.grievances.byCategory.length ? (
+              <div className="mt-2 overflow-hidden rounded-lg border">
+                {briefing.grievances.byCategory.map((row) => (
+                  <div key={row.name} className="grid gap-1 border-b px-3 py-2 text-sm last:border-0 sm:grid-cols-[1fr_auto]">
+                    <p className="font-medium">{row.name} <span className="text-muted-foreground">· {row.count}</span></p>
+                    <p className="text-muted-foreground">{row.pending} pending · {row.inProgress} in progress · {row.completed} completed · {row.notApproved} not approved</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">No grievances saved yet.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function Count({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border bg-background px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-display text-2xl font-semibold">{value.toLocaleString()}</p>
+    </div>
+  );
+}
+
+function CategoryList({ rows, empty }: { rows: { name: string; count: number }[]; empty: string }) {
+  if (!rows.length) return <p className="mt-2 text-sm text-muted-foreground">{empty}</p>;
+  return (
+    <ul className="mt-2 space-y-1 text-sm">
+      {rows.map((row) => (
+        <li key={row.name} className="flex items-center justify-between gap-3">
+          <span>{row.name}</span>
+          <span className="tabular-nums text-muted-foreground">{row.count}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

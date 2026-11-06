@@ -30,7 +30,10 @@ import {
   type WorkspaceSection,
 } from './workspace.dto';
 import { queryContacts } from './contacts-directory';
+import { NewsService } from '../news/news.service';
 import { WorkspaceService } from './workspace.service';
+import { buildBriefing } from './one-page-briefing';
+import { briefingPdf } from './progress-report';
 import {
   GrokScannerService,
   matchIssueCategories,
@@ -43,6 +46,7 @@ export class WorkspaceController {
   constructor(
     private readonly workspace: WorkspaceService,
     private readonly grokScanner: GrokScannerService,
+    private readonly news: NewsService,
   ) {}
 
   @Post('register')
@@ -97,6 +101,31 @@ export class WorkspaceController {
       throw new UnauthorizedException('Unknown section');
     }
     return this.workspace.list(section as WorkspaceSection);
+  }
+
+  @Get('reports/briefing')
+  async briefing(
+    @Query('format') format = '',
+    @Headers('authorization') authorization: string | undefined,
+    @Res() res: Response,
+  ) {
+    this.workspace.verify(bearer(authorization));
+    const [grievances, events, news] = await Promise.all([
+      this.workspace.savedRecords('grievances'),
+      this.workspace.savedRecords('events'),
+      this.news.collectedProblems(),
+    ]);
+    const briefing = buildBriefing({
+      generatedOn: new Date().toISOString().slice(0, 10),
+      news,
+      grievances,
+      events,
+    });
+    if (format === 'pdf') {
+      sendFile(res, 'one-page-report.pdf', 'application/pdf', briefingPdf(briefing));
+      return;
+    }
+    res.json(briefing);
   }
 
   @Get('reports/export')

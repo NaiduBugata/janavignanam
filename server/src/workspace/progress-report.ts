@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import type { Briefing } from './one-page-briefing';
 
 export const STAGE_NAMES = [
   'Work started',
@@ -97,6 +98,42 @@ export function reportPdf(row: ReportRow): Buffer {
 /** Every saved report in a section, one designed page sequence each. */
 export function combinedPdf(rows: ReportRow[]): Buffer {
   return renderReports(rows);
+}
+
+/** News problems, grievance progress, and MP benefits on one page when it fits. */
+export function briefingPdf(data: Briefing): Buffer {
+  const doc = new ReportDocument();
+  doc.open();
+  doc.banner('One page report', `Constituency briefing  ${data.generatedOn}`);
+  doc.fields([
+    ['Problems collected', String(data.news.problemsCollected)],
+    ['News articles', String(data.news.articles)],
+    ['Grievances', String(data.grievances.total)],
+    ['Not approved', String(data.grievances.notApproved)],
+    ['Pending', String(data.grievances.pending)],
+    ['In progress', String(data.grievances.inProgress)],
+    ['Completed', String(data.grievances.completed)],
+    ['People benefited', String(data.benefits.people)],
+  ]);
+  doc.heading('Problems collected from news');
+  doc.note(
+    data.news.byCategory.length
+      ? data.news.byCategory.map((row) => `${row.name} ${row.count}`).join('   ')
+      : 'No problem articles collected.',
+  );
+  doc.heading('Grievances by category');
+  if (!data.grievances.byCategory.length) doc.note('No grievances saved yet.');
+  data.grievances.byCategory.forEach((row) => {
+    doc.note(
+      `${row.name}: ${row.count} total, ${row.pending} pending, ${row.inProgress} in progress, ${row.completed} completed, ${row.notApproved} not approved`,
+    );
+  });
+  doc.heading('People benefited by the MP');
+  doc.note(
+    data.benefits.byKind.map((row) => `${row.name} ${row.count}`).join('   '),
+  );
+  doc.note('Completed grievances are the problems solved. News counts are problems collected from articles.');
+  return doc.toBuffer();
 }
 
 function renderReports(rows: ReportRow[]): Buffer {

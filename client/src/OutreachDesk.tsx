@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, ClipboardList, HeartHandshake } from "lucide-react";
+import { ClipboardList, HeartHandshake } from "lucide-react";
 import { api } from "@/lib/api.ts";
 import { BENEFITS } from "@/EventRecordForm.tsx";
 
@@ -27,7 +27,7 @@ type Person = {
   section?: string;
 };
 
-type Tab = "events" | "followups" | "schedule";
+type Tab = "events" | "followups";
 
 const FOLLOW_UPS = [
   { id: "frequent", label: "Frequently contacted" },
@@ -64,7 +64,7 @@ function bucketOf(item: Person): (typeof FOLLOW_UPS)[number]["id"] {
   return "pending";
 }
 
-export function OutreachDesk({ token }: { token: string }) {
+export function OutreachDesk({ token, view }: { token: string; view: "outreach" | "schedule" }) {
   const [tab, setTab] = useState<Tab>("events");
   const [events, setEvents] = useState<Person[]>([]);
   const [followups, setFollowups] = useState<Person[]>([]);
@@ -75,25 +75,29 @@ export function OutreachDesk({ token }: { token: string }) {
     let cancelled = false;
     const load = (section: string) =>
       api<Person[]>(`/api/workspace/records?section=${section}`, { token });
-    Promise.all([load("events"), load("followups"), load("schedules"), load("visits")])
-      .then(([benefitRows, followRows, scheduleRows, visitRows]) => {
-        if (cancelled) return;
-        setEvents(benefitRows);
-        setFollowups(followRows);
-        setSchedule(
-          [...scheduleRows, ...visitRows].sort((a, b) =>
-            (a.visitDate || a.date || "9999-99-99").localeCompare(b.visitDate || b.date || "9999-99-99"),
-          ),
-        );
-        setError("");
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load these records");
-      });
+    const request = view === "schedule"
+      ? Promise.all([load("schedules"), load("visits")]).then(([scheduleRows, visitRows]) => {
+          if (cancelled) return;
+          setSchedule(
+            [...scheduleRows, ...visitRows].sort((a, b) =>
+              (a.visitDate || a.date || "9999-99-99").localeCompare(b.visitDate || b.date || "9999-99-99"),
+            ),
+          );
+          setError("");
+        })
+      : Promise.all([load("events"), load("followups")]).then(([benefitRows, followRows]) => {
+          if (cancelled) return;
+          setEvents(benefitRows);
+          setFollowups(followRows);
+          setError("");
+        });
+    request.catch((err: unknown) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : "Could not load these records");
+    });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, view]);
 
   const benefitCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -109,14 +113,14 @@ export function OutreachDesk({ token }: { token: string }) {
     <div>
       <div className="mb-8">
         <p className="mb-2 text-sm font-medium uppercase tracking-wider text-primary">MP desk</p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Events, follow ups and schedule</h1>
-        <p className="mt-2 max-w-2xl text-muted-foreground">People who received a benefit, who needs a follow up, and the visits and work still to be done. Add these records from the upload page.</p>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">{view === "schedule" ? "Schedule" : "Events and follow ups"}</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">{view === "schedule" ? "Visits and the things still to be done. Add these records from the upload page under Schedules or Visits." : "People who received a benefit, and who needs a follow up. Add these records from the upload page."}</p>
       </div>
+      {view === "outreach" && (
       <div className="mb-6 flex flex-wrap gap-2">
         {([
           ["events", "Events", HeartHandshake],
           ["followups", "Follow ups", ClipboardList],
-          ["schedule", "Schedule", CalendarClock],
         ] as const).map(([id, label, Icon]) => (
           <button
             key={id}
@@ -129,9 +133,10 @@ export function OutreachDesk({ token }: { token: string }) {
           </button>
         ))}
       </div>
+      )}
       {error && <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
 
-      {tab === "events" && (
+      {view === "outreach" && tab === "events" && (
         <div className="space-y-6">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border bg-card p-4">
@@ -171,7 +176,7 @@ export function OutreachDesk({ token }: { token: string }) {
         </div>
       )}
 
-      {tab === "followups" && (
+      {view === "outreach" && tab === "followups" && (
         <div className="grid gap-4 lg:grid-cols-3">
           {FOLLOW_UPS.map((group) => {
             const rows = followups.filter((item) => bucketOf(item) === group.id);
@@ -203,7 +208,7 @@ export function OutreachDesk({ token }: { token: string }) {
         </div>
       )}
 
-      {tab === "schedule" && (
+      {view === "schedule" && (
         schedule.length ? (
           <div className="space-y-3">
             {schedule.map((item, index) => {

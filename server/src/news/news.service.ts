@@ -454,6 +454,29 @@ export class NewsService implements OnModuleInit {
     };
   }
 
+  async collectedProblems(): Promise<{
+    articles: number;
+    problemsCollected: number;
+    byCategory: { name: string; count: number }[];
+  }> {
+    const docs = await this.constituencyDocs();
+    const articles = docs.map((doc) => this.normalizeArticle(doc));
+    const problems = articles.filter((article) => isGrievanceOrProblem(article));
+    const counts = new Map<string, number>();
+    for (const article of problems) {
+      const name = article.category || 'Other';
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return {
+      articles: articles.length,
+      problemsCollected: problems.length,
+      byCategory: [...counts.entries()]
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+        .slice(0, 8),
+    };
+  }
+
   async getStats(
     filters: ReportFilterOptions = {},
   ): Promise<NewsStatsResponse & { by_segment: Record<string, number> }> {

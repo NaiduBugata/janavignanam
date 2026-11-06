@@ -270,6 +270,29 @@ export class WorkspaceService {
     return cases.map(toRecord);
   }
 
+  async savedRecords(section: WorkspaceSection): Promise<WorkspaceRecord[]> {
+    await this.ready();
+    const rows = await this.db
+      .collection(RECORDS)
+      .find({ section })
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .toArray();
+    const visible = rows.filter((row) => !isDemoDoc(row));
+    const shown =
+      section === 'grievances'
+        ? visible.filter(
+            (row) =>
+              !isMenuFiling({
+                title: String(row.title || ''),
+                fullName: String(row.fullName || ''),
+                srNumber: String(row.srNumber || ''),
+              }),
+          )
+        : visible;
+    return shown.map(toRecord);
+  }
+
   async create(
     input: {
       section: WorkspaceSection;

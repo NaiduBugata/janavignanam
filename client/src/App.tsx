@@ -11,6 +11,7 @@ import {
   EyeOff,
   CalendarClock,
   ClipboardList,
+  HeartHandshake,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -39,7 +40,7 @@ import AnalyticsDashboard from "@/mediasphere/components/analytics/AnalyticsDash
 import { MpRetrievalWindow } from "@/components/MpRetrievalWindow.tsx";
 import { OutreachDesk } from "@/OutreachDesk.tsx";
 
-type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics" | "outreach";
+type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics" | "outreach" | "schedule";
 type ListSection = "grievances" | "projects" | "people" | "campaigns";
 type RecordItem = {
   id: string;
@@ -89,7 +90,8 @@ const nav: { id: Section; path: string; label: string; icon: typeof LayoutDashbo
   { id: "news", path: "/news", label: "News", icon: Newspaper },
   { id: "people", path: "/people", label: "Constituency", icon: Users },
   { id: "campaigns", path: "/campaigns", label: "Campaigns", icon: Send },
-  { id: "outreach", path: "/outreach", label: "Events & Follow ups, Schedule", icon: CalendarClock },
+  { id: "outreach", path: "/outreach", label: "Events & Follow ups", icon: HeartHandshake },
+  { id: "schedule", path: "/schedule", label: "Schedule", icon: CalendarClock },
   { id: "analytics", path: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -105,7 +107,8 @@ const labels: Record<Section, { title: string; description: string; icon: typeof
   news: { title: "News", description: "Constituency articles from the news database.", icon: Newspaper },
   people: { title: "Constituency", description: "Palnadu contacts from the master sheet, by division, assembly, and role.", icon: Users },
   campaigns: { title: "Campaigns", description: "Campaign plans saved in the database. Messages are not sent from this screen.", icon: Send },
-  outreach: { title: "Events, follow ups and schedule", description: "Benefits, follow ups, and the visit schedule uploaded from the upload page.", icon: CalendarClock },
+  outreach: { title: "Events and follow ups", description: "Benefits given and people to follow up, uploaded from the upload page.", icon: HeartHandshake },
+  schedule: { title: "Schedule", description: "Visits and tasks uploaded from the upload page.", icon: CalendarClock },
   analytics: { title: "Analytics", description: "Article totals from the news database.", icon: BarChart3 },
 };
 
@@ -444,14 +447,14 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
     return <ConstituencyDirectory token={token} />;
   }
 
-  if (section === "outreach") {
-    return <OutreachDesk token={token} />;
+  if (section === "outreach" || section === "schedule") {
+    return <OutreachDesk token={token} view={section} />;
   }
 
   if (section === "analytics") {
     return (
       <NewsProvider>
-        <AnalyticsDashboard />
+        <AnalyticsDashboard token={token} />
       </NewsProvider>
     );
   }
@@ -459,8 +462,8 @@ function Workspace({ section, records, summary, stats, token, onAdd, onApprove, 
   return (
     <>
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <SectionHeading meta={meta} />
-        <div className="flex flex-wrap gap-2">
+        {section !== "grievances" && <SectionHeading meta={meta} />}
+        <div className={`flex flex-wrap gap-2 ${section === "grievances" ? "sm:ml-auto" : ""}`}>
           {(section === "grievances" || section === "projects") && <ReportDownloads token={token} section={section} />}
           <button
             onClick={() => {
