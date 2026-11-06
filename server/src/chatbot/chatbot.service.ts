@@ -554,9 +554,10 @@ export class ChatbotService {
         await this.deliverSection(sender, body, rows, fetchImpl, env);
       } else {
         const text = (event.message_text || '').trim();
+        const greeting = isGreetingOnly(text);
         if (
           !text ||
-          isGreetingOnly(text) ||
+          greeting ||
           (!this.db && !this.workspace && !deps.records)
         ) {
           if (
@@ -571,9 +572,10 @@ export class ChatbotService {
               deps,
             );
           } else {
-            const lead = opening
-              ? `${openingLine(now, env)}\n\n${MENU_PROMPT}`
-              : MAIN_MENU_TEXT;
+            const lead =
+              opening || greeting
+                ? `${openingLine(now, env)}\n\n${MENU_PROMPT}`
+                : MAIN_MENU_TEXT;
             await this.sendMenu(sender, lead, fetchImpl, env);
           }
         } else {
@@ -2205,9 +2207,14 @@ const GREETING_WORDS = new Set([
   'hi',
   'hii',
   'hiii',
+  'hlo',
+  'hloo',
+  'hlw',
+  'hy',
   'hello',
   'helo',
   'hey',
+  'heyy',
   'hai',
   'namaste',
   'namasthe',
@@ -2239,7 +2246,13 @@ const GREETING_WORDS = new Set([
   'గారు',
 ]);
 
-/** True for a bare greeting such as "Hi", "Hello sir", "Good evening", or "నమస్కారం". */
+function greetingWord(word: string): boolean {
+  if (GREETING_WORDS.has(word)) return true;
+  const collapsed = word.replace(/(.)\1+/g, '$1');
+  return collapsed !== word && GREETING_WORDS.has(collapsed);
+}
+
+/** True for a bare greeting such as "Hi", "hloo", "Hello sir", "Good evening", or "నమస్కారం". */
 export function isGreetingOnly(text: string): boolean {
   const words = text
     .toLowerCase()
@@ -2249,7 +2262,7 @@ export function isGreetingOnly(text: string): boolean {
   return (
     words.length > 0 &&
     words.length <= 4 &&
-    words.every((word) => GREETING_WORDS.has(word))
+    words.every((word) => greetingWord(word))
   );
 }
 

@@ -548,7 +548,7 @@ describe('ChatbotService', () => {
     expect(JSON.stringify(sent)).not.toContain('example.com');
   });
 
-  it('opens each conversation with the greeting, but not every reply', async () => {
+  it('greets on every greeting, and again after a long gap', async () => {
     const sent: string[] = [];
     const recording = (async (
       _url: string | URL | Request,
@@ -585,7 +585,10 @@ describe('ChatbotService', () => {
     expect(sent[0]).toContain('*News*');
     expect(sent[0]).not.toContain("I'm your Media Assistant");
     expect(sent[0].toLowerCase()).not.toContain('menu');
-    expect(sent[1]).toBe(MAIN_MENU_TEXT);
+    expect(sent[1]).toContain(
+      "Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.",
+    );
+    expect(sent[1]).toContain('Choose a section.');
     expect(sent[2]).toContain(
       "Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.",
     );
@@ -606,6 +609,9 @@ describe('ChatbotService', () => {
   it('recognises a bare greeting but not a question', () => {
     for (const text of [
       'Hi',
+      'hlo',
+      'hloo',
+      'hlooo',
       'hello sir',
       'Good evening!',
       'నమస్కారం',
@@ -621,6 +627,37 @@ describe('ChatbotService', () => {
       '',
     ]) {
       expect(isGreetingOnly(text)).toBe(false);
+    }
+  });
+
+  it('answers hloo with the greeting menu every time, even when the database is connected', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const db = {
+      ensureConnected: async () => true,
+      collection: () => ({
+        find: () => ({
+          sort: () => ({
+            limit: () => ({ toArray: async () => [] }),
+          }),
+        }),
+      }),
+    };
+    const bot = new ChatbotService(undefined, db as never);
+    const deps = {
+      env: env(),
+      fetchImpl: capture(sent),
+      now: () => new Date('2026-11-06T08:30:00Z'),
+    };
+    await bot.handle(payload('hloo', 'wamid.hloo1'), deps);
+    await bot.handle(payload('hloo', 'wamid.hloo2'), deps);
+    expect(sent).toHaveLength(2);
+    for (const message of sent) {
+      const body = messageText(message);
+      expect(body).toContain(
+        "Good afternoon, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.",
+      );
+      expect(body).toContain('Choose a section.');
+      expect(body).not.toContain('No matching information');
     }
   });
 
