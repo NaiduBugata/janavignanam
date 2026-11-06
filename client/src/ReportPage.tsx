@@ -65,11 +65,14 @@ export function ReportActions({ token, id }: { token: string; section: "grievanc
   );
 }
 
-export function ReportDownloads({ token, section }: { token: string; section: "grievances" | "projects" }) {
+export function ReportDownloads({ token, section, compact = false }: { token: string; section: "grievances" | "projects"; compact?: boolean }) {
+  const buttonClass = compact
+    ? "h-10 shrink-0 whitespace-nowrap rounded-lg border px-2.5 text-xs"
+    : "h-10 shrink-0 whitespace-nowrap rounded-lg border px-3 text-sm";
   return (
-    <span className="flex flex-wrap gap-2">
-      <button type="button" onClick={() => void downloadFile(`/api/workspace/reports/export?section=${section}&format=pdf`, token, `${section}-reports.pdf`)} className="h-10 rounded-lg border px-3 text-sm">All reports PDF</button>
-      <button type="button" onClick={() => void downloadFile(`/api/workspace/reports/export?section=${section}&format=xlsx`, token, `${section}-reports.xlsx`)} className="h-10 rounded-lg border px-3 text-sm">All reports Excel</button>
+    <span className="flex shrink-0 flex-nowrap gap-2">
+      <button type="button" onClick={() => void downloadFile(`/api/workspace/reports/export?section=${section}&format=pdf`, token, `${section}-reports.pdf`)} className={buttonClass}>All reports PDF</button>
+      <button type="button" onClick={() => void downloadFile(`/api/workspace/reports/export?section=${section}&format=xlsx`, token, `${section}-reports.xlsx`)} className={buttonClass}>All reports Excel</button>
     </span>
   );
 }

@@ -591,9 +591,6 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
             <h1 className="mt-1 font-display text-2xl font-black tracking-tight text-foreground md:text-3xl">
               Grievance Visitor Record Portal
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Official MP visitor slip format. Upload grievance documents, let Grok AI digitize all fields into the visitor template, edit any details, and store securely.
-            </p>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-medium">
@@ -917,18 +914,7 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
           </div>
 
           {/* SUBMIT AND REVIEW BUTTON */}
-          <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-6 text-center shadow-xs">
-            <div className="flex items-center gap-2">
-              <Sparkles className="size-5 text-amber-500" />
-              <h3 className="font-display text-lg font-bold text-foreground">
-                Ready to Submit & Review?
-              </h3>
-            </div>
-            <p className="mt-1 max-w-lg text-sm text-muted-foreground">
-              Clicking below will scan the uploaded documents with Grok AI, auto-fill every field in the official visitor slip template, and let you review and edit any mistakes.
-            </p>
-
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3">
               {onCancel && (
                 <button
                   type="button"
@@ -948,7 +934,6 @@ export function GrievanceUploadWorkflow({ token, onSuccess, onCancel }: Props) {
                 Submit and Review
                 <ArrowRight className="size-4.5" />
               </button>
-            </div>
           </div>
         </div>
       )}

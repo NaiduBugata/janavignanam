@@ -323,14 +323,16 @@ function UploadDesk({
           <p className="text-sm text-muted-foreground">Add, view, edit, and delete records</p>
         </header>
         <div className="mx-auto max-w-7xl p-5 md:p-10">
-          <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div className={section === "grievances" ? "mb-6" : "mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"}>
+            {section !== "grievances" && (
             <div>
               <p className="mb-2 text-sm font-medium uppercase tracking-wider text-primary">Upload data</p>
               <h1 className="font-display text-3xl font-semibold tracking-tight">{current.label}</h1>
               <p className="mt-2 text-muted-foreground">{section === "events" ? "Person, phone, designation, and the benefit given. These counts show on the MP dashboard." : section === "followups" ? "Name, designation, phone, place, and whether they are frequently contacted, recently contacted, or not followed up." : section === "schedules" || section === "visits" ? "Visit or task, date, place, person, and the things to be done." : section === "campaigns" ? "Title, details, and status." : "Visitor slip for this record."}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {(section === "grievances" || section === "projects") && <ReportDownloads token={session.token} section={section} />}
+            )}
+            <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto">
+              {(section === "grievances" || section === "projects") && <ReportDownloads token={session.token} section={section} compact={section === "grievances"} />}
               <button
                 onClick={() => {
                   if (section === "grievances") {
@@ -343,53 +345,50 @@ function UploadDesk({
                   }
                   setNotice("");
                 }}
-                className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                className={`flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-primary font-medium text-primary-foreground hover:bg-primary/90 ${section === "grievances" ? "px-2.5 text-xs" : "px-4 text-sm"}`}
               >
                 <Plus className="size-4" />
                 {section === "grievances" ? "Upload grievance" : "Add record"}
               </button>
+              {section === "grievances" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGrievanceTab("upload");
+                      setAdding(false);
+                      setEditing(null);
+                    }}
+                    className={`flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-medium transition-all ${
+                      grievanceTab === "upload"
+                        ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                        : "border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Sparkles className="size-4" />
+                    2-Document Grievance Upload & Review
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGrievanceTab("list");
+                      setAdding(false);
+                    }}
+                    className={`flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-medium transition-all ${
+                      grievanceTab === "list"
+                        ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                        : "border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <ClipboardList className="size-4" />
+                    Grievance Records List ({records.length})
+                  </button>
+                </>
+              )}
             </div>
           </div>
           {notice && <p className="mb-4 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">{notice}</p>}
           {error && <p className="mb-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-
-          {section === "grievances" && (
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-3 shadow-xs">
-              <div className="flex rounded-xl bg-muted p-1 text-sm font-medium">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGrievanceTab("upload");
-                    setAdding(false);
-                    setEditing(null);
-                  }}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
-                    grievanceTab === "upload"
-                      ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Sparkles className="size-4" />
-                  2-Document Grievance Upload & Review
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGrievanceTab("list");
-                    setAdding(false);
-                  }}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
-                    grievanceTab === "list"
-                      ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <ClipboardList className="size-4" />
-                  Grievance Records List ({records.length})
-                </button>
-              </div>
-            </div>
-          )}
 
           {section === "grievances" && grievanceTab === "upload" && (
             <div className="mb-8">

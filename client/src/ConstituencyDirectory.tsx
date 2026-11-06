@@ -156,7 +156,7 @@ export function ConstituencyDirectory({ token }: { token: string }) {
   };
 
   const chooseRole = (value: string) => {
-    setRole(value === "No designation" ? "__none__" : value);
+    setRole(value);
     setPage(1);
   };
 
@@ -339,24 +339,22 @@ export function ConstituencyDirectory({ token }: { token: string }) {
               className="h-10 w-full rounded-xl border bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring transition-shadow"
             />
           </div>
-          <input
-            list="constituency-roles"
-            value={roleLabel}
+          <select
+            aria-label="Designation"
+            value={role}
             onChange={(event) => chooseRole(event.target.value)}
-            placeholder="All roles / designations"
             className="h-10 w-full rounded-xl border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring transition-shadow"
-          />
-          <datalist id="constituency-roles">
-            <option value="No designation" />
-            {(data?.roles || [])
-              .filter((item) => item.name !== "No designation")
-              .map((item) => (
-                <option
-                  key={item.name}
-                  value={item.name}
-                >{`${item.name} (${item.count})`}</option>
-              ))}
-          </datalist>
+          >
+            <option value="">All designations</option>
+            {(data?.roles || []).map((item) => (
+              <option
+                key={item.name}
+                value={item.name === "No designation" ? "__none__" : item.name}
+              >
+                {item.name} ({item.count.toLocaleString()})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

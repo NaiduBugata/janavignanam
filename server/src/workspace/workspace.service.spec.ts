@@ -123,6 +123,134 @@ describe('WorkspaceService', () => {
     expect(campaign.progressToken).toBe('');
   });
 
+  it('stores events, follow ups, schedules, and visits with designation', async () => {
+    const records: Array<Record<string, unknown>> = [];
+    const db = {
+      ensureConnected: async () => true,
+      collection: () => ({
+        insertOne: async (doc: Record<string, unknown>) => {
+          const _id = `rec-${records.length + 1}`;
+          records.push({ ...doc, _id });
+          return { insertedId: _id };
+        },
+        findOne: async (filter: { _id?: unknown }) =>
+          records.find((row) => String(row._id) === String(filter._id)) ||
+          null,
+        findOneAndUpdate: async (
+          filter: { _id?: unknown },
+          update: { $set?: Record<string, unknown> },
+        ) => {
+          const row = records.find(
+            (item) => String(item._id) === String(filter._id),
+          );
+          if (!row) return null;
+          Object.assign(row, update.$set || {});
+          return row;
+        },
+        deleteOne: async (filter: { _id?: unknown }) => {
+          const index = records.findIndex(
+            (item) => String(item._id) === String(filter._id),
+          );
+          if (index < 0) return { deletedCount: 0 };
+          records.splice(index, 1);
+          return { deletedCount: 1 };
+        },
+        find: (filter: { section?: string }) => ({
+          sort: () => ({
+            limit: () => ({
+              toArray: async () =>
+                records.filter(
+                  (row) => !filter.section || row.section === filter.section,
+                ),
+            }),
+          }),
+        }),
+      }),
+    };
+    const service = new WorkspaceService(
+      db as unknown as DatabaseService,
+      { get: () => 'test-secret' } as unknown as ConfigService,
+    );
+
+    const event = await service.create({
+      section: 'events',
+      title: 'Lakshmi',
+      status: 'CMRF / Medical Assistance',
+      createdBy: 'pa@janavignanam.com',
+      fullName: 'Lakshmi',
+      contactNumber: '9999999999',
+      designation: 'Sarpanch',
+      assemblyConstituency: 'Narasaraopet',
+      village: 'Narasaraopet',
+      mandal: 'Narasaraopet',
+    });
+    expect(event.section).toBe('events');
+    expect(event.designation).toBe('Sarpanch');
+    expect(event.status).toBe('CMRF / Medical Assistance');
+    expect(event.progressToken).toBe('');
+
+    const followup = await service.create({
+      section: 'followups',
+      createdBy: 'pa@janavignanam.com',
+      fullName: 'Ravi',
+      contactNumber: '9999999999',
+      designation: 'Booth Incharge',
+      followUpKind: 'frequent',
+      village: 'Narasaraopet',
+      mandal: 'Narasaraopet',
+      assemblyConstituency: 'Narasaraopet',
+      resolutionStatus: 'Pending',
+    });
+    expect(followup.section).toBe('followups');
+    expect(followup.designation).toBe('Booth Incharge');
+    expect(followup.followUpKind).toBe('frequent');
+
+    const schedule = await service.create({
+      section: 'schedules',
+      title: 'Review roads',
+      status: 'To do',
+      createdBy: 'pa@janavignanam.com',
+      place: 'Narasaraopet',
+      visitDate: '2026-11-10',
+      visitTime: '10:00',
+      designation: 'AE',
+      actionToBeTaken: 'Inspect the road',
+      assemblyConstituency: 'Narasaraopet',
+    });
+    expect(schedule.section).toBe('schedules');
+    expect(schedule.designation).toBe('AE');
+    expect(schedule.actionToBeTaken).toBe('Inspect the road');
+
+    const visit = await service.create({
+      section: 'visits',
+      title: 'Village visit',
+      status: 'Visit',
+      createdBy: 'pa@janavignanam.com',
+      place: 'Chilakaluripet',
+      visitDate: '2026-11-12',
+      visitTime: '16:00',
+      leadPhone: '9999999999',
+      designation: 'Sarpanch',
+    });
+    expect(visit.section).toBe('visits');
+    expect(visit.leadPhone).toBe('9999999999');
+
+    expect(await service.list('events')).toHaveLength(1);
+    expect(await service.list('followups')).toHaveLength(1);
+    expect(await service.list('schedules')).toHaveLength(1);
+    expect(await service.list('visits')).toHaveLength(1);
+
+    const changed = await service.update(event.id, {
+      title: 'Lakshmi',
+      status: 'Housing',
+      designation: 'President',
+    });
+    expect(changed.designation).toBe('President');
+    expect(changed.status).toBe('Housing');
+    await service.remove(event.id);
+    expect(await service.list('events')).toHaveLength(0);
+  });
+
   it('approves a grievance and dispatches native WhatsApp interactive buttons instead of external web links', async () => {
     const spyButtons = jest
       .spyOn(waSend, 'sendReplyList')

@@ -173,8 +173,9 @@ export function queryContacts(input: {
   };
   const matchesRole = (row: DirectoryContact) => {
     if (!role) return true;
-    if (role === '__none__') return !row.designation;
-    return row.designation.toLowerCase().includes(role);
+    const designation = row.designation.trim().toLowerCase();
+    if (role === '__none__') return !designation;
+    return designation === role;
   };
   const searched = rows.filter((row, index) => matchesQuery(index, row));
   const inDivision = division
@@ -248,9 +249,9 @@ export function queryContacts(input: {
     ).slice(0, 50),
     roles: counts(
       inMandal,
-      (row) => row.designation || 'No designation',
+      (row) => row.designation.trim() || 'No designation',
       [],
-    ).slice(0, 400),
+    ),
     stats,
     rows: matched.slice(start, start + pageSize),
   };

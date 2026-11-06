@@ -52,6 +52,27 @@ describe('ContactsDirectory', () => {
     expect(result.rows.every((r) => r.mandal === 'Karempudi')).toBe(true);
   });
 
+  it('filters by an exact designation', () => {
+    const listed = queryContacts({});
+    expect(listed.roles.length).toBeGreaterThan(400);
+    expect(listed.roles.some((item) => item.name === 'Sarpanch')).toBe(true);
+
+    const sarpanches = queryContacts({ role: 'Sarpanch' });
+    expect(sarpanches.total).toBeGreaterThan(0);
+    expect(
+      sarpanches.rows.every((row) => row.designation.trim() === 'Sarpanch'),
+    ).toBe(true);
+
+    const leaders = queryContacts({ role: 'TDP Leader' });
+    expect(
+      leaders.rows.every((row) => row.designation.trim() === 'TDP Leader'),
+    ).toBe(true);
+
+    const blank = queryContacts({ role: '__none__' });
+    expect(blank.total).toBeGreaterThan(0);
+    expect(blank.rows.every((row) => !row.designation.trim())).toBe(true);
+  });
+
   it('filters by search query and role', () => {
     const searched = queryContacts({
       assembly: 'Narasaraopet',
