@@ -160,11 +160,16 @@ interface NewsContextType {
   stats?: Record<string, unknown>;
 }
 
+const EMPTY_TOPICS: { name: string; count: number }[] = [];
+
 interface TwoChartsProps {
   articles: ArticleData[];
   trendView: 'timeline' | 'constituency';
   setTrendView: (v: 'timeline' | 'constituency') => void;
   activeCategory?: string;
+  extraPositive?: number;
+  extraProblems?: number;
+  extraTopics?: { name: string; count: number }[];
 }
 
 function AnalyticsTwoCharts({
@@ -172,13 +177,16 @@ function AnalyticsTwoCharts({
   trendView,
   setTrendView,
   activeCategory = 'all',
+  extraPositive = 0,
+  extraProblems = 0,
+  extraTopics = EMPTY_TOPICS,
 }: TwoChartsProps) {
   const chartData = useMemo(() => {
     const total = articles.length;
-    const pos = articles.filter((a) => a.sentiment === 'Positive').length;
+    const pos = articles.filter((a) => a.sentiment === 'Positive').length + extraPositive;
     const neg = articles.filter((a) => a.sentiment === 'Negative').length;
     const neut = articles.filter((a) => a.sentiment === 'Statement' || a.sentiment === 'Neutral').length;
-    const prob = articles.filter((a) => isGrievanceOrProblem(a)).length;
+    const prob = articles.filter((a) => isGrievanceOrProblem(a)).length + extraProblems;
 
     // Daily volume trend
     const dateCounts: Record<string, number> = {};
@@ -219,20 +227,26 @@ function AnalyticsTwoCharts({
         const c = a.category || 'Other';
         catCounts[c] = (catCounts[c] || 0) + 1;
       });
+      extraTopics.forEach((topic) => {
+        if (topic.count > 0) catCounts[topic.name] = (catCounts[topic.name] || 0) + topic.count;
+      });
       const palette = ['#0D9488', '#2563EB', '#F59E0B', '#EF4444', '#8B5CF6', '#10B981', '#64748B'];
       donutTitle = `${activeCategory.charAt(0).toUpperCase() + activeCategory.slice(1)}: Topic Breakdown`;
-      donutItems = Object.entries(catCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
-        .map(([name, count], idx) => ({
-          name,
-          count,
-          fill: palette[idx % palette.length],
-        }));
+      const ranked = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+      const kept = ranked.slice(0, 8);
+      const keptNames = new Set(kept.map(([name]) => name));
+      extraTopics.forEach((topic) => {
+        if (topic.count > 0 && !keptNames.has(topic.name)) kept.push([topic.name, topic.count]);
+      });
+      donutItems = kept.map(([name, count], idx) => ({
+        name,
+        count,
+        fill: palette[idx % palette.length],
+      }));
     }
 
     return { total, pos, neg, neut, prob, trendData, segmentData, donutTitle, donutItems };
-  }, [articles, activeCategory]);
+  }, [articles, activeCategory, extraPositive, extraProblems, extraTopics]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -581,7 +595,6 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [briefing, setBriefing] = useState<Briefing | null>(null);
-  const [briefingError, setBriefingError] = useState('');
   const [onePageBusy, setOnePageBusy] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
 
@@ -604,15 +617,30 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
     const negative = initialArticles.filter((a) => a.sentiment === 'Negative').length;
     const neutral = initialArticles.filter((a) => a.sentiment === 'Statement' || a.sentiment === 'Neutral').length;
     const problems = initialArticles.filter((a) => isGrievanceOrProblem(a)).length;
+    const solved = (briefing?.grievances.completed || 0) + (briefing?.benefits.people || 0);
+    const openGrievances = (briefing?.grievances.pending || 0) + (briefing?.grievances.inProgress || 0);
+    const positiveTopics = (briefing?.grievances.byCategory || [])
+      .filter((row) => row.completed > 0)
+      .map((row) => ({ name: row.name, count: row.completed }));
+    for (const kind of briefing?.benefits.byKind || []) {
+      if (kind.count > 0) positiveTopics.push({ name: kind.name, count: kind.count });
+    }
+    const problemTopics = (briefing?.grievances.byCategory || [])
+      .map((row) => ({ name: row.name, count: row.pending + row.inProgress }))
+      .filter((row) => row.count > 0);
 
     return {
       all: total,
-      positive,
+      positive: positive + solved,
       negative,
-      problems,
+      problems: problems + openGrievances,
       neutral,
+      solved,
+      openGrievances,
+      positiveTopics,
+      problemTopics,
     };
-  }, [initialArticles]);
+  }, [initialArticles, briefing]);
 
   // Handle card click -> smooth transition to filtered results
   const handleCardClick = (category: string) => {
@@ -831,13 +859,10 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
     let cancelled = false;
     api<Briefing>('/api/workspace/reports/briefing', { token })
       .then((row) => {
-        if (!cancelled) {
-          setBriefing(row);
-          setBriefingError('');
-        }
+        if (!cancelled) setBriefing(row);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setBriefingError(err instanceof Error ? err.message : 'Could not load grievances');
+      .catch(() => {
+        if (!cancelled) setBriefing(null);
       });
     return () => {
       cancelled = true;
@@ -1033,7 +1058,7 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
               <p className="mt-2 text-2xl sm:text-3xl font-bold font-display text-foreground">
                 {categoryCounts.positive.toLocaleString()}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">Developments & achievements</p>
+              <p className="mt-1 text-xs text-muted-foreground">News, solved grievances, and benefits</p>
             </div>
 
             {/* Card 3: Negative */}
@@ -1075,7 +1100,7 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
               <p className="mt-2 text-2xl sm:text-3xl font-bold font-display text-foreground">
                 {categoryCounts.problems.toLocaleString()}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">Public grievances & civic issues</p>
+              <p className="mt-1 text-xs text-muted-foreground">News problems and open grievances</p>
             </div>
 
             {/* Card 5: Neutral / Statements */}
@@ -1099,7 +1124,6 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
               <p className="mt-1 text-xs text-muted-foreground">Official releases & statements</p>
             </div>
           </div>
-          <GrievanceBriefing briefing={briefing} error={briefingError} />
         </div>
       ) : (
         /* STATE B: Compact Horizontal Animated Navigation Bar */
@@ -1308,6 +1332,12 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
           <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t">
             <span>
               Showing <strong className="text-foreground">{filteredArticles.length}</strong> matching articles
+              {activeCategory === 'positive' && categoryCounts.solved > 0
+                ? `, plus ${categoryCounts.solved} solved or benefited`
+                : ''}
+              {activeCategory === 'problems' && categoryCounts.openGrievances > 0
+                ? `, plus ${categoryCounts.openGrievances} open grievances`
+                : ''}
               {activeCategory !== 'all' && ` in ${activeCategory}`}
             </span>
             <button
@@ -1584,7 +1614,7 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
                 Positive News
               </span>
               <p className="text-xl font-bold font-display text-green-700 dark:text-green-400 mt-1">
-                {periodicReportData.pos}
+                {periodicReportData.pos + (selectedReportTab === 'all' ? categoryCounts.solved : 0)}
               </p>
             </div>
             <div className="rounded-lg border bg-red-500/5 border-red-500/20 p-3">
@@ -1600,7 +1630,7 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
                 Problems
               </span>
               <p className="text-xl font-bold font-display text-amber-700 dark:text-amber-400 mt-1">
-                {periodicReportData.prob}
+                {periodicReportData.prob + (selectedReportTab === 'all' ? categoryCounts.openGrievances : 0)}
               </p>
             </div>
             <div className="rounded-lg border bg-slate-500/5 border-slate-500/20 p-3 col-span-2 sm:col-span-1">
@@ -1620,6 +1650,8 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
               trendView={trendView}
               setTrendView={setTrendView}
               activeCategory="all"
+              extraPositive={selectedReportTab === 'all' ? categoryCounts.solved : 0}
+              extraProblems={selectedReportTab === 'all' ? categoryCounts.openGrievances : 0}
             />
           </div>
         </div>
@@ -1634,6 +1666,15 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
             trendView={trendView}
             setTrendView={setTrendView}
             activeCategory={activeCategory}
+            extraPositive={activeCategory === 'all' ? categoryCounts.solved : 0}
+            extraProblems={activeCategory === 'all' ? categoryCounts.openGrievances : 0}
+            extraTopics={
+              activeCategory === 'positive'
+                ? categoryCounts.positiveTopics
+                : activeCategory === 'problems'
+                  ? categoryCounts.problemTopics
+                  : EMPTY_TOPICS
+            }
           />
           {filteredArticles.length === 0 ? (
             <div className="rounded-xl border bg-card p-12 text-center">
@@ -1831,76 +1872,5 @@ export default function AnalyticsDashboard({ token = '' }: { token?: string }) {
         />
       )}
     </div>
-  );
-}
-
-function GrievanceBriefing({ briefing, error }: { briefing: Briefing | null; error: string }) {
-  return (
-    <section className="mt-4 rounded-xl border bg-card p-4 shadow-xs">
-      <h2 className="font-display text-lg font-semibold">Grievances and benefits</h2>
-      <p className="text-sm text-muted-foreground">Problems collected from news, grievance progress, and people who received a benefit.</p>
-      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
-      {!briefing && !error ? <p className="mt-3 text-sm text-muted-foreground">Loading grievance categories…</p> : null}
-      {briefing ? (
-        <div className="mt-4 space-y-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <Count label="Problems collected" value={briefing.news.problemsCollected} />
-            <Count label="Pending" value={briefing.grievances.pending} />
-            <Count label="In progress" value={briefing.grievances.inProgress} />
-            <Count label="Completed" value={briefing.grievances.completed} />
-            <Count label="Not approved" value={briefing.grievances.notApproved} />
-            <Count label="People benefited" value={briefing.benefits.people} />
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div>
-              <h3 className="text-sm font-semibold">News problems by category</h3>
-              <CategoryList rows={briefing.news.byCategory} empty="No problem articles collected." />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold">People benefited</h3>
-              <CategoryList rows={briefing.benefits.byKind.filter((row) => row.count > 0)} empty="No benefits recorded yet." />
-            </div>
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold">Grievances by category</h3>
-            {briefing.grievances.byCategory.length ? (
-              <div className="mt-2 overflow-hidden rounded-lg border">
-                {briefing.grievances.byCategory.map((row) => (
-                  <div key={row.name} className="grid gap-1 border-b px-3 py-2 text-sm last:border-0 sm:grid-cols-[1fr_auto]">
-                    <p className="font-medium">{row.name} <span className="text-muted-foreground">· {row.count}</span></p>
-                    <p className="text-muted-foreground">{row.pending} pending · {row.inProgress} in progress · {row.completed} completed · {row.notApproved} not approved</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-2 text-sm text-muted-foreground">No grievances saved yet.</p>
-            )}
-          </div>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function Count({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border bg-background px-3 py-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 font-display text-2xl font-semibold">{value.toLocaleString()}</p>
-    </div>
-  );
-}
-
-function CategoryList({ rows, empty }: { rows: { name: string; count: number }[]; empty: string }) {
-  if (!rows.length) return <p className="mt-2 text-sm text-muted-foreground">{empty}</p>;
-  return (
-    <ul className="mt-2 space-y-1 text-sm">
-      {rows.map((row) => (
-        <li key={row.name} className="flex items-center justify-between gap-3">
-          <span>{row.name}</span>
-          <span className="tabular-nums text-muted-foreground">{row.count}</span>
-        </li>
-      ))}
-    </ul>
   );
 }

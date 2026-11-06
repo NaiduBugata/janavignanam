@@ -83,6 +83,8 @@ const WHITE: Rgb = [1, 1, 1];
 const AMBER: Rgb = [0.541, 0.353, 0];
 const AMBER_BG: Rgb = [1, 0.957, 0.839];
 const GREEN_BG: Rgb = [0.898, 0.949, 0.922];
+const RED: Rgb = [0.62, 0.2, 0.16];
+const BLUE: Rgb = [0.16, 0.38, 0.58];
 const PAGE_W = 595;
 const PAGE_H = 842;
 const LEFT = 40;
@@ -104,35 +106,31 @@ export function combinedPdf(rows: ReportRow[]): Buffer {
 export function briefingPdf(data: Briefing): Buffer {
   const doc = new ReportDocument();
   doc.open();
-  doc.banner('One page report', `Constituency briefing  ${data.generatedOn}`);
-  doc.fields([
-    ['Problems collected', String(data.news.problemsCollected)],
-    ['News articles', String(data.news.articles)],
-    ['Grievances', String(data.grievances.total)],
-    ['Not approved', String(data.grievances.notApproved)],
-    ['Pending', String(data.grievances.pending)],
-    ['In progress', String(data.grievances.inProgress)],
-    ['Completed', String(data.grievances.completed)],
-    ['People benefited', String(data.benefits.people)],
+  doc.briefingBanner('One page report', `Constituency briefing  ${data.generatedOn}`);
+  doc.metrics([
+    ['Problems collected', String(data.news.problemsCollected), AMBER],
+    ['News articles', String(data.news.articles), GREEN],
+    ['Grievances', String(data.grievances.total), BLUE],
+    ['Not approved', String(data.grievances.notApproved), RED],
+    ['Pending', String(data.grievances.pending), AMBER],
+    ['In progress', String(data.grievances.inProgress), BLUE],
+    ['Completed', String(data.grievances.completed), GREEN],
+    ['People benefited', String(data.benefits.people), GREEN],
   ]);
-  doc.heading('Problems collected from news');
-  doc.note(
-    data.news.byCategory.length
-      ? data.news.byCategory.map((row) => `${row.name} ${row.count}`).join('   ')
-      : 'No problem articles collected.',
+  const gap = 10;
+  const available = Math.max(360, doc.remaining() - gap * 2);
+  const newsH = Math.round(available * 0.36);
+  const grievanceH = Math.round(available * 0.38);
+  const benefitH = available - newsH - grievanceH;
+  doc.categoryBars(
+    'Problems collected from news',
+    data.news.byCategory,
+    newsH,
   );
-  doc.heading('Grievances by category');
-  if (!data.grievances.byCategory.length) doc.note('No grievances saved yet.');
-  data.grievances.byCategory.forEach((row) => {
-    doc.note(
-      `${row.name}: ${row.count} total, ${row.pending} pending, ${row.inProgress} in progress, ${row.completed} completed, ${row.notApproved} not approved`,
-    );
-  });
-  doc.heading('People benefited by the MP');
-  doc.note(
-    data.benefits.byKind.map((row) => `${row.name} ${row.count}`).join('   '),
-  );
-  doc.note('Completed grievances are the problems solved. News counts are problems collected from articles.');
+  doc.gap(gap);
+  doc.grievanceTable('Grievances by category', data.grievances.byCategory, grievanceH);
+  doc.gap(gap);
+  doc.benefitGrid('People benefited by the MP', data.benefits.byKind, benefitH);
   return doc.toBuffer();
 }
 
@@ -203,6 +201,126 @@ class ReportDocument {
       this.text(LEFT, PAGE_H - 76 - index * 24, 18, true, line, WHITE),
     );
     this.y = PAGE_H - height - 22;
+  }
+
+  briefingBanner(title: string, kicker: string): void {
+    this.title = title || 'Report';
+    const height = 48;
+    this.rect(0, PAGE_H - height, PAGE_W, height, GREEN);
+    this.text(LEFT, PAGE_H - 18, 8, true, 'JANAVIGNANAM', [0.78, 0.88, 0.82]);
+    const when = kicker;
+    this.text(RIGHT - widthOf(when, 8, false), PAGE_H - 18, 8, false, when, [0.86, 0.92, 0.88]);
+    this.text(LEFT, PAGE_H - 38, 16, true, fit(title, 16, RIGHT - LEFT, true), WHITE);
+    this.y = PAGE_H - height - 14;
+  }
+
+  remaining(): number {
+    return this.y - 64;
+  }
+
+  gap(amount: number): void {
+    this.y -= amount;
+  }
+
+  metrics(pairs: Array<[string, string, Rgb]>): void {
+    const gap = 8;
+    const columns = 4;
+    const colW = (RIGHT - LEFT - gap * (columns - 1)) / columns;
+    const rowH = 44;
+    for (let index = 0; index < pairs.length; index += columns) {
+      this.ensure(rowH + gap);
+      pairs.slice(index, index + columns).forEach((pair, column) => {
+        const x = LEFT + column * (colW + gap);
+        const bottom = this.y - rowH;
+        this.rect(x, bottom, colW, rowH, WHITE);
+        this.stroke(x, bottom, colW, rowH, LINE);
+        this.rect(x, bottom, 3, rowH, pair[2]);
+        this.text(x + 12, bottom + 22, 15, true, fit(pair[1] || '0', 15, colW - 22, true), pair[2]);
+        this.text(x + 12, bottom + 8, 7, true, fit(pair[0].toUpperCase(), 7, colW - 22, true), MUTED);
+      });
+      this.y -= rowH + gap;
+    }
+  }
+
+  categoryBars(title: string, rows: Array<{ name: string; count: number }>, height: number): void {
+    const box = this.panel(title, height);
+    const items = rows.length ? rows : [{ name: 'No problem articles collected', count: 0 }];
+    const max = Math.max(...items.map((row) => row.count), 1);
+    const rowH = (box.bodyTop - box.bottom - 10) / items.length;
+    const labelW = 118;
+    const countW = 28;
+    const barX = box.innerLeft + labelW;
+    const barW = box.innerRight - countW - barX;
+    items.forEach((row, index) => {
+      const baseline = box.bodyTop - (index + 0.62) * rowH;
+      this.text(box.innerLeft, baseline, 8, false, fit(row.name, 8, labelW - 8), INK);
+      this.rect(barX, baseline - 1, Math.max(barW, 4), 6, CREAM);
+      const filled = barW * (row.count / max);
+      if (filled > 0) this.rect(barX, baseline - 1, Math.max(filled, 2), 6, GREEN);
+      const count = String(row.count);
+      this.text(box.innerRight - widthOf(count, 8, true), baseline, 8, true, count, INK);
+    });
+  }
+
+  grievanceTable(
+    title: string,
+    rows: Array<{ name: string; count: number; pending: number; inProgress: number; completed: number; notApproved: number }>,
+    height: number,
+  ): void {
+    const box = this.panel(title, height);
+    const widths = [155, 54, 62, 74, 70, 74];
+    const headers = ['Category', 'Total', 'Pending', 'In progress', 'Completed', 'Not approved'];
+    const tones = [MUTED, INK, AMBER, BLUE, GREEN, RED];
+    const headerY = box.bodyTop - 16;
+    let x = box.innerLeft;
+    headers.forEach((header, index) => {
+      this.text(x, headerY, 7, true, header.toUpperCase(), MUTED);
+      x += widths[index];
+    });
+    this.rect(box.innerLeft, headerY - 6, box.innerRight - box.innerLeft, 0.6, LINE);
+    if (!rows.length) {
+      this.text(box.innerLeft, headerY - 22, 8, false, 'No grievances saved yet.', MUTED);
+      return;
+    }
+    const rowH = (headerY - 10 - box.bottom) / rows.length;
+    rows.forEach((row, index) => {
+      const baseline = headerY - 8 - (index + 0.72) * rowH;
+      const values = [row.name, String(row.count), String(row.pending), String(row.inProgress), String(row.completed), String(row.notApproved)];
+      let cell = box.innerLeft;
+      values.forEach((value, column) => {
+        const bold = column > 0;
+        this.text(cell, baseline, 8, bold, fit(value, 8, widths[column] - 8, bold), column === 0 ? INK : tones[column]);
+        cell += widths[column];
+      });
+    });
+  }
+
+  benefitGrid(title: string, rows: Array<{ name: string; count: number }>, height: number): void {
+    const box = this.panel(title, height);
+    const items = rows.length ? rows : [{ name: 'No benefits recorded', count: 0 }];
+    const columns = 2;
+    const gap = 8;
+    const colW = (box.innerRight - box.innerLeft - gap) / columns;
+    const rowsHigh = Math.ceil(items.length / columns);
+    const rowH = Math.min(28, (box.bodyTop - box.bottom - 28) / rowsHigh);
+    items.forEach((row, index) => {
+      const column = index % columns;
+      const line = Math.floor(index / columns);
+      const x = box.innerLeft + column * (colW + gap);
+      const bottom = box.bodyTop - (line + 1) * rowH;
+      this.rect(x, bottom + 4, colW, rowH - 6, row.count > 0 ? GREEN_BG : CREAM);
+      this.text(x + 8, bottom + 10, 8, false, fit(row.name, 8, colW - 36), INK);
+      const count = String(row.count);
+      this.text(x + colW - 8 - widthOf(count, 9, true), bottom + 10, 9, true, count, row.count > 0 ? GREEN : MUTED);
+    });
+    this.text(
+      box.innerLeft,
+      box.bottom + 8,
+      7,
+      false,
+      'Completed grievances are the problems solved. News counts are problems collected from articles.',
+      MUTED,
+    );
   }
 
   fields(pairs: Array<[string, string]>): void {
@@ -351,6 +469,29 @@ class ReportDocument {
     this.ensure(18);
     this.text(LEFT, this.y - 10, 8, false, value, MUTED);
     this.y -= 18;
+  }
+
+  private panel(title: string, height: number): {
+    bottom: number;
+    bodyTop: number;
+    innerLeft: number;
+    innerRight: number;
+  } {
+    this.ensure(height);
+    const top = this.y;
+    const bottom = top - height;
+    this.rect(LEFT, bottom, RIGHT - LEFT, height, WHITE);
+    this.stroke(LEFT, bottom, RIGHT - LEFT, height, LINE);
+    this.rect(LEFT, top - 22, RIGHT - LEFT, 22, CREAM);
+    this.rect(LEFT, bottom, 3, height, GREEN);
+    this.text(LEFT + 14, top - 15, 10, true, title, INK);
+    this.y = bottom;
+    return {
+      bottom: bottom + 8,
+      bodyTop: top - 28,
+      innerLeft: LEFT + 14,
+      innerRight: RIGHT - 12,
+    };
   }
 
   toBuffer(): Buffer {
@@ -571,6 +712,14 @@ function wrap(
   }
   if (current) lines.push(current);
   return lines;
+}
+
+function fit(value: string, size: number, maxWidth: number, bold = false): string {
+  const text = latin(value);
+  if (widthOf(text, size, bold) <= maxWidth) return text;
+  let cut = text;
+  while (cut.length > 1 && widthOf(`${cut}...`, size, bold) > maxWidth) cut = cut.slice(0, -1);
+  return `${cut}...`;
 }
 
 function clip(lines: string[], max: number): string[] {
