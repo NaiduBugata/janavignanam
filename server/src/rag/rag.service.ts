@@ -1,9 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { isMenuFiling } from '../chatbot/grievance-priority';
 import { DatabaseService } from '../database/database.service';
 import { discoverGroqApiKeys } from '../ai/groq-keys';
+import {
+  addFact,
+  assistantGreeting,
+  buildAssistantSummary,
+  emptyFacts,
+  matchAssistantPage,
+  type AssistantFacts,
+} from './assistant-brief';
 import { QueryRagDto, RagResponse, SourceReference } from './rag.dto';
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'to', 'of', 'for', 'and', 'or', 'in', 'on', 'is', 'are', 'was', 'were',
+  'be', 'what', 'how', 'why', 'when', 'which', 'who', 'show', 'me', 'my', 'please', 'sir',
+  'open', 'go', 'page', 'pages', 'take', 'navigate', 'move', 'switch', 'about', 'from',
+  'with', 'this', 'that', 'these', 'those', 'any', 'all', 'can', 'could', 'would', 'should',
+  'give', 'tell', 'need', 'want', 'many', 'much', 'there', 'their', 'into', 'over',
+]);
+const SHORT_CODES = new Set(['sp', 'mp', 'ro', 'si', 'ci', 'cm']);
 
 const SYNONYMS: Record<string, string[]> = {
   sp: ['sp', 'superintendent of police', 'ఎస్పీ', 'పోలీస్', 'police'],
@@ -102,13 +120,8 @@ export class RagService {
             has_context?: boolean;
           };
           if (payload.sources && payload.sources.length > 0) {
-            return {
-              query_id: payload.query_id || randomUUID(),
-              answer: payload.answer,
-              sources: payload.sources || [],
-              has_context: payload.has_context ?? true,
-              engine: 'python-rag',
-            };
+            const facts = await this.loadFacts();
+            return this.present(dto.question, payload.answer, payload.sources, facts, 'python-rag', payload.query_id);
           }
         }
       } catch (err) {
@@ -163,7 +176,8 @@ export class RagService {
         return t.length >= 2;
       });
 
-    const tokens = rawTokens.length > 0 ? rawTokens : [cleanQuery];
+    const meaningful = rawTokens.filter((token) => !STOP_WORDS.has(token));
+    const tokens = meaningful.length > 0 ? meaningful : rawTokens.length > 0 ? rawTokens : [cleanQuery];
     const expandedSet = new Set<string>(tokens);
 
     for (const token of tokens) {
@@ -189,13 +203,19 @@ export class RagService {
 
   private async nativeConstituencyQuery(question: string): Promise<RagResponse> {
     const { cleanQuery, tokens, expanded, isShort } = this.extractSearchTokens(question);
+    const page = matchAssistantPage(question);
     const candidateMap = new Map<string, { doc: Record<string, unknown>; collection: string; score: number }>();
+    let facts: AssistantFacts | null = null;
 
     try {
       await this.db.ensureConnected();
+      facts = await this.loadFacts();
 
       // Step 1: Direct SQL ILIKE search across entire Neon documents table for exact small words and tokens
-      const searchTerms = [cleanQuery, ...tokens.slice(0, 3)].filter((t) => t.length >= 2);
+      const searchTerms = [
+        ...(cleanQuery.length <= 24 ? [cleanQuery] : []),
+        ...tokens.filter((term) => term.length >= 3 || SHORT_CODES.has(term)),
+      ].slice(0, 5);
       for (const term of searchTerms) {
         const rows = await this.db.query<{ doc_id: string; collection: string; doc: Record<string, unknown> }>(
           `SELECT doc_id, collection, doc 
@@ -203,7 +223,7 @@ export class RagService {
            WHERE collection IN ('articles', 'jv_records') 
              AND doc::text ILIKE $1 
            LIMIT 50`,
-          [`%${term}%`],
+          [`%${term.replace(/[%_\\]/g, '')}%`],
         );
         for (const r of rows) {
           const docId = String(r.doc_id || r.doc?.id || r.doc?._id || randomUUID());
@@ -216,29 +236,29 @@ export class RagService {
         }
       }
 
-      // Step 2: Ingest recent articles & records to ensure fresh recency scoring
-      const recentArticles = await this.db
-        .articles()
-        .find({})
-        .limit(150)
-        .toArray();
-      for (const a of recentArticles) {
-        const docId = String(a.id || a._id || randomUUID());
-        if (!candidateMap.has(docId)) {
-          candidateMap.set(docId, { doc: a, collection: 'articles', score: 0 });
-        }
+      if (page && page.sections.length) {
+        const rows = await this.db.query<{ doc_id: string; collection: string; doc: Record<string, unknown> }>(
+          `SELECT doc_id, collection, doc
+           FROM mediasphere.documents
+           WHERE collection = 'jv_records'
+             AND doc->>'section' = ANY($1::text[])
+           LIMIT 40`,
+          [page.sections],
+        );
+        for (const row of rows) this.remember(candidateMap, row.doc_id, row.collection, row.doc, 45);
       }
 
-      const recentRecords = await this.db
-        .collection('jv_records')
-        .find({})
-        .limit(150)
-        .toArray();
-      for (const r of recentRecords) {
-        const docId = String(r.id || r._id || randomUUID());
-        if (!candidateMap.has(docId)) {
-          candidateMap.set(docId, { doc: r, collection: 'jv_records', score: 0 });
-        }
+      // Step 2: Recent articles and records, kept only when they contain a search term
+      const needles = expanded.filter((term) => term.length >= 3 || SHORT_CODES.has(term));
+      const recentArticles = await this.db.articles().find({}).limit(150).toArray();
+      for (const article of recentArticles) {
+        if (!this.docHits(article, needles)) continue;
+        this.remember(candidateMap, String(article.id || article._id || ''), 'articles', article, 0);
+      }
+      const recentRecords = await this.db.collection('jv_records').find({}).limit(150).toArray();
+      for (const record of recentRecords) {
+        if (!this.docHits(record, needles)) continue;
+        this.remember(candidateMap, String(record.id || record._id || ''), 'jv_records', record, 0);
       }
     } catch (err) {
       this.logger.warn(`Could not load records for native RAG: ${err}`);
@@ -249,6 +269,7 @@ export class RagService {
 
     for (const [, item] of candidateMap.entries()) {
       const doc = item.doc;
+      if (this.menuFiling(doc)) continue;
 
       const title = String(doc.title || doc.fullName || '').toLowerCase();
       const summary = String(doc.summary || doc.detail || '').toLowerCase();
@@ -258,7 +279,8 @@ export class RagService {
       const officerOrDept = String(doc.assignedOfficer || doc.followUpDepartment || doc.referenceName || doc.authority || '').toLowerCase();
       const remarks = String(doc.progressRemarks || '').toLowerCase();
 
-      let score = item.score; // Base score from SQL match
+      let score = item.score;
+      if (page?.sections.includes(String(doc.section || ''))) score += 40;
 
       // 1. Exact phrase match
       if (cleanQuery.length >= 2) {
@@ -315,7 +337,7 @@ export class RagService {
     // Sort by highest score first
     scoredList.sort((a, b) => b.finalScore - a.finalScore);
 
-    const topCandidates = scoredList.slice(0, 6);
+    const topCandidates = scoredList.slice(0, 8);
     const sources: SourceReference[] = [];
 
     topCandidates.forEach((item, idx) => {
@@ -356,16 +378,76 @@ export class RagService {
       });
     });
 
-    const hasContext = sources.length > 0;
     const answer = await this.generateLlmAnswer(question, sources, isShort);
+    return this.present(question, answer, sources, facts, 'native-rag');
+  }
 
+  private present(
+    question: string,
+    answer: string,
+    sources: SourceReference[],
+    facts: AssistantFacts | null,
+    engine: RagResponse['engine'],
+    queryId?: string,
+  ): RagResponse {
+    const navigation = matchAssistantPage(question);
     return {
-      query_id: randomUUID(),
+      query_id: queryId || randomUUID(),
+      greeting: assistantGreeting(),
+      summary: buildAssistantSummary(question, sources, facts, navigation),
       answer,
+      navigation: navigation ? { path: navigation.path, label: navigation.label, auto: navigation.auto } : null,
       sources,
-      has_context: hasContext,
-      engine: 'native-rag',
+      has_context: sources.length > 0,
+      engine,
     };
+  }
+
+  private async loadFacts(): Promise<AssistantFacts | null> {
+    try {
+      const rows = await this.db.query<{ collection: string; section: string; status: string; count: number }>(
+        `SELECT collection,
+                COALESCE(doc->>'section', '') AS section,
+                COALESCE(doc->>'status', '') AS status,
+                count(*)::int AS count
+         FROM mediasphere.documents
+         WHERE collection IN ('articles', 'jv_records')
+         GROUP BY 1, 2, 3`,
+      );
+      const facts = emptyFacts();
+      for (const row of rows) addFact(facts, row.collection, row.section, row.status, Number(row.count) || 0);
+      return facts;
+    } catch (err) {
+      this.logger.warn(`Could not load assistant counts: ${err}`);
+      return null;
+    }
+  }
+
+  private remember(
+    candidateMap: Map<string, { doc: Record<string, unknown>; collection: string; score: number }>,
+    docId: string,
+    collection: string,
+    doc: Record<string, unknown>,
+    score: number,
+  ): void {
+    const id = docId || String(doc.id || doc._id || randomUUID());
+    const current = candidateMap.get(id);
+    if (!current) candidateMap.set(id, { doc, collection, score });
+    else current.score += score;
+  }
+
+  private menuFiling(doc: Record<string, unknown>): boolean {
+    return isMenuFiling({
+      title: String(doc.title || ''),
+      fullName: String(doc.fullName || ''),
+      srNumber: String(doc.srNumber || ''),
+    });
+  }
+
+  private docHits(doc: object, needles: string[]): boolean {
+    if (!needles.length) return false;
+    const blob = JSON.stringify(doc).toLowerCase();
+    return needles.some((needle) => blob.includes(needle));
   }
 
   private async generateLlmAnswer(
@@ -414,10 +496,12 @@ export class RagService {
       `${promptDirective}\n\n` +
       `Retrieved Verified Context:\n${contextText}\n\n` +
       `Guidelines:\n` +
-      `- Provide clear, authoritative facts citing numbers, locations, and status.\n` +
-      `- Use bullet points for high readability.\n` +
-      `- If any aspect is unconfirmed in the sources, note it transparently.\n` +
-      `- Tone: Executive, professional, and respectful.`;
+      `- Answer only from the retrieved records. Do not invent names, counts, places, or dates.\n` +
+      `- Start with the facts the question asks for: status, place, department, and what is pending or completed.\n` +
+      `- Use short bullet points. Quote the record title when you use it.\n` +
+      `- If the records do not answer part of the question, say that part is not in the saved records.\n` +
+      `- Do not add a greeting. The greeting is shown separately.\n` +
+      `- Tone: executive, professional, and respectful.`;
 
     try {
       const controller = new AbortController();

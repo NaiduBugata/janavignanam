@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import {
   Send,
@@ -22,15 +23,25 @@ interface SourceReference {
   content: string;
 }
 
+interface AssistantNavigation {
+  path: string;
+  label: string;
+  auto: boolean;
+}
+
 interface QueryResponse {
   query_id?: string;
+  greeting?: string;
+  summary?: string;
   answer: string;
+  navigation?: AssistantNavigation | null;
   sources: SourceReference[];
   has_context: boolean;
   engine?: string;
 }
 
 export function MpRetrievalWindow() {
+  const navigate = useNavigate();
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<QueryResponse | null>(null);
@@ -83,6 +94,17 @@ export function MpRetrievalWindow() {
   };
 
   const isSmallWord = question.trim().length > 0 && question.trim().length <= 4;
+
+  useEffect(() => {
+    const target = response?.navigation;
+    if (!target?.auto) return;
+    const timer = window.setTimeout(() => navigate(target.path), 2200);
+    return () => window.clearTimeout(timer);
+  }, [response, navigate]);
+
+  const openPage = (target: AssistantNavigation) => {
+    navigate(target.path);
+  };
 
   return (
     <div className="mt-8 rounded-2xl border border-primary/20 bg-gradient-to-br from-card via-card to-primary/5 p-5 shadow-sm transition-all md:p-6">
@@ -137,13 +159,7 @@ export function MpRetrievalWindow() {
                 disabled={loading}
                 className="w-full resize-none bg-transparent px-3.5 py-2.5 text-sm outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
               />
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-3 py-2">
-                <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                  <ShieldCheck className="size-3.5 text-emerald-500" />
-                  {isSmallWord
-                    ? `Searching exact keyword & synonyms for "${question.trim()}"`
-                    : "Grounded with multi-field search & source verification"}
-                </span>
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-3 py-2">
                 <div className="flex items-center gap-2">
                   {question && (
                     <button
@@ -223,8 +239,35 @@ export function MpRetrievalWindow() {
                 </div>
               </div>
 
+              {response.greeting && (
+                <p className="font-display text-base font-semibold text-foreground">{response.greeting}</p>
+              )}
+
+              {response.summary && (
+                <div className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Summary</p>
+                  <p className="mt-1 text-sm leading-relaxed text-foreground/90">{response.summary}</p>
+                </div>
+              )}
+
+              {response.navigation && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openPage(response.navigation as AssistantNavigation)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    Open {response.navigation.label}
+                  </button>
+                  {response.navigation.auto && (
+                    <span className="text-xs text-muted-foreground">Opening {response.navigation.label}…</span>
+                  )}
+                </div>
+              )}
+
               {/* Formatted Answer */}
-              <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-line text-foreground/90">
+              <div className="prose prose-sm dark:prose-invert mt-3 max-w-none text-sm leading-relaxed whitespace-pre-line text-foreground/90">
                 {response.answer}
               </div>
 

@@ -26,9 +26,18 @@ export interface SourceReference {
   content: string;
 }
 
+export interface AssistantNavigation {
+  path: string;
+  label: string;
+  auto: boolean;
+}
+
 export interface RagResponse {
   query_id: string;
+  greeting: string;
+  summary: string;
   answer: string;
+  navigation: AssistantNavigation | null;
   sources: SourceReference[];
   has_context: boolean;
   engine: 'python-rag' | 'native-rag';
