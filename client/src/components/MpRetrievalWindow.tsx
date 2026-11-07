@@ -48,7 +48,7 @@ export function MpRetrievalWindow() {
   const [lastQuery, setLastQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [sourcesOpen, setSourcesOpen] = useState(true);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const handleAsk = async (queryText?: string) => {
@@ -203,121 +203,214 @@ export function MpRetrievalWindow() {
             </div>
           )}
 
-          {/* Response Box */}
           {response && (
-            <div className="rounded-xl border border-primary/20 bg-background/95 p-4 shadow-sm animate-in fade-in duration-200">
-              <div className="mb-2 flex items-center justify-between border-b border-border/40 pb-2">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="size-4 text-primary" />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-primary">
-                    Verified Answer: "{lastQuery}"
-                  </span>
-                  {response.sources?.length > 0 && (
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                      {response.sources.length} sources matched
-                    </span>
-                  )}
+            <article className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+              <header className="flex flex-wrap items-start justify-between gap-3 bg-primary px-4 py-4 text-primary-foreground sm:px-5">
+                <div className="min-w-0">
+                  <p className="font-display text-lg font-semibold leading-snug">
+                    {response.greeting || "Sri. Lavu Sri Krishna Devarayalu Sir."}
+                  </p>
+                  <p className="mt-1 text-sm text-primary-foreground/80">Asked: {lastQuery}</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={copyToClipboard}
-                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground rounded px-2 py-0.5 hover:bg-muted transition"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="size-3 text-emerald-500" />
-                        <span className="text-emerald-500 font-medium">Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="size-3" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+                <button
+                  type="button"
+                  onClick={copyToClipboard}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary-foreground/15 px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary-foreground/25"
+                >
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </header>
 
-              {response.greeting && (
-                <p className="font-display text-base font-semibold text-foreground">{response.greeting}</p>
-              )}
-
-              {response.summary && (
-                <div className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2.5">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Summary</p>
-                  <p className="mt-1 text-sm leading-relaxed text-foreground/90">{response.summary}</p>
-                </div>
-              )}
-
-              {response.navigation && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openPage(response.navigation as AssistantNavigation)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                  >
-                    <ExternalLink className="size-3.5" />
-                    Open {response.navigation.label}
-                  </button>
-                  {response.navigation.auto && (
-                    <span className="text-xs text-muted-foreground">Opening {response.navigation.label}…</span>
-                  )}
-                </div>
-              )}
-
-              {/* Formatted Answer */}
-              <div className="prose prose-sm dark:prose-invert mt-3 max-w-none text-sm leading-relaxed whitespace-pre-line text-foreground/90">
-                {response.answer}
-              </div>
-
-              {/* Retrieved Sources Accordion */}
-              {response.sources?.length > 0 && (
-                <div className="mt-4 border-t border-border/40 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setSourcesOpen(!sourcesOpen)}
-                    className="flex w-full items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <BookOpen className="size-3.5 text-primary" />
-                      Retrieved Evidence & Sources ({response.sources.length})
-                    </span>
-                    {sourcesOpen ? (
-                      <ChevronUp className="size-3.5" />
-                    ) : (
-                      <ChevronDown className="size-3.5" />
-                    )}
-                  </button>
-
-                  {sourcesOpen && (
-                    <div className="mt-2.5 space-y-2">
-                      {response.sources.map((src, i) => (
-                        <div
-                          key={src.chunk_id || i}
-                          className="rounded-lg border border-border/50 bg-muted/30 p-2.5 text-xs text-muted-foreground transition hover:bg-muted/50"
-                        >
-                          <div className="mb-1 flex items-center justify-between gap-2">
-                            <span className="font-semibold text-foreground line-clamp-1">
-                              {i + 1}. {src.document_name}
-                            </span>
-                            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-mono font-medium text-primary">
-                              {(src.score * 100).toFixed(0)}% match
-                            </span>
-                          </div>
-                          <p className="line-clamp-3 text-muted-foreground/90 leading-relaxed font-sans">
-                            {src.content}
-                          </p>
-                        </div>
+              <div className="space-y-4 p-4 sm:p-5">
+                {response.summary && (
+                  <section className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+                      <ShieldCheck className="size-3.5" />
+                      Summary
+                    </div>
+                    <div className="space-y-1.5">
+                      {sentencesOf(response.summary).map((sentence, index) => (
+                        <p key={sentence} className={index === 0 ? "text-sm font-medium leading-6 text-foreground" : "text-sm leading-6 text-muted-foreground"}>
+                          {sentence}
+                        </p>
                       ))}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+                  </section>
+                )}
+
+                {response.navigation && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 px-3 py-2.5">
+                    <p className="text-sm text-muted-foreground">
+                      {response.navigation.auto
+                        ? `Opening ${response.navigation.label}…`
+                        : `The full list is on ${response.navigation.label}.`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => openPage(response.navigation as AssistantNavigation)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      <ExternalLink className="size-3.5" />
+                      Open {response.navigation.label}
+                    </button>
+                  </div>
+                )}
+
+                <section>
+                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <FileText className="size-3.5" />
+                    Briefing
+                  </div>
+                  <AnswerBody text={response.answer} />
+                </section>
+
+                {response.sources?.length > 0 && (
+                  <section className="border-t pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setSourcesOpen(!sourcesOpen)}
+                      className="flex w-full items-center justify-between rounded-lg px-1 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50"
+                    >
+                      <span className="flex items-center gap-2">
+                        <BookOpen className="size-4 text-primary" />
+                        Records used
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                          {response.sources.length}
+                        </span>
+                      </span>
+                      {sourcesOpen ? <ChevronUp className="size-4 text-muted-foreground" /> : <ChevronDown className="size-4 text-muted-foreground" />}
+                    </button>
+                    {sourcesOpen && (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {response.sources.map((src, index) => {
+                          const facts = sourceFacts(src.content);
+                          return (
+                            <div key={src.chunk_id || index} className="rounded-xl border bg-background p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-sm font-semibold leading-snug text-foreground">{src.document_name}</p>
+                                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                  {Math.round(src.score * 100)}%
+                                </span>
+                              </div>
+                              {facts.length > 0 ? (
+                                <dl className="mt-2 space-y-1">
+                                  {facts.slice(0, 4).map((fact) => (
+                                    <div key={fact.label} className="grid grid-cols-[88px_1fr] gap-2 text-xs">
+                                      <dt className="text-muted-foreground">{fact.label}</dt>
+                                      <dd className="text-foreground">{fact.value}</dd>
+                                    </div>
+                                  ))}
+                                </dl>
+                              ) : (
+                                <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground">{src.content}</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                )}
+              </div>
+            </article>
           )}
         </div>
       )}
     </div>
   );
+}
+
+function sentencesOf(value: string): string[] {
+  const parts = value
+    .split(/(?<=\.)\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length ? parts : [value];
+}
+
+function sourceFacts(content: string): Array<{ label: string; value: string }> {
+  return content
+    .replace(/\s+/g, " ")
+    .split(/\.\s+/)
+    .map((part) => {
+      const split = part.indexOf(":");
+      if (split < 2 || split > 28) return null;
+      const label = part.slice(0, split).trim();
+      const value = part.slice(split + 1).replace(/\.$/, "").trim();
+      if (!label || !value) return null;
+      return { label, value };
+    })
+    .filter((fact): fact is { label: string; value: string } => Boolean(fact));
+}
+
+function AnswerBody({ text }: { text: string }) {
+  const lines = text.replace(/\r/g, "").split("\n");
+  const blocks: React.ReactNode[] = [];
+  let bullets: string[] = [];
+
+  const flush = () => {
+    if (!bullets.length) return;
+    const items = bullets;
+    bullets = [];
+    blocks.push(
+      <ul key={`list-${blocks.length}`} className="divide-y overflow-hidden rounded-xl border bg-background">
+        {items.map((item, index) => (
+          <li key={`${index}-${item}`} className="flex gap-3 px-4 py-3 text-sm leading-6 text-foreground">
+            <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
+            <span>{richText(item)}</span>
+          </li>
+        ))}
+      </ul>,
+    );
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flush();
+      return;
+    }
+    const bullet = /^(?:[-*•]|\d+[.)])\s+(.+)$/.exec(trimmed);
+    if (bullet) {
+      bullets.push(bullet[1]);
+      return;
+    }
+    flush();
+    const heading = /^\*\*([^*]+)\*\*$/.exec(trimmed);
+    if (heading) {
+      blocks.push(
+        <h3 key={`h-${blocks.length}`} className="font-display text-base font-semibold text-foreground">
+          {heading[1]}
+        </h3>,
+      );
+      return;
+    }
+    blocks.push(
+      <p key={`p-${blocks.length}`} className="text-sm leading-6 text-foreground">
+        {richText(trimmed)}
+      </p>,
+    );
+  });
+  flush();
+
+  if (!blocks.length) {
+    return <p className="text-sm text-muted-foreground">No further detail was found for this question.</p>;
+  }
+  return <div className="space-y-3">{blocks}</div>;
+}
+
+function richText(value: string): React.ReactNode[] {
+  return value.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*)/g).filter(Boolean).map((part, index) => {
+    const strong = part.startsWith("**") && part.endsWith("**");
+    const emphasis = !strong && part.startsWith("*") && part.endsWith("*") && part.length > 2;
+    if (strong || emphasis) {
+      return (
+        <strong key={index} className="font-semibold text-foreground">
+          {part.slice(strong ? 2 : 1, strong ? -2 : -1)}
+        </strong>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
 }
